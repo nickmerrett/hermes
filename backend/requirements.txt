@@ -1,0 +1,59 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# Vector Database
+chromadb==0.5.5  # Updated for NumPy 2.0 compatibility
+
+# AI & ML
+anthropic==0.18.1
+sentence-transformers==3.0.1  # Updated for NumPy 2.0 compatibility
+tiktoken==0.6.0
+
+# Data Collection
+requests==2.31.0
+feedparser==6.0.11
+beautifulsoup4==4.12.3
+lxml==5.2.2
+newsapi-python==0.2.7
+trafilatura==1.12.2  # Advanced web scraping and content extraction
+
+# Social Media & Community
+asyncpraw==7.7.1         # Async Reddit API
+tweepy==4.14.0           # Twitter/X API
+PyGithub==2.1.1          # GitHub API
+
+# Scheduling
+apscheduler==3.10.4
+
+# Utilities
+python-dotenv==1.0.1
+pyyaml==6.0.1
+python-dateutil==2.8.2
+pytz==2024.1
+
+# HTTP
+httpx==0.27.0  # Updated for ChromaDB 0.5.5 compatibility
+aiohttp==3.9.3
+
+# Browser Automation (LinkedIn scraping)
+playwright==1.44.0
+
+# Logging & Monitoring
+python-json-logger==2.0.7
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+
+# Development
+black==24.1.1
+flake8==7.0.0
+mypy==1.8.0

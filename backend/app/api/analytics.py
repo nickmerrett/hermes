@@ -1,0 +1,326 @@
+"""Analytics API endpoints"""
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from datetime import datetime, timedelta
+from anthropic import Anthropic
+
+from app.core.database import get_db
+from app.models import schemas
+from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, DailySummary, PlatformSettings
+from app.config.settings import settings
+import logging
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.get("/summary", response_model=schemas.AnalyticsSummary)
+async def get_analytics_summary(db: Session = Depends(get_db)):
+    """Get analytics summary across all intelligence items"""
+
+    # Total items
+    total_items = db.query(IntelligenceItem).count()
+
+    # Items by category
+    category_counts = db.query(
+        ProcessedIntelligence.category,
+        func.count(ProcessedIntelligence.id)
+    ).group_by(ProcessedIntelligence.category).all()
+    items_by_category = {cat: count for cat, count in category_counts if cat}
+
+    # Items by sentiment
+    sentiment_counts = db.query(
+        ProcessedIntelligence.sentiment,
+        func.count(ProcessedIntelligence.id)
+    ).group_by(ProcessedIntelligence.sentiment).all()
+    items_by_sentiment = {sent: count for sent, count in sentiment_counts if sent}
+
+    # Items by source
+    source_counts = db.query(
+        IntelligenceItem.source_type,
+        func.count(IntelligenceItem.id)
+    ).group_by(IntelligenceItem.source_type).all()
+    items_by_source = {src: count for src, count in source_counts}
+
+    # Recent items (last 24 hours)
+    yesterday = datetime.utcnow() - timedelta(days=1)
+    recent_items_count = db.query(IntelligenceItem).filter(
+        IntelligenceItem.collected_date >= yesterday
+    ).count()
+
+    # High priority items (priority > 0.7)
+    high_priority_items = db.query(ProcessedIntelligence).filter(
+        ProcessedIntelligence.priority_score > 0.7
+    ).count()
+
+    # Number of customers
+    customers_monitored = db.query(Customer).count()
+
+    return schemas.AnalyticsSummary(
+        total_items=total_items,
+        items_by_category=items_by_category,
+        items_by_sentiment=items_by_sentiment,
+        items_by_source=items_by_source,
+        recent_items_count=recent_items_count,
+        high_priority_items=high_priority_items,
+        customers_monitored=customers_monitored
+    )
+
+
+@router.get("/daily-summary/{customer_id}")
+async def get_daily_summary(customer_id: int, db: Session = Depends(get_db)):
+    """Get daily summary of items collected in the last 24 hours for a specific customer"""
+
+    yesterday = datetime.utcnow() - timedelta(days=1)
+
+    # Get items from last 24 hours for this customer
+    recent_items = db.query(IntelligenceItem).join(
+        ProcessedIntelligence,
+        IntelligenceItem.id == ProcessedIntelligence.item_id,
+        isouter=True
+    ).filter(
+        IntelligenceItem.customer_id == customer_id,
+        IntelligenceItem.collected_date >= yesterday
+    ).order_by(
+        ProcessedIntelligence.priority_score.desc().nullslast(),
+        IntelligenceItem.collected_date.desc()
+    ).limit(20).all()
+
+    # Count by category
+    category_counts = db.query(
+        ProcessedIntelligence.category,
+        func.count(ProcessedIntelligence.id)
+    ).join(
+        IntelligenceItem,
+        IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        IntelligenceItem.customer_id == customer_id,
+        IntelligenceItem.collected_date >= yesterday
+    ).group_by(ProcessedIntelligence.category).all()
+
+    # Count high priority items
+    high_priority_count = db.query(IntelligenceItem).join(
+        ProcessedIntelligence,
+        IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        IntelligenceItem.customer_id == customer_id,
+        IntelligenceItem.collected_date >= yesterday,
+        ProcessedIntelligence.priority_score >= 0.7
+    ).count()
+
+    return {
+        "customer_id": customer_id,
+        "period": "last_24_hours",
+        "total_items": len(recent_items),
+        "high_priority_count": high_priority_count,
+        "items_by_category": {cat: count for cat, count in category_counts if cat},
+        "recent_items": [
+            {
+                "id": item.id,
+                "title": item.title,
+                "summary": item.processed.summary if item.processed else None,
+                "category": item.processed.category if item.processed else None,
+                "priority_score": item.processed.priority_score if item.processed else None,
+                "sentiment": item.processed.sentiment if item.processed else None,
+                "url": item.url,
+                "published_date": item.published_date,
+                "collected_date": item.collected_date,
+                "source_type": item.source_type
+            }
+            for item in recent_items
+        ]
+    }
+
+
+@router.get("/daily-summary-ai/{customer_id}")
+async def get_daily_summary_ai(
+    customer_id: int,
+    force_refresh: bool = False,
+    db: Session = Depends(get_db)
+):
+    """
+    Get or generate an AI-powered textual summary of the last 24 hours for a customer
+
+    Args:
+        customer_id: Customer ID
+        force_refresh: If True, bypass cache and regenerate summary
+        db: Database session
+    """
+
+    # Get customer info
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return {"error": "Customer not found"}
+
+    # Check for cached summary (from today only)
+    if not force_refresh:
+        # Only use cache from today (not old summaries)
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.utcnow().date()
+
+        cached_summary = db.query(DailySummary).filter(
+            DailySummary.customer_id == customer_id,
+            DailySummary.generated_at >= today_start,  # Only today's summaries
+            func.date(DailySummary.summary_date) == today
+        ).order_by(DailySummary.generated_at.desc()).first()
+
+        if cached_summary:
+            logger.info(f"Returning cached daily summary for {customer.name} (generated {cached_summary.generated_at})")
+            return {
+                "customer_id": customer_id,
+                "customer_name": customer.name,
+                "period": "last_24_hours",
+                "total_items": cached_summary.total_items,
+                "high_priority_count": cached_summary.high_priority_count,
+                "items_by_category": cached_summary.items_by_category or {},
+                "summary": cached_summary.summary_text,
+                "cached": True,
+                "generated_at": cached_summary.generated_at
+            }
+
+    # If force_refresh or no cache from today, return None to trigger placeholder
+    # Frontend will show "No summary generated for today"
+    if not force_refresh:
+        logger.info(f"No summary found for {customer.name} today - returning null to show placeholder")
+        return None
+
+    # No cache or forced refresh - generate new summary
+    yesterday = datetime.utcnow() - timedelta(days=1)
+
+    # Get items from last 24 hours for this customer
+    recent_items = db.query(IntelligenceItem).join(
+        ProcessedIntelligence,
+        IntelligenceItem.id == ProcessedIntelligence.item_id,
+        isouter=True
+    ).filter(
+        IntelligenceItem.customer_id == customer_id,
+        IntelligenceItem.collected_date >= yesterday
+    ).order_by(
+        ProcessedIntelligence.priority_score.desc().nullslast(),
+        IntelligenceItem.collected_date.desc()
+    ).limit(50).all()  # Get top 50 for summarization
+
+    if not recent_items:
+        return {
+            "customer_id": customer_id,
+            "customer_name": customer.name,
+            "period": "last_24_hours",
+            "total_items": 0,
+            "summary": f"No new intelligence items were collected for {customer.name} in the last 24 hours."
+        }
+
+    # Prepare items for AI summarization
+    items_text = []
+    for idx, item in enumerate(recent_items[:20], 1):  # Limit to top 20 for token usage
+        priority = "HIGH" if item.processed and item.processed.priority_score >= 0.7 else "MEDIUM" if item.processed and item.processed.priority_score >= 0.5 else "LOW"
+        category = item.processed.category if item.processed else "unknown"
+        sentiment = item.processed.sentiment if item.processed else "neutral"
+        summary = item.processed.summary if item.processed else item.title
+
+        items_text.append(
+            f"{idx}. [{priority}] [{category}] {item.title}\n"
+            f"   Summary: {summary}\n"
+            f"   Sentiment: {sentiment}\n"
+            f"   Source: {item.source_type}"
+        )
+
+    # Group by category for context
+    category_counts = {}
+    for item in recent_items:
+        if item.processed:
+            cat = item.processed.category
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+
+    # Generate AI summary
+    try:
+        if not settings.anthropic_api_key:
+            return {
+                "customer_id": customer_id,
+                "customer_name": customer.name,
+                "period": "last_24_hours",
+                "total_items": len(recent_items),
+                "summary": "AI summarization is not available (API key not configured)."
+            }
+
+        client = Anthropic(api_key=settings.anthropic_api_key)
+
+        # Get custom prompt from platform settings
+        briefing_settings = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'daily_briefing'
+        ).first()
+
+        # Use custom prompt or fall back to default
+        if briefing_settings and briefing_settings.value.get('prompt'):
+            custom_instructions = briefing_settings.value['prompt']
+        else:
+            # Default prompt
+            custom_instructions = """Generate a concise daily briefing summarizing the key intelligence collected today. Focus on:
+- Most important developments
+- Emerging trends and patterns
+- Notable competitor activities
+- Strategic opportunities and risks
+
+Keep the summary professional, actionable, and under 300 words."""
+
+        # Build the full prompt with context
+        prompt = f"""You are an executive intelligence briefing assistant. Generate a daily briefing for {customer.name} based on the intelligence collected in the last 24 hours.
+
+**Intelligence Overview:**
+- Total items collected: {len(recent_items)}
+- High priority items: {sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7)}
+- Categories: {', '.join([f"{cat} ({count})" for cat, count in category_counts.items()])}
+
+**Top Intelligence Items:**
+{chr(10).join(items_text)}
+
+**Your Task:**
+{custom_instructions}
+
+Write the briefing now:"""
+
+        response = client.messages.create(
+            model=settings.ai_model,
+            max_tokens=1200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        summary_text = response.content[0].text
+
+        # Save summary to database
+        summary_record = DailySummary(
+            customer_id=customer_id,
+            summary_date=datetime.utcnow(),
+            summary_text=summary_text,
+            total_items=len(recent_items),
+            high_priority_count=sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7),
+            items_by_category=category_counts
+        )
+        db.add(summary_record)
+        db.commit()
+        db.refresh(summary_record)
+
+        logger.info(f"Generated and saved new daily summary for {customer.name}")
+
+        return {
+            "customer_id": customer_id,
+            "customer_name": customer.name,
+            "period": "last_24_hours",
+            "total_items": len(recent_items),
+            "high_priority_count": sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7),
+            "items_by_category": category_counts,
+            "summary": summary_text,
+            "cached": False,
+            "generated_at": summary_record.generated_at
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating AI summary: {e}")
+        return {
+            "customer_id": customer_id,
+            "customer_name": customer.name,
+            "period": "last_24_hours",
+            "total_items": len(recent_items),
+            "summary": f"Error generating AI summary: {str(e)}"
+        }

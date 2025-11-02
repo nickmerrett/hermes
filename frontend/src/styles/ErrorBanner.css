@@ -1,0 +1,85 @@
+.error-banner-container {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  margin-bottom: 1px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.error-banner.auth-error {
+  background-color: #fff3cd;
+  border-bottom: 3px solid #ffc107;
+  color: #856404;
+}
+
+.error-banner.general-error {
+  background-color: #f8d7da;
+  border-bottom: 3px solid #dc3545;
+  color: #721c24;
+}
+
+.error-banner-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+}
+
+.error-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.error-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-details strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.error-message {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.9;
+  max-width: 800px;
+}
+
+.error-count {
+  font-size: 12px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.error-dismiss {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 8px;
+  opacity: 0.6;
+}
+
+.error-dismiss:hover {
+  opacity: 1;
+}
+
+.error-banner.auth-error .error-dismiss {
+  color: #856404;
+}
+
+.error-banner.general-error .error-dismiss {
+  color: #721c24;
+}

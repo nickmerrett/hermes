@@ -1,0 +1,344 @@
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("customers")
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("sources")
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("intelligence_items")
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("processed_intelligence")
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("collection_jobs")
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-10-26 11:03:49,560 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:02,849 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:02,999 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:02,999 INFO sqlalchemy.engine.Engine [generated in 0.00018s] (100, 0)
+2025-10-26 11:04:03,000 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:03,003 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items) AS anon_1
+2025-10-26 11:04:03,003 INFO sqlalchemy.engine.Engine [generated in 0.00012s] ()
+2025-10-26 11:04:03,004 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.category AS processed_intelligence_category, count(processed_intelligence.id) AS count_1 
+FROM processed_intelligence GROUP BY processed_intelligence.category
+2025-10-26 11:04:03,004 INFO sqlalchemy.engine.Engine [generated in 0.00010s] ()
+2025-10-26 11:04:03,004 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.sentiment AS processed_intelligence_sentiment, count(processed_intelligence.id) AS count_1 
+FROM processed_intelligence GROUP BY processed_intelligence.sentiment
+2025-10-26 11:04:03,004 INFO sqlalchemy.engine.Engine [generated in 0.00009s] ()
+2025-10-26 11:04:03,005 INFO sqlalchemy.engine.Engine SELECT intelligence_items.source_type AS intelligence_items_source_type, count(intelligence_items.id) AS count_1 
+FROM intelligence_items GROUP BY intelligence_items.source_type
+2025-10-26 11:04:03,005 INFO sqlalchemy.engine.Engine [generated in 0.00007s] ()
+2025-10-26 11:04:03,007 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.collected_date >= ?) AS anon_1
+2025-10-26 11:04:03,007 INFO sqlalchemy.engine.Engine [generated in 0.00012s] ('2025-10-25 11:04:03.005526',)
+2025-10-26 11:04:03,009 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE processed_intelligence.priority_score > ?) AS anon_1
+2025-10-26 11:04:03,009 INFO sqlalchemy.engine.Engine [generated in 0.00010s] (0.7,)
+2025-10-26 11:04:03,010 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers) AS anon_1
+2025-10-26 11:04:03,010 INFO sqlalchemy.engine.Engine [generated in 0.00008s] ()
+2025-10-26 11:04:03,011 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:03,013 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id) AS anon_1
+2025-10-26 11:04:03,013 INFO sqlalchemy.engine.Engine [generated in 0.00007s] ()
+2025-10-26 11:04:03,014 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id ORDER BY intelligence_items.published_date DESC
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:03,014 INFO sqlalchemy.engine.Engine [generated in 0.00013s] (50, 0)
+2025-10-26 11:04:03,015 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:03,015 INFO sqlalchemy.engine.Engine [generated in 0.00008s] (3,)
+2025-10-26 11:04:03,015 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:03,015 INFO sqlalchemy.engine.Engine [cached since 0.000671s ago] (1,)
+2025-10-26 11:04:03,016 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:03,016 INFO sqlalchemy.engine.Engine [cached since 0.0009289s ago] (2,)
+2025-10-26 11:04:03,016 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     10.89.0.3:44212 - "GET /api/customers HTTP/1.1" 200 OK
+2025-10-26 11:04:03,017 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     10.89.0.3:44232 - "GET /api/feed?limit=50 HTTP/1.1" 200 OK
+2025-10-26 11:04:03,017 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     10.89.0.3:44224 - "GET /api/analytics/summary HTTP/1.1" 200 OK
+INFO:     10.89.0.3:49580 - "POST /api/jobs/trigger HTTP/1.1" 200 OK
+2025-10-26 11:04:08,431 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:08,432 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.name = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:08,432 INFO sqlalchemy.engine.Engine [generated in 0.00017s] ('NBN Co', 1, 0)
+2025-10-26 11:04:08,433 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers
+2025-10-26 11:04:08,433 INFO sqlalchemy.engine.Engine [generated in 0.00012s] ()
+2025-10-26 11:04:08,435 INFO sqlalchemy.engine.Engine INSERT INTO collection_jobs (job_type, customer_id, source_id, status, started_at, completed_at, items_collected, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:08,435 INFO sqlalchemy.engine.Engine [generated in 0.00019s] ('scheduled', None, None, 'running', '2025-10-26 11:04:08.435504', None, 0, None)
+2025-10-26 11:04:08,436 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:08,441 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:08,442 INFO sqlalchemy.engine.Engine SELECT collection_jobs.id, collection_jobs.job_type, collection_jobs.customer_id, collection_jobs.source_id, collection_jobs.status, collection_jobs.started_at, collection_jobs.completed_at, collection_jobs.items_collected, collection_jobs.error_message 
+FROM collection_jobs 
+WHERE collection_jobs.id = ?
+2025-10-26 11:04:08,442 INFO sqlalchemy.engine.Engine [generated in 0.00016s] (4,)
+2025-10-26 11:04:08,444 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:08,444 INFO sqlalchemy.engine.Engine [generated in 0.00013s] (1,)
+2025-10-26 11:04:10,139 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:10,139 INFO sqlalchemy.engine.Engine [generated in 0.00014s] ('https://www.techradar.com/computing/wi-fi-broadband/eyeing-up-an-nbn-750-plan-id-save-your-money-and-make-this-financially-savvy-decision-instead', 1, 0)
+2025-10-26 11:04:10,140 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:10,140 INFO sqlalchemy.engine.Engine [cached since 0.0005884s ago] ('https://www.ozbargain.com.au/node/929947', 1, 0)
+2025-10-26 11:04:10,140 INFO sqlalchemy.engine.Engine INSERT INTO intelligence_items (customer_id, source_id, source_type, title, content, url, published_date, collected_date, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:10,140 INFO sqlalchemy.engine.Engine [generated in 0.00010s] (1, None, 'news_api', 'Exetel nbn FTTP or HFC 500/50 Mbps: $140 Cashback (For New Exetel Customers, 12pm-8pm AEDT) @ ShopBack', 'Nice $140 cashback from 12pm-8pm AEDT today. Stack with the Exetel One Plan. $80/month ongoing. 500/50 Mbps. No Cap. Want to cancel your service? The ... (114 characters truncated) ...  One Plan. $80/month ongoing. 500/50 Mbps. No Cap.\r\nWant to cancel your service? Theres no need to give us 30 days notice though you… [+1070 chars]', 'https://www.ozbargain.com.au/node/929947', '2025-10-23 14:47:13.000000', '2025-10-26 11:04:10.140772', '{"source": "Ozbargain.com.au", "author": "trixieb", "url_to_image": "https://files.ozbargain.com.au/n/47/929947l.jpg?h=12add15e"}')
+2025-10-26 11:04:10,141 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:10,144 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:10,146 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id, intelligence_items.customer_id, intelligence_items.source_id, intelligence_items.source_type, intelligence_items.title, intelligence_items.content, intelligence_items.url, intelligence_items.published_date, intelligence_items.collected_date, intelligence_items.raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:10,146 INFO sqlalchemy.engine.Engine [generated in 0.00007s] (4,)
+2025-10-26 11:04:10,146 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:10,146 INFO sqlalchemy.engine.Engine [cached since 1.703s ago] (1,)
+2025-10-26 11:04:12,070 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:12,070 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id) AS anon_1
+2025-10-26 11:04:12,071 INFO sqlalchemy.engine.Engine [cached since 9.058s ago] ()
+2025-10-26 11:04:12,071 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id ORDER BY intelligence_items.published_date DESC
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:12,071 INFO sqlalchemy.engine.Engine [cached since 9.058s ago] (50, 0)
+2025-10-26 11:04:12,072 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:12,072 INFO sqlalchemy.engine.Engine [cached since 9.057s ago] (3,)
+2025-10-26 11:04:12,073 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:12,073 INFO sqlalchemy.engine.Engine [cached since 9.058s ago] (4,)
+2025-10-26 11:04:12,073 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:12,073 INFO sqlalchemy.engine.Engine [cached since 9.058s ago] (1,)
+2025-10-26 11:04:12,073 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:12,074 INFO sqlalchemy.engine.Engine [cached since 9.059s ago] (2,)
+2025-10-26 11:04:12,074 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     10.89.0.3:49594 - "GET /api/feed?limit=50 HTTP/1.1" 200 OK
+2025-10-26 11:04:13,923 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:13,923 INFO sqlalchemy.engine.Engine [cached since 10.91s ago] (4,)
+2025-10-26 11:04:13,925 INFO sqlalchemy.engine.Engine DELETE FROM intelligence_items WHERE intelligence_items.id = ?
+2025-10-26 11:04:13,925 INFO sqlalchemy.engine.Engine [generated in 0.00007s] (4,)
+2025-10-26 11:04:13,925 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine [cached since 3.794s ago] ('https://www.itnews.com.au/news/optus-brings-in-ex-nbn-co-cio-to-run-technology-621248', 1, 0)
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine [cached since 3.794s ago] ('https://nypost.com/2025/10/22/entertainment/morning-show-shocker-as-greta-lee-exits-before-season-4-finale/', 1, 0)
+2025-10-26 11:04:13,933 INFO sqlalchemy.engine.Engine INSERT INTO intelligence_items (customer_id, source_id, source_type, title, content, url, published_date, collected_date, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:13,934 INFO sqlalchemy.engine.Engine [cached since 3.793s ago] (1, None, 'news_api', 'Big ‘Morning Show’ shocker as star Greta Lee exits before Season 4 finale', '“The Morning Show” is having a\xa0cast shakeup, as a major star is exiting the Reese Witherspoon and Jennifer Aniston Apple drama, currently in its f ... (89 characters truncated) ...  shakeup, as a major star is exiting the Reese Witherspoon and Jennifer Aniston Apple drama, currently in its fourth season.\r\n“I’m j… [+3416 chars]', 'https://nypost.com/2025/10/22/entertainment/morning-show-shocker-as-greta-lee-exits-before-season-4-finale/', '2025-10-22 16:23:03.000000', '2025-10-26 11:04:13.933964', '{"source": "New York Post", "author": "Lauren Sarner", "url_to_image": "https://nypost.com/wp-content/uploads/sites/2/2025/10/morning-show-59.jpg?quality=75&strip=all&w=1200"}')
+2025-10-26 11:04:13,934 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:13,936 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:13,936 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id, intelligence_items.customer_id, intelligence_items.source_id, intelligence_items.source_type, intelligence_items.title, intelligence_items.content, intelligence_items.url, intelligence_items.published_date, intelligence_items.collected_date, intelligence_items.raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:13,936 INFO sqlalchemy.engine.Engine [cached since 3.79s ago] (4,)
+2025-10-26 11:04:13,936 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:13,936 INFO sqlalchemy.engine.Engine [cached since 5.493s ago] (1,)
+2025-10-26 11:04:17,405 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:17,405 INFO sqlalchemy.engine.Engine [cached since 14.39s ago] (4,)
+2025-10-26 11:04:17,405 INFO sqlalchemy.engine.Engine DELETE FROM intelligence_items WHERE intelligence_items.id = ?
+2025-10-26 11:04:17,405 INFO sqlalchemy.engine.Engine [cached since 3.481s ago] (4,)
+2025-10-26 11:04:17,406 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine [cached since 7.271s ago] ('https://www.ozbargain.com.au/node/929706', 1, 0)
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine INSERT INTO intelligence_items (customer_id, source_id, source_type, title, content, url, published_date, collected_date, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine [cached since 7.27s ago] (1, None, 'news_api', '50% off nbn Plans for 3 Months: 25/5 $46/M, 50/20 $54/M | FTTP or HFC 500/50 $56/M, 750/50 $64/M, 1000/100 $69/M @ Telstra', 'Get a big 50% off nbn plans for 3 months Switch to Telstra nbn Home Internet and add code ONLINE50 during checkout. How to add your promo code: Selec ... (115 characters truncated) ... nternet and add code ONLINE50 during checkout.\r\nHow to add your promo code:\r\nSelect your plan.\r\nApply code ONLINE50 when reviewin… [+272 chars]', 'https://www.ozbargain.com.au/node/929706', '2025-10-22 06:17:01.000000', '2025-10-26 11:04:17.410509', '{"source": "Ozbargain.com.au", "author": "pinoy_ako07", "url_to_image": "https://files.ozbargain.com.au/n/06/929706x.jpg?h=4bf60c4b"}')
+2025-10-26 11:04:17,410 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:17,412 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:17,413 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id, intelligence_items.customer_id, intelligence_items.source_id, intelligence_items.source_type, intelligence_items.title, intelligence_items.content, intelligence_items.url, intelligence_items.published_date, intelligence_items.collected_date, intelligence_items.raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:17,413 INFO sqlalchemy.engine.Engine [cached since 7.267s ago] (4,)
+2025-10-26 11:04:17,413 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:17,413 INFO sqlalchemy.engine.Engine [cached since 8.969s ago] (1,)
+2025-10-26 11:04:21,606 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:21,606 INFO sqlalchemy.engine.Engine [cached since 18.59s ago] (4,)
+2025-10-26 11:04:21,606 INFO sqlalchemy.engine.Engine DELETE FROM intelligence_items WHERE intelligence_items.id = ?
+2025-10-26 11:04:21,606 INFO sqlalchemy.engine.Engine [cached since 7.682s ago] (4,)
+2025-10-26 11:04:21,607 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine [cached since 11.47s ago] ('https://www.techradar.com/computing/wi-fi-broadband/nbn-500-plan-prices-how-much-should-you-be-paying-for-the-super-speedy-new-tier-ive-done-the-maths', 1, 0)
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine [cached since 11.47s ago] ('https://www.globenewswire.com/news-release/2025/10/20/3169699/9518/en/Northeast-Bank-Announces-Dates-for-Fiscal-2026-First-Quarter-Earnings-Results-and-Conference-Call.html', 1, 0)
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine INSERT INTO intelligence_items (customer_id, source_id, source_type, title, content, url, published_date, collected_date, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:21,611 INFO sqlalchemy.engine.Engine [cached since 11.47s ago] (1, None, 'news_api', 'Northeast Bank Announces Dates for Fiscal 2026 First Quarter Earnings Results and Conference Call', 'PORTLAND, Maine, Oct. 20, 2025 (GLOBE NEWSWIRE) -- Northeast Bank (the “Bank”) (NASDAQ: NBN), a Maine-based bank, announced today it will release its ... (180 characters truncated) ...  (the Bank) (NASDAQ: NBN), a Maine-based bank, announced today it will release its fiscal 2026 first quarter earnings results on Tuesd… [+1662 chars]', 'https://www.globenewswire.com/news-release/2025/10/20/3169699/9518/en/Northeast-Bank-Announces-Dates-for-Fiscal-2026-First-Quarter-Earnings-Results-and-Conference-Call.html', '2025-10-20 17:34:00.000000', '2025-10-26 11:04:21.611846', '{"source": "GlobeNewswire", "author": "Northeast Bank", "url_to_image": "https://ml.globenewswire.com/Resource/Download/ec44d25b-c247-4d5d-9264-10fb03e30aa8"}')
+2025-10-26 11:04:21,612 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:21,614 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:21,614 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id, intelligence_items.customer_id, intelligence_items.source_id, intelligence_items.source_type, intelligence_items.title, intelligence_items.content, intelligence_items.url, intelligence_items.published_date, intelligence_items.collected_date, intelligence_items.raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:21,614 INFO sqlalchemy.engine.Engine [cached since 11.47s ago] (4,)
+2025-10-26 11:04:21,614 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:21,614 INFO sqlalchemy.engine.Engine [cached since 13.17s ago] (1,)
+2025-10-26 11:04:24,266 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:04:24,266 INFO sqlalchemy.engine.Engine [cached since 21.25s ago] (4,)
+2025-10-26 11:04:24,266 INFO sqlalchemy.engine.Engine DELETE FROM intelligence_items WHERE intelligence_items.id = ?
+2025-10-26 11:04:24,266 INFO sqlalchemy.engine.Engine [cached since 10.34s ago] (4,)
+2025-10-26 11:04:24,267 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:24,270 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:24,270 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:24,270 INFO sqlalchemy.engine.Engine [cached since 15.83s ago] (1,)
+2025-10-26 11:04:24,271 INFO sqlalchemy.engine.Engine SELECT sources.id AS sources_id, sources.customer_id AS sources_customer_id, sources.type AS sources_type, sources.name AS sources_name, sources.url AS sources_url, sources.config AS sources_config, sources.last_run AS sources_last_run, sources.last_status AS sources_last_status, sources.enabled AS sources_enabled, sources.created_at AS sources_created_at 
+FROM sources 
+WHERE sources.customer_id = ? AND sources.type = ? AND sources.enabled = 1
+2025-10-26 11:04:24,272 INFO sqlalchemy.engine.Engine [generated in 0.00007s] (1, 'rss')
+2025-10-26 11:04:25,384 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.url = ?
+ LIMIT ? OFFSET ?
+2025-10-26 11:04:25,384 INFO sqlalchemy.engine.Engine [cached since 15.25s ago] ('https://www.itnews.com.au/news/optus-brings-in-ex-nbn-co-cio-to-run-technology-621248?utm_source=feed&utm_medium=rss&utm_campaign=iTnews+', 1, 0)
+2025-10-26 11:04:25,385 INFO sqlalchemy.engine.Engine INSERT INTO intelligence_items (customer_id, source_id, source_type, title, content, url, published_date, collected_date, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:25,385 INFO sqlalchemy.engine.Engine [cached since 15.24s ago] (1, None, 'australian_news', '[ITNews Australia] Optus brings in ex-NBN Co CIO to run technology', 'Current IT chief to leave in March.', 'https://www.itnews.com.au/news/optus-brings-in-ex-nbn-co-cio-to-run-technology-621248?utm_source=feed&utm_medium=rss&utm_campaign=iTnews+', '2025-10-23 06:48:00.000000', '2025-10-26 11:04:25.385183', '{"source": "ITNews Australia", "author": null, "categories": [], "region": "Australia"}')
+2025-10-26 11:04:25,385 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:25,389 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:25,389 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id, intelligence_items.customer_id, intelligence_items.source_id, intelligence_items.source_type, intelligence_items.title, intelligence_items.content, intelligence_items.url, intelligence_items.published_date, intelligence_items.collected_date, intelligence_items.raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:25,389 INFO sqlalchemy.engine.Engine [cached since 15.24s ago] (4,)
+2025-10-26 11:04:25,389 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:25,389 INFO sqlalchemy.engine.Engine [cached since 16.95s ago] (1,)
+2025-10-26 11:04:31,024 INFO sqlalchemy.engine.Engine INSERT INTO processed_intelligence (item_id, summary, category, sentiment, priority_score, entities, tags, processed_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+2025-10-26 11:04:31,024 INFO sqlalchemy.engine.Engine [generated in 0.00017s] (4, "This article reports that a former NBN Co CIO is joining Optus. While not directly about NBN Co's current operations, it indicates movement of senior technical leadership from NBN Co to a major telecom competitor.", 'competitor', 'neutral', 0.5, '{"companies": ["NBN Co", "Optus"], "technologies": [], "people": ["unnamed ex-NBN Co CIO", "unnamed current Optus IT chief"]}', '["executive_movement", "leadership_change", "telecommunications", "cio"]', '2025-10-26 11:04:31.024787')
+2025-10-26 11:04:31,025 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:04:31,029 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:04:31,029 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.id = ?
+2025-10-26 11:04:31,029 INFO sqlalchemy.engine.Engine [generated in 0.00006s] (4,)
+2025-10-26 11:04:31,030 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers 
+WHERE customers.id = ?
+2025-10-26 11:04:31,030 INFO sqlalchemy.engine.Engine [cached since 22.59s ago] (1,)
+2025-10-26 11:04:31,283 INFO sqlalchemy.engine.Engine SELECT collection_jobs.id AS collection_jobs_id, collection_jobs.job_type AS collection_jobs_job_type, collection_jobs.customer_id AS collection_jobs_customer_id, collection_jobs.source_id AS collection_jobs_source_id, collection_jobs.started_at AS collection_jobs_started_at, collection_jobs.error_message AS collection_jobs_error_message 
+FROM collection_jobs 
+WHERE collection_jobs.id = ?
+2025-10-26 11:04:31,283 INFO sqlalchemy.engine.Engine [generated in 0.00010s] (4,)
+2025-10-26 11:04:31,283 INFO sqlalchemy.engine.Engine UPDATE collection_jobs SET status=?, completed_at=?, items_collected=? WHERE collection_jobs.id = ?
+2025-10-26 11:04:31,283 INFO sqlalchemy.engine.Engine [generated in 0.00007s] ('completed', '2025-10-26 11:04:31.282219', 8, 4)
+2025-10-26 11:04:31,284 INFO sqlalchemy.engine.Engine COMMIT
+2025-10-26 11:05:06,103 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:05:06,104 INFO sqlalchemy.engine.Engine SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers
+ LIMIT ? OFFSET ?
+2025-10-26 11:05:06,104 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] (100, 0)
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items) AS anon_1
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ()
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.category AS processed_intelligence_category, count(processed_intelligence.id) AS count_1 
+FROM processed_intelligence GROUP BY processed_intelligence.category
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ()
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.sentiment AS processed_intelligence_sentiment, count(processed_intelligence.id) AS count_1 
+FROM processed_intelligence GROUP BY processed_intelligence.sentiment
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ()
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine SELECT intelligence_items.source_type AS intelligence_items_source_type, count(intelligence_items.id) AS count_1 
+FROM intelligence_items GROUP BY intelligence_items.source_type
+2025-10-26 11:05:06,105 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ()
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items 
+WHERE intelligence_items.collected_date >= ?) AS anon_1
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ('2025-10-25 11:05:06.106014',)
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE processed_intelligence.priority_score > ?) AS anon_1
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] (0.7,)
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT customers.id AS customers_id, customers.name AS customers_name, customers.domain AS customers_domain, customers.keywords AS customers_keywords, customers.competitors AS customers_competitors, customers.stock_symbol AS customers_stock_symbol, customers.config AS customers_config, customers.created_at AS customers_created_at, customers.updated_at AS customers_updated_at 
+FROM customers) AS anon_1
+2025-10-26 11:05:06,106 INFO sqlalchemy.engine.Engine [cached since 63.1s ago] ()
+2025-10-26 11:05:06,107 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-10-26 11:05:06,107 INFO sqlalchemy.engine.Engine SELECT count(*) AS count_1 
+FROM (SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id) AS anon_1
+2025-10-26 11:05:06,107 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] ()
+2025-10-26 11:05:06,107 INFO sqlalchemy.engine.Engine SELECT intelligence_items.id AS intelligence_items_id, intelligence_items.customer_id AS intelligence_items_customer_id, intelligence_items.source_id AS intelligence_items_source_id, intelligence_items.source_type AS intelligence_items_source_type, intelligence_items.title AS intelligence_items_title, intelligence_items.content AS intelligence_items_content, intelligence_items.url AS intelligence_items_url, intelligence_items.published_date AS intelligence_items_published_date, intelligence_items.collected_date AS intelligence_items_collected_date, intelligence_items.raw_data AS intelligence_items_raw_data 
+FROM intelligence_items LEFT OUTER JOIN processed_intelligence ON intelligence_items.id = processed_intelligence.item_id ORDER BY intelligence_items.published_date DESC
+ LIMIT ? OFFSET ?
+2025-10-26 11:05:06,107 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] (50, 0)
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] (3,)
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] (4,)
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] (1,)
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine SELECT processed_intelligence.id AS processed_intelligence_id, processed_intelligence.item_id AS processed_intelligence_item_id, processed_intelligence.summary AS processed_intelligence_summary, processed_intelligence.category AS processed_intelligence_category, processed_intelligence.sentiment AS processed_intelligence_sentiment, processed_intelligence.priority_score AS processed_intelligence_priority_score, processed_intelligence.entities AS processed_intelligence_entities, processed_intelligence.tags AS processed_intelligence_tags, processed_intelligence.processed_date AS processed_intelligence_processed_date 
+FROM processed_intelligence 
+WHERE ? = processed_intelligence.item_id
+2025-10-26 11:05:06,108 INFO sqlalchemy.engine.Engine [cached since 63.09s ago] (2,)
+2025-10-26 11:05:06,109 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-10-26 11:05:06,109 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-10-26 11:05:06,109 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:     10.89.0.3:36942 - "GET /api/analytics/summary HTTP/1.1" 200 OK
+INFO:     10.89.0.3:36932 - "GET /api/customers HTTP/1.1" 200 OK
+INFO:     10.89.0.3:36954 - "GET /api/feed?limit=50 HTTP/1.1" 200 OK

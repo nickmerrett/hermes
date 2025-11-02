@@ -1,0 +1,1168 @@
+#!/usr/bin/env python3
+"""
+Hermes Diagnostics CLI Tool
+
+A unified diagnostic tool for debugging and monitoring the Hermes intelligence platform.
+
+Usage:
+    ./hermes-diag sources                    # Show collection statistics by source
+    ./hermes-diag config                     # Check customer configuration
+    ./hermes-diag reddit                     # Check Reddit items and clustering
+    ./hermes-diag reddit-processed           # Check Reddit processing status
+    ./hermes-diag api-feed [customer]        # Test API feed endpoint
+    ./hermes-diag import-config              # Import from config/customers.yaml → Database
+    ./hermes-diag import-config -f backup.yaml # Import from custom YAML file
+    ./hermes-diag export-config              # Export from Database → config/customers.yaml
+    ./hermes-diag export-config -f backup.yaml # Export to custom YAML file
+    ./hermes-diag export-config --force      # Skip confirmation prompt
+    ./hermes-diag backfill-clustering        # Cluster all unclustered items
+    ./hermes-diag backfill-clustering --force # Skip confirmation prompt
+    ./hermes-diag all                        # Run all diagnostics
+    ./hermes-diag --debug sources            # Show SQL queries (debug mode)
+"""
+
+import sys
+import argparse
+import logging
+sys.path.insert(0, 'backend')
+
+# Parse arguments FIRST to determine debug mode
+# We need to configure logging BEFORE importing database modules
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--debug', action='store_true')
+early_args, _ = parser.parse_known_args()
+
+# Configure SQLAlchemy logging BEFORE importing modules
+if not early_args.debug:
+    # Suppress ALL SQLAlchemy logging (quiet mode)
+    # Use .disabled = True to completely disable logging even when echo=True on engine
+    logging.getLogger('sqlalchemy.engine').disabled = True
+    logging.getLogger('sqlalchemy.pool').disabled = True
+    logging.getLogger('sqlalchemy.dialects').disabled = True
+    logging.getLogger('sqlalchemy.orm').disabled = True
+else:
+    # Debug mode - enable SQLAlchemy logging
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+    logging.getLogger('sqlalchemy.engine').disabled = False
+
+# NOW import database modules
+from app.core.database import SessionLocal
+from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer
+from app.scheduler.collection import sync_customers_to_db, export_customers_to_yaml
+from sqlalchemy import func, desc, and_
+from datetime import datetime, timedelta
+import time
+
+
+class Colors:
+    """ANSI color codes for terminal output"""
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+def print_header(text):
+    """Print a formatted header"""
+    print(f"\n{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{text}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.ENDC}\n")
+
+
+def print_success(text):
+    """Print success message"""
+    print(f"{Colors.GREEN}✅ {text}{Colors.ENDC}")
+
+
+def print_error(text):
+    """Print error message"""
+    print(f"{Colors.RED}❌ {text}{Colors.ENDC}")
+
+
+def print_warning(text):
+    """Print warning message"""
+    print(f"{Colors.YELLOW}⚠️  {text}{Colors.ENDC}")
+
+
+def print_info(text):
+    """Print info message"""
+    print(f"{Colors.BLUE}ℹ️  {text}{Colors.ENDC}")
+
+
+def cmd_sources(args):
+    """Show collection statistics by source type"""
+    print_header("Database Sources Check")
+
+    db = SessionLocal()
+    try:
+        # Total items
+        total_items = db.query(IntelligenceItem).count()
+        print(f"📊 Total items in database: {Colors.BOLD}{total_items}{Colors.ENDC}\n")
+
+        if total_items == 0:
+            print_warning("No items in database yet")
+            print("\nTo collect items:")
+            print("  curl -X POST http://localhost:8000/api/jobs/trigger")
+            return
+
+        # Items by source type
+        print_header("Items by Source Type")
+
+        source_stats = db.query(
+            IntelligenceItem.source_type,
+            func.count(IntelligenceItem.id).label('count')
+        ).group_by(
+            IntelligenceItem.source_type
+        ).order_by(
+            func.count(IntelligenceItem.id).desc()
+        ).all()
+
+        for source_type, count in source_stats:
+            percentage = (count / total_items) * 100
+            print(f"  {source_type:20s} {count:4d} items ({percentage:5.1f}%)")
+
+        # Items by customer
+        print_header("Items by Customer")
+
+        customer_stats = db.query(
+            Customer.name,
+            func.count(IntelligenceItem.id).label('count')
+        ).join(
+            IntelligenceItem
+        ).group_by(
+            Customer.name
+        ).order_by(
+            func.count(IntelligenceItem.id).desc()
+        ).all()
+
+        for customer_name, count in customer_stats:
+            percentage = (count / total_items) * 100
+            print(f"  {customer_name:20s} {count:4d} items ({percentage:5.1f}%)")
+
+        # Recent items (last 24 hours)
+        print_header("Recent Items (Last 24 Hours)")
+
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        recent_stats = db.query(
+            IntelligenceItem.source_type,
+            func.count(IntelligenceItem.id).label('count')
+        ).filter(
+            IntelligenceItem.collected_date >= cutoff
+        ).group_by(
+            IntelligenceItem.source_type
+        ).order_by(
+            func.count(IntelligenceItem.id).desc()
+        ).all()
+
+        if recent_stats:
+            for source_type, count in recent_stats:
+                print(f"  {source_type:20s} {count:4d} items")
+        else:
+            print("  No items collected in last 24 hours")
+
+        # Clustering stats
+        print_header("Clustering Statistics")
+
+        clustered_count = db.query(IntelligenceItem).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).count()
+
+        unique_clusters = db.query(
+            func.count(func.distinct(IntelligenceItem.cluster_id))
+        ).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).scalar()
+
+        multi_source_clusters = db.query(
+            IntelligenceItem.cluster_id
+        ).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).group_by(
+            IntelligenceItem.cluster_id
+        ).having(
+            func.count(IntelligenceItem.id) > 1
+        ).count()
+
+        print(f"  Clustered items: {clustered_count}/{total_items} ({clustered_count/total_items*100:.1f}%)")
+        print(f"  Unique clusters: {unique_clusters}")
+        print(f"  Multi-source stories: {multi_source_clusters}")
+        print(f"  Single-source stories: {unique_clusters - multi_source_clusters}")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_config(args):
+    """Check customer configuration"""
+    print_header("Customer Collection Config Check")
+
+    db = SessionLocal()
+    try:
+        customers = db.query(Customer).all()
+
+        if not customers:
+            print_warning("No customers in database")
+            return
+
+        for customer in customers:
+            print(f"\n{Colors.BOLD}{'='*60}{Colors.ENDC}")
+            print(f"{Colors.BOLD}Customer: {customer.name}{Colors.ENDC}")
+            print(f"{Colors.BOLD}{'='*60}{Colors.ENDC}\n")
+
+            config = customer.config or {}
+
+            print(f"Collection settings:")
+            print(f"  news_enabled:           {config.get('news_enabled', 'NOT SET (defaults to True)')}")
+            print(f"  stock_enabled:          {config.get('stock_enabled', 'NOT SET (defaults to True)')}")
+            print(f"  rss_enabled:            {config.get('rss_enabled', 'NOT SET (defaults to True)')}")
+            print(f"  google_news_enabled:    {config.get('google_news_enabled', 'NOT SET (defaults to True)')}")
+            print(f"  australian_news_enabled:{config.get('australian_news_enabled', 'NOT SET (defaults to True)')}")
+            print(f"  reddit_enabled:         {config.get('reddit_enabled', 'NOT SET (defaults to False)')}")
+            print(f"  linkedin_enabled:       {config.get('linkedin_enabled', 'NOT SET (defaults to False)')}")
+            print(f"  linkedin_user_enabled:  {config.get('linkedin_user_enabled', 'NOT SET (defaults to False)')}")
+
+            if config.get('reddit_enabled'):
+                print_success("Reddit is ENABLED")
+                subreddits = config.get('reddit_subreddits', [])
+                print(f"  Reddit subreddits: {subreddits}")
+            else:
+                print_error("Reddit is DISABLED or not set")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_reddit(args):
+    """Check Reddit items and clustering status"""
+    print_header("Reddit Items Diagnostic")
+
+    db = SessionLocal()
+    try:
+        # Get all Reddit items
+        reddit_items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'reddit'
+        ).all()
+
+        print(f"Total Reddit items: {Colors.BOLD}{len(reddit_items)}{Colors.ENDC}\n")
+
+        if not reddit_items:
+            print_warning("No Reddit items found in database")
+            return
+
+        # Check clustering status
+        primary_count = sum(1 for item in reddit_items if item.is_cluster_primary)
+        clustered_count = sum(1 for item in reddit_items if item.cluster_id is not None)
+
+        print(f"Clustering stats:")
+        print(f"  Items with cluster_id: {clustered_count}/{len(reddit_items)}")
+        print(f"  Items marked as primary: {primary_count}/{len(reddit_items)}")
+        print(f"  Items without cluster_id: {len(reddit_items) - clustered_count}")
+
+        # Show details for each item
+        print_header("Reddit Item Details")
+
+        for i, item in enumerate(reddit_items, 1):
+            print(f"\n{i}. {item.title[:80]}...")
+            print(f"   ID: {item.id}")
+            print(f"   Source Type: '{item.source_type}'")
+            print(f"   Customer ID: {item.customer_id}")
+            print(f"   Published: {item.published_date}")
+            print(f"   Cluster ID: {item.cluster_id}")
+            print(f"   Is Primary: {item.is_cluster_primary}")
+            print(f"   Cluster Members: {item.cluster_member_count}")
+
+            if item.raw_data and 'subreddit' in item.raw_data:
+                print(f"   Subreddit: r/{item.raw_data['subreddit']}")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_reddit_processed(args):
+    """Check Reddit processing status"""
+    print_header("Reddit Items Processing Status")
+
+    db = SessionLocal()
+    try:
+        reddit_items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'reddit'
+        ).all()
+
+        print(f"Total Reddit items: {Colors.BOLD}{len(reddit_items)}{Colors.ENDC}\n")
+
+        if not reddit_items:
+            print_warning("No Reddit items found")
+            return
+
+        # Check processing status
+        processed_count = 0
+        unrelated_count = 0
+        categories = {}
+
+        for item in reddit_items:
+            processed = db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id == item.id
+            ).first()
+
+            print(f"\n{Colors.BOLD}{'='*60}{Colors.ENDC}")
+            print(f"Item {item.id}: {item.title[:60]}...")
+            print(f"{Colors.BOLD}{'='*60}{Colors.ENDC}")
+            print(f"  is_cluster_primary: {item.is_cluster_primary}")
+
+            if processed:
+                processed_count += 1
+                print_success("PROCESSED")
+                print(f"     Category: {processed.category}")
+                print(f"     Sentiment: {processed.sentiment}")
+                print(f"     Priority: {processed.priority_score}")
+
+                cat = processed.category or 'None'
+                categories[cat] = categories.get(cat, 0) + 1
+
+                if processed.category == 'unrelated':
+                    unrelated_count += 1
+                    print_warning("FILTERED OUT (category=unrelated)")
+            else:
+                print_error("NOT PROCESSED")
+
+        # Summary
+        print_header("Summary")
+        print(f"Total Reddit items: {len(reddit_items)}")
+        print(f"Processed: {processed_count}")
+        print(f"Unprocessed: {len(reddit_items) - processed_count}")
+        print(f"Categorized as 'unrelated': {unrelated_count}")
+
+        if categories:
+            print(f"\nCategories breakdown:")
+            for cat, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                print(f"  {cat}: {count}")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_api_feed(args):
+    """Test API feed endpoint"""
+    print_header("Feed API Test")
+
+    db = SessionLocal()
+    try:
+        # Get customers
+        customers = db.query(Customer).all()
+        print("Customers in database:")
+        for customer in customers:
+            print(f"  ID {customer.id}: {customer.name}")
+
+        # Find customer
+        if args.customer:
+            customer = db.query(Customer).filter(Customer.name.ilike(f"%{args.customer}%")).first()
+            if not customer:
+                print_error(f"Customer '{args.customer}' not found!")
+                return
+        else:
+            # Default to first customer
+            customer = customers[0] if customers else None
+            if not customer:
+                print_error("No customers in database!")
+                return
+
+        print(f"\n{Colors.BOLD}Testing feed for: {customer.name} (ID: {customer.id}){Colors.ENDC}")
+
+        # Test clustered=True (Smart Feed)
+        print_header("Smart Feed (clustered=True)")
+
+        query = db.query(IntelligenceItem).join(
+            ProcessedIntelligence,
+            IntelligenceItem.id == ProcessedIntelligence.item_id,
+            isouter=True
+        )
+
+        filters = [
+            IntelligenceItem.customer_id == customer.id,
+            IntelligenceItem.is_cluster_primary == True
+        ]
+
+        query = query.filter(and_(*filters))
+        items = query.order_by(desc(IntelligenceItem.published_date)).limit(50).all()
+
+        print(f"Total items returned by API: {len(items)}")
+
+        # Apply frontend filter (removes unrelated)
+        filtered_items = [
+            item for item in items
+            if not db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id == item.id,
+                ProcessedIntelligence.category == 'unrelated'
+            ).first()
+        ]
+
+        print(f"After frontend 'unrelated' filter: {len(filtered_items)} items")
+
+        # Show Reddit items
+        reddit_items = [item for item in filtered_items if item.source_type == 'reddit']
+        print(f"\n{Colors.BOLD}Reddit items in Smart Feed: {len(reddit_items)}{Colors.ENDC}")
+        for item in reddit_items:
+            print(f"  - {item.title[:60]}...")
+
+        # Test clustered=False (Full Feed)
+        print_header("Full Feed (clustered=False)")
+
+        query = db.query(IntelligenceItem).join(
+            ProcessedIntelligence,
+            IntelligenceItem.id == ProcessedIntelligence.item_id,
+            isouter=True
+        )
+
+        filters = [IntelligenceItem.customer_id == customer.id]
+        query = query.filter(and_(*filters))
+        items = query.order_by(desc(IntelligenceItem.published_date)).limit(50).all()
+
+        print(f"Total items returned by API: {len(items)}")
+
+        filtered_items = [
+            item for item in items
+            if not db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id == item.id,
+                ProcessedIntelligence.category == 'unrelated'
+            ).first()
+        ]
+
+        print(f"After frontend 'unrelated' filter: {len(filtered_items)} items")
+
+        # Show Reddit items
+        reddit_items = [item for item in filtered_items if item.source_type == 'reddit']
+        print(f"\n{Colors.BOLD}Reddit items in Full Feed: {len(reddit_items)}{Colors.ENDC}")
+        for item in reddit_items:
+            processed = db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id == item.id
+            ).first()
+            print(f"  - {item.title[:60]}... (primary: {item.is_cluster_primary})")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_import_config(args):
+    """Import customer config from YAML to database"""
+    print_header("Import Customer Config (YAML → Database)")
+
+    from app.config.settings import settings
+    original_path = settings.customers_config_path
+
+    # Use custom path if provided, otherwise use default from settings
+    if args.file:
+        import_path = args.file
+        print(f"🔄 Importing customers from {import_path} to database...\n")
+        # Temporarily update settings path
+        settings.customers_config_path = import_path
+    else:
+        import_path = settings.customers_config_path
+        print(f"🔄 Importing customers from {import_path} to database...\n")
+
+    db = SessionLocal()
+    try:
+        sync_customers_to_db(db)
+
+        print_success("Import complete!")
+
+        # Show what was imported
+        customers = db.query(Customer).all()
+
+        print(f"\n📊 Customers in database: {len(customers)}")
+
+        for customer in customers:
+            print(f"\n{Colors.BOLD}{'='*60}{Colors.ENDC}")
+            print(f"{Colors.BOLD}Customer: {customer.name}{Colors.ENDC}")
+            print(f"{Colors.BOLD}{'='*60}{Colors.ENDC}")
+
+            config = customer.config or {}
+
+            print(f"  Domain: {customer.domain or 'Not set'}")
+            print(f"  Keywords: {len(customer.keywords or [])} items")
+            print(f"  Competitors: {len(customer.competitors or [])} items")
+            print(f"  Priority keywords: {len(config.get('priority_keywords', []))} items")
+            print(f"  Reddit subreddits: {len(config.get('reddit_subreddits', []))} items")
+            print(f"  RSS feeds: {len(config.get('rss_feeds', []))} items")
+            print(f"  LinkedIn profiles: {len(config.get('linkedin_user_profiles', []))} items")
+            print(f"  Web scrape sources: {len(config.get('web_scrape_sources', []))} items")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Restore original path
+        settings.customers_config_path = original_path
+        db.close()
+
+    print(f"\n{Colors.BOLD}{'='*60}{Colors.ENDC}")
+    print_success("Config imported from YAML to database!")
+    print("\nNext steps:")
+    print("1. Trigger a collection: curl -X POST http://localhost:8000/api/jobs/trigger")
+    print("2. Check: ./hermes-diag sources")
+
+
+def cmd_export_config(args):
+    """Export customer config from database to YAML"""
+    print_header("Export Customer Config (Database → YAML)")
+
+    db = SessionLocal()
+    try:
+        # Use custom path if provided, otherwise use default from settings
+        if args.file:
+            output_path = args.file
+        else:
+            from app.config.settings import settings
+            output_path = settings.customers_config_path
+
+        customers = db.query(Customer).all()
+
+        if not customers:
+            print_warning("No customers in database to export")
+            return
+
+        print(f"📊 Found {len(customers)} customers in database")
+
+        for customer in customers:
+            print(f"   - {customer.name}")
+
+        # Check if file exists
+        import os
+        if os.path.exists(output_path):
+            file_exists_msg = f"\n{Colors.YELLOW}⚠️  File already exists: {output_path}{Colors.ENDC}"
+        else:
+            file_exists_msg = f"\n📝 Will create new file: {output_path}"
+
+        # Confirm with user
+        if not args.force:
+            print(file_exists_msg)
+            response = input("Proceed? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print_error("Export cancelled")
+                return
+
+        print(f"\n🔄 Exporting customers to {output_path}...\n")
+
+        export_path = export_customers_to_yaml(db, output_path)
+
+        print_success(f"Export complete! Wrote to {export_path}")
+
+        # Show summary
+        print(f"\n📝 Exported configuration:")
+        for customer in customers:
+            config = customer.config or {}
+            print(f"\n{Colors.BOLD}Customer: {customer.name}{Colors.ENDC}")
+            print(f"  Keywords: {len(customer.keywords or [])} items")
+            print(f"  Competitors: {len(customer.competitors or [])} items")
+            print(f"  Priority keywords: {len(config.get('priority_keywords', []))} items")
+            print(f"  Reddit subreddits: {len(config.get('reddit_subreddits', []))} items")
+            print(f"  RSS feeds: {len(config.get('rss_feeds', []))} items")
+            print(f"  LinkedIn profiles: {len(config.get('linkedin_user_profiles', []))} items")
+            print(f"  Web scrape sources: {len(config.get('web_scrape_sources', []))} items")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+    print(f"\n{Colors.BOLD}{'='*60}{Colors.ENDC}")
+    print_success("Config exported from database to YAML!")
+
+
+def cmd_linkedin_dates(args):
+    """Check LinkedIn post dates and age"""
+    print_header("LinkedIn Post Dates Check")
+
+    db = SessionLocal()
+    try:
+        # Get most recent LinkedIn posts
+        posts = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).order_by(IntelligenceItem.id.desc()).limit(10).all()
+
+        if not posts:
+            print_warning("No LinkedIn posts found in database")
+            return
+
+        print(f"Found {Colors.BOLD}{len(posts)}{Colors.ENDC} LinkedIn posts")
+        print(f"Current time: {datetime.utcnow()} UTC\n")
+
+        for i, post in enumerate(posts, 1):
+            print(f"{Colors.BOLD}{i}. {post.title[:80]}...{Colors.ENDC}")
+            print(f"   ID: {post.id}")
+            print(f"   Published: {post.published_date}")
+            print(f"   Collected: {post.collected_date}")
+
+            # Calculate age
+            if post.published_date:
+                age = datetime.utcnow() - post.published_date
+                days = age.days
+                hours = age.seconds // 3600
+                print(f"   Age: {days} days, {hours} hours ago")
+
+            if post.raw_data and 'author' in post.raw_data:
+                print(f"   Author: {post.raw_data['author']}")
+
+            print()
+
+    except Exception as e:
+        print_error(f"Error checking dates: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        db.close()
+
+
+def cmd_rebuild_vectors(args):
+    """Rebuild vector store from scratch"""
+    print_header("Rebuild Vector Store")
+
+    # Import here to avoid loading if not needed
+    from app.core.vector_store import get_vector_store
+
+    vector_store = get_vector_store()
+    current_count = vector_store.get_item_count()
+
+    print(f"Current vector store items: {Colors.BOLD}{current_count}{Colors.ENDC}\n")
+
+    db = SessionLocal()
+    try:
+        # Count database items
+        db_count = db.query(IntelligenceItem).count()
+        print(f"Database items: {Colors.BOLD}{db_count}{Colors.ENDC}\n")
+
+        # Confirm with user
+        if not args.force:
+            print(f"{Colors.YELLOW}⚠️  This will delete and rebuild the entire vector store.{Colors.ENDC}")
+            print(f"   This process will:")
+            print(f"   - Delete all {current_count} existing embeddings")
+            print(f"   - Re-embed all {db_count} items from database")
+            print(f"   - Take approximately {int(db_count * 0.5)} seconds\n")
+            response = input("Proceed? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print_error("Rebuild cancelled")
+                return
+
+        print(f"\n🔄 Resetting vector store...")
+        vector_store.reset()
+        print_success("Vector store reset complete")
+
+        # Get all items
+        items = db.query(IntelligenceItem).all()
+        print(f"\n📊 Found {len(items)} items in database")
+
+        if not items:
+            print_warning("No items to add")
+            return
+
+        # Prepare batches
+        item_ids = []
+        texts = []
+        metadatas = []
+
+        print("\n🔄 Preparing embeddings...")
+        for item in items:
+            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+
+            item_ids.append(item.id)
+            texts.append(text_for_embedding)
+            metadatas.append({
+                'customer_id': item.customer_id,
+                'source_type': item.source_type,
+            })
+
+        # Add in batches
+        batch_size = 100
+        total_batches = (len(item_ids) + batch_size - 1) // batch_size
+
+        for i in range(0, len(item_ids), batch_size):
+            batch_ids = item_ids[i:i+batch_size]
+            batch_texts = texts[i:i+batch_size]
+            batch_metadatas = metadatas[i:i+batch_size]
+
+            vector_store.add_items_batch(batch_ids, batch_texts, batch_metadatas)
+
+            batch_num = i // batch_size + 1
+            print(f"   Batch {batch_num}/{total_batches} complete ({len(batch_ids)} items)")
+
+        final_count = vector_store.get_item_count()
+        print(f"\n{Colors.GREEN}✓ Vector store rebuilt successfully!{Colors.ENDC}")
+        print(f"   Total items: {final_count}")
+
+        # Test search
+        print(f"\n🔍 Testing search...")
+        results = vector_store.search("test query", n_results=5)
+        if results['ids'][0]:
+            print_success(f"Search working! Returned {len(results['ids'][0])} results")
+            print(f"   Top result similarity: {results['similarities'][0][0]:.3f}")
+        else:
+            print_warning("Search returned no results (this might be expected for empty stores)")
+
+    except Exception as e:
+        print_error(f"Rebuild failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        db.close()
+
+
+def cmd_delete_linkedin_posts(args):
+    """Delete all LinkedIn posts from database (DESTRUCTIVE)"""
+    print_header("Delete LinkedIn Posts")
+
+    db = SessionLocal()
+    try:
+        # Count posts before deletion
+        count = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).count()
+
+        if count == 0:
+            print_warning("No LinkedIn posts found in database")
+            return
+
+        print(f"Found {Colors.BOLD}{Colors.RED}{count}{Colors.ENDC} LinkedIn posts\n")
+
+        # Strong warning
+        if not args.force:
+            print(f"{Colors.RED}{Colors.BOLD}⚠️  DESTRUCTIVE OPERATION ⚠️{Colors.ENDC}")
+            print(f"{Colors.RED}This will permanently delete ALL {count} LinkedIn posts from the database.{Colors.ENDC}")
+            print(f"{Colors.RED}This action CANNOT be undone.{Colors.ENDC}\n")
+            print(f"Type {Colors.BOLD}'DELETE'{Colors.ENDC} to confirm: ", end='')
+            response = input()
+            if response != 'DELETE':
+                print_error("Delete cancelled")
+                return
+
+        print(f"\n🗑️  Deleting LinkedIn posts...")
+
+        # Delete all LinkedIn posts
+        deleted = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).delete()
+
+        db.commit()
+
+        print_success(f"Successfully deleted {deleted} LinkedIn posts")
+
+    except Exception as e:
+        print_error(f"Error deleting LinkedIn posts: {e}")
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_delete_linkedin_profiles(args):
+    """Delete LinkedIn profile items from database (DESTRUCTIVE)"""
+    print_header("Delete LinkedIn Profile Items")
+
+    db = SessionLocal()
+    try:
+        # Count profile items before deletion
+        count = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user',
+            IntelligenceItem.title.like('[LinkedIn Profile]%')
+        ).count()
+
+        if count == 0:
+            print_warning("No LinkedIn profile items found in database")
+            return
+
+        # Show total LinkedIn posts
+        total_linkedin = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).count()
+
+        print(f"Found {Colors.BOLD}{Colors.RED}{count}{Colors.ENDC} LinkedIn profile items")
+        print(f"Total LinkedIn posts: {Colors.BOLD}{total_linkedin}{Colors.ENDC}\n")
+
+        # Strong warning
+        if not args.force:
+            print(f"{Colors.RED}{Colors.BOLD}⚠️  DESTRUCTIVE OPERATION ⚠️{Colors.ENDC}")
+            print(f"{Colors.RED}This will permanently delete {count} LinkedIn profile items.{Colors.ENDC}")
+            print(f"{Colors.RED}This action CANNOT be undone.{Colors.ENDC}\n")
+            print(f"Type {Colors.BOLD}'DELETE'{Colors.ENDC} to confirm: ", end='')
+            response = input()
+            if response != 'DELETE':
+                print_error("Delete cancelled")
+                return
+
+        print(f"\n🗑️  Deleting LinkedIn profile items...")
+
+        # Delete all LinkedIn profile items
+        deleted = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user',
+            IntelligenceItem.title.like('[LinkedIn Profile]%')
+        ).delete(synchronize_session=False)
+
+        db.commit()
+
+        print_success(f"Successfully deleted {deleted} LinkedIn profile items")
+
+        # Show remaining LinkedIn posts
+        remaining = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).count()
+        print(f"\nRemaining LinkedIn posts: {Colors.BOLD}{remaining}{Colors.ENDC}")
+
+    except Exception as e:
+        print_error(f"Error deleting LinkedIn profile items: {e}")
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_backfill_clustering(args):
+    """Backfill clustering for existing unclustered items"""
+    print_header("Story Clustering Backfill")
+
+    # Import here to avoid loading if not needed
+    from app.core.vector_store import get_vector_store
+    from app.utils.clustering import cluster_item, find_similar_cluster
+
+    db = SessionLocal()
+
+    try:
+        vector_store = get_vector_store()
+
+        # Get total item count
+        total_items = db.query(IntelligenceItem).count()
+        print(f"📊 Total items in database: {Colors.BOLD}{total_items}{Colors.ENDC}\n")
+
+        if total_items == 0:
+            print_warning("No items to cluster")
+            return
+
+        # Get unclustered items
+        unclustered_items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.cluster_id.is_(None)
+        ).order_by(
+            IntelligenceItem.collected_date.desc()
+        ).all()
+
+        unclustered_count = len(unclustered_items)
+        print(f"📋 Unclustered items: {unclustered_count}")
+
+        if unclustered_count == 0:
+            print_success("All items are already clustered!")
+            return
+
+        # Confirm with user
+        if not args.force:
+            print(f"\n{Colors.YELLOW}⚠️  This will cluster {unclustered_count} items.{Colors.ENDC}")
+            response = input("Proceed? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print_error("Backfill cancelled")
+                return
+
+        print(f"\n🔄 Starting clustering process...")
+        print(f"   This may take ~{int(unclustered_count * 0.2)} seconds\n")
+
+        start_time = time.time()
+        clustered_count = 0
+        error_count = 0
+        created_clusters = 0
+        joined_clusters = 0
+
+        # Process items
+        for i, item in enumerate(unclustered_items):
+            try:
+                # Get embedding
+                embedding = vector_store.get_embedding(item.id)
+
+                if not embedding:
+                    print_warning(f"No embedding for item {item.id}: {item.title[:50]}...")
+                    error_count += 1
+                    continue
+
+                if item.cluster_id:
+                    continue
+
+                # Check if joining existing cluster
+                existing_cluster = find_similar_cluster(
+                    item_embedding=embedding,
+                    customer_id=item.customer_id,
+                    published_date=item.published_date or item.collected_date,
+                    db=db,
+                    similarity_threshold=0.50,
+                    time_window_hours=96
+                )
+
+                # Cluster the item
+                cluster_item(
+                    item=item,
+                    item_embedding=embedding,
+                    db=db,
+                    similarity_threshold=0.50
+                )
+
+                clustered_count += 1
+
+                if existing_cluster:
+                    joined_clusters += 1
+                else:
+                    created_clusters += 1
+
+                # Show progress
+                if clustered_count % 20 == 0:
+                    progress = (clustered_count / unclustered_count) * 100
+                    elapsed = time.time() - start_time
+                    rate = clustered_count / elapsed if elapsed > 0 else 0
+                    remaining = (unclustered_count - clustered_count) / rate if rate > 0 else 0
+
+                    print(f"   Progress: {clustered_count}/{unclustered_count} ({progress:.1f}%) "
+                          f"| {rate:.1f} items/sec | ~{int(remaining)}s remaining")
+
+            except Exception as e:
+                print_error(f"Error clustering item {item.id}: {e}")
+                error_count += 1
+                continue
+
+        elapsed_time = time.time() - start_time
+
+        # Results
+        print_header("Backfill Complete!")
+
+        print(f"📈 Results:")
+        print(f"   {Colors.GREEN}✅ Successfully clustered: {clustered_count} items{Colors.ENDC}")
+        print(f"   🆕 New clusters created: {created_clusters}")
+        print(f"   🔗 Items joined existing clusters: {joined_clusters}")
+        if error_count > 0:
+            print(f"   {Colors.RED}❌ Errors: {error_count}{Colors.ENDC}")
+        print(f"   ⏱️  Time taken: {elapsed_time:.1f} seconds")
+        print(f"   ⚡ Speed: {clustered_count / elapsed_time:.1f} items/second")
+
+        # Cluster statistics
+        total_clusters = db.query(func.count(func.distinct(IntelligenceItem.cluster_id))).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).scalar()
+
+        multi_item_clusters = db.query(
+            func.count(func.distinct(IntelligenceItem.cluster_id))
+        ).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).group_by(
+            IntelligenceItem.cluster_id
+        ).having(
+            func.count(IntelligenceItem.id) > 1
+        ).count()
+
+        print(f"\n📊 Cluster Statistics:")
+        print(f"   Total clusters: {total_clusters}")
+        print(f"   Multi-source stories: {multi_item_clusters}")
+        print(f"   Unique stories: {total_clusters - multi_item_clusters}")
+
+        # Example clusters
+        print(f"\n💡 Example multi-source stories:")
+
+        examples = db.query(
+            IntelligenceItem.cluster_id,
+            func.count(IntelligenceItem.id).label('count')
+        ).filter(
+            IntelligenceItem.cluster_id.isnot(None)
+        ).group_by(
+            IntelligenceItem.cluster_id
+        ).having(
+            func.count(IntelligenceItem.id) > 1
+        ).order_by(
+            func.count(IntelligenceItem.id).desc()
+        ).limit(5).all()
+
+        for cluster_id, count in examples:
+            items = db.query(IntelligenceItem).filter(
+                IntelligenceItem.cluster_id == cluster_id
+            ).all()
+
+            primary = next((i for i in items if i.is_cluster_primary), items[0])
+            sources = list(set([i.source_type for i in items]))
+
+            print(f"\n   📰 {primary.title[:70]}...")
+            print(f"      {count} sources: {', '.join(sources)}")
+
+        print_success("\nBackfill complete! Feed is now clustered.")
+
+    except Exception as e:
+        print_error(f"Backfill failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        db.close()
+
+
+def cmd_all(args):
+    """Run all diagnostics"""
+    print(f"{Colors.BOLD}{Colors.BLUE}")
+    print("╔═══════════════════════════════════════════════════════════╗")
+    print("║             HERMES DIAGNOSTICS - FULL SUITE              ║")
+    print("╚═══════════════════════════════════════════════════════════╝")
+    print(f"{Colors.ENDC}\n")
+
+    # Create a namespace object for args
+    class Args:
+        customer = None
+
+    args = Args()
+
+    cmd_sources(args)
+    cmd_config(args)
+    cmd_reddit(args)
+    cmd_reddit_processed(args)
+    cmd_api_feed(args)
+
+
+def main():
+    """Main CLI entry point"""
+    # We already parsed early for --debug flag at module level
+    # Now create the full parser
+    full_parser = argparse.ArgumentParser(
+        description='Hermes Diagnostics CLI - Debugging and monitoring tool',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ./hermes-diag sources                    # Show collection statistics
+  ./hermes-diag config                     # Check customer configuration
+  ./hermes-diag reddit                     # Check Reddit items
+  ./hermes-diag api-feed "ANZ Bank"        # Test API feed for ANZ Bank
+  ./hermes-diag import-config              # Import from config/customers.yaml to DB
+  ./hermes-diag import-config -f backup.yaml # Import from custom YAML file
+  ./hermes-diag export-config              # Export from DB to config/customers.yaml
+  ./hermes-diag export-config -f backup.yaml # Export to custom YAML file
+  ./hermes-diag export-config --force      # Skip confirmation
+  ./hermes-diag backfill-clustering        # Cluster all unclustered items
+  ./hermes-diag backfill-clustering --force # Skip confirmation
+  ./hermes-diag linkedin-dates             # Check LinkedIn post dates and age
+  ./hermes-diag rebuild-vectors            # Rebuild vector store from scratch
+  ./hermes-diag rebuild-vectors --force    # Skip confirmation
+  ./hermes-diag delete-linkedin-posts      # Delete ALL LinkedIn posts (DESTRUCTIVE)
+  ./hermes-diag delete-linkedin-profiles   # Delete LinkedIn profile items only
+  ./hermes-diag all                        # Run all diagnostics
+  ./hermes-diag --debug sources            # Show SQL queries (debug mode)
+        """
+    )
+
+    # Add global --debug flag
+    full_parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show SQL queries and verbose logging'
+    )
+
+    subparsers = full_parser.add_subparsers(dest='command', help='Available commands')
+
+    # sources command
+    subparsers.add_parser('sources', help='Show collection statistics by source type')
+
+    # config command
+    subparsers.add_parser('config', help='Check customer configuration in database')
+
+    # reddit command
+    subparsers.add_parser('reddit', help='Check Reddit items and clustering status')
+
+    # reddit-processed command
+    subparsers.add_parser('reddit-processed', help='Check Reddit processing status')
+
+    # api-feed command
+    api_parser = subparsers.add_parser('api-feed', help='Test API feed endpoint')
+    api_parser.add_argument('customer', nargs='?', help='Customer name to test (optional)')
+
+    # import-config command
+    import_parser = subparsers.add_parser('import-config', help='Import customer config from YAML to database')
+    import_parser.add_argument('--file', '-f', type=str, help='Path to YAML file to import (default: config/customers.yaml)')
+
+    # export-config command
+    export_parser = subparsers.add_parser('export-config', help='Export customer config from database to YAML')
+    export_parser.add_argument('--file', '-f', type=str, help='Path to output YAML file (default: config/customers.yaml)')
+    export_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+
+    # backfill-clustering command
+    backfill_parser = subparsers.add_parser('backfill-clustering', help='Cluster all unclustered items in database')
+    backfill_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+
+    # linkedin-dates command
+    subparsers.add_parser('linkedin-dates', help='Check LinkedIn post dates and age')
+
+    # rebuild-vectors command
+    rebuild_parser = subparsers.add_parser('rebuild-vectors', help='Rebuild vector store from scratch')
+    rebuild_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+
+    # delete-linkedin-posts command (DESTRUCTIVE)
+    delete_posts_parser = subparsers.add_parser('delete-linkedin-posts', help='Delete ALL LinkedIn posts (DESTRUCTIVE)')
+    delete_posts_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+
+    # delete-linkedin-profiles command (DESTRUCTIVE)
+    delete_profiles_parser = subparsers.add_parser('delete-linkedin-profiles', help='Delete LinkedIn profile items only (DESTRUCTIVE)')
+    delete_profiles_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+
+    # all command
+    subparsers.add_parser('all', help='Run all diagnostics')
+
+    args = full_parser.parse_args()
+
+    # Logging was already configured at module level based on --debug flag
+
+    if not args.command:
+        full_parser.print_help()
+        sys.exit(1)
+
+    # Route to appropriate command handler
+    commands = {
+        'sources': cmd_sources,
+        'config': cmd_config,
+        'reddit': cmd_reddit,
+        'reddit-processed': cmd_reddit_processed,
+        'api-feed': cmd_api_feed,
+        'import-config': cmd_import_config,
+        'export-config': cmd_export_config,
+        'backfill-clustering': cmd_backfill_clustering,
+        'linkedin-dates': cmd_linkedin_dates,
+        'rebuild-vectors': cmd_rebuild_vectors,
+        'delete-linkedin-posts': cmd_delete_linkedin_posts,
+        'delete-linkedin-profiles': cmd_delete_linkedin_profiles,
+        'all': cmd_all,
+    }
+
+    handler = commands.get(args.command)
+    if handler:
+        handler(args)
+    else:
+        full_parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

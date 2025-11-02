@@ -1,0 +1,66 @@
+# Australian News Sources Configuration
+# Default sources used when not customized per customer
+
+sources:
+  - key: "itnews"
+    name: "ITNews Australia"
+    feeds:
+      - "https://www.itnews.com.au/RSS/rss.ashx"
+
+  - key: "abc"
+    name: "ABC News Australia"
+    feeds:
+      - "https://www.abc.net.au/news/feed/2942460/rss.xml"
+      - "https://www.abc.net.au/news/feed/51120/rss.xml"  # Business
+      - "https://www.abc.net.au/news/feed/51892/rss.xml"  # Technology
+
+  - key: "afr"
+    name: "Australian Financial Review"
+    feeds:
+      - "https://www.afr.com/rss"
+      - "https://www.afr.com/technology/rss"
+      - "https://www.afr.com/companies/rss"
+
+  - key: "guardian_au"
+    name: "The Guardian Australia"
+    feeds:
+      - "https://www.theguardian.com/au/rss"
+      - "https://www.theguardian.com/au/business/rss"
+      - "https://www.theguardian.com/au/technology/rss"
+
+  - key: "smh"
+    name: "Sydney Morning Herald"
+    feeds:
+      - "https://www.smh.com.au/rss/feed.xml"
+      - "https://www.smh.com.au/rss/business.xml"
+      - "https://www.smh.com.au/rss/technology.xml"
+      - "https://www.smh.com.au/rss/national.xml"
+
+  - key: "theage"
+    name: "The Age"
+    feeds:
+      - "https://www.theage.com.au/rss/feed.xml"
+      - "https://www.theage.com.au/rss/business.xml"
+      - "https://www.theage.com.au/rss/technology.xml"
+      - "https://www.theage.com.au/rss/national.xml"
+
+  # - key: "news_com_au"
+  #   name: "News.com.au"
+  #   feeds:
+  #     - "https://www.news.com.au/feed"
+  #     - "https://www.news.com.au/finance/rss"
+  #     - "https://www.news.com.au/technology/rss"
+  #     - "https://www.news.com.au/national/rss"
+  #   # Commented out - returns 403 Forbidden
+
+  - key: "financial_newswire"
+    name: "Financial Newswire"
+    feeds:
+      - "https://financialnewswire.com.au/feed/"
+
+# To add new sources, just add more entries above:
+#  - key: "your_source_key"
+#    name: "Your Source Name"
+#    feeds:
+#      - "https://example.com.au/rss"
+#      - "https://example.com.au/business/rss"

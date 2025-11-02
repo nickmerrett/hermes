@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: intel-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Timezone configuration
+      - TZ=Australia/Sydney
+      # API Keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NEWS_API_KEY=${NEWS_API_KEY}
+      # Reddit API
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-CustomerIntelligenceTool/1.0}
+      # Application settings
+      - APP_ENV=${APP_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DATABASE_PATH=/app/data/db/intelligence.db
+      - CHROMA_PATH=/app/data/chroma
+      - ENABLE_SCHEDULER=${ENABLE_SCHEDULER:-true}
+      - AI_MODEL=${AI_MODEL:-claude-3-5-sonnet-20241022}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      # LinkedIn Playwright settings
+      - LINKEDIN_EMAIL=${LINKEDIN_EMAIL:-}
+      - LINKEDIN_PASSWORD=${LINKEDIN_PASSWORD:-}
+      - LINKEDIN_HEADLESS=${LINKEDIN_HEADLESS:-true}
+      # X11/Wayland display forwarding for GUI apps (manual login)
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/1000}
+    volumes:
+      - ./data:/app/data:z
+      - ./config:/app/config:ro,z
+      # X11 socket for GUI (XWayland)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Wayland socket (if available)
+      - ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}:${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}:rw
+    # Increase shared memory for Chromium
+    shm_size: '2gb'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: intel-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - TZ=Australia/Sydney
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  data:
+    driver: local
