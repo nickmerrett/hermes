@@ -15,6 +15,7 @@ import asyncio
 import json
 import hashlib
 import re
+import random
 from pathlib import Path
 
 try:
@@ -25,7 +26,37 @@ except ImportError:
 
 from app.collectors.base import RateLimitedCollector
 from app.models.schemas import IntelligenceItemCreate
+from app.models.database import PlatformSettings
 from app.config.settings import settings
+from sqlalchemy.orm import Session
+
+
+def get_linkedin_settings(db: Session = None) -> Dict[str, Any]:
+    """
+    Get LinkedIn collector settings from database
+
+    Returns default conservative settings if database not available or not configured
+    """
+    if db:
+        try:
+            setting = db.query(PlatformSettings).filter(
+                PlatformSettings.key == 'collector_config'
+            ).first()
+
+            if setting and setting.value and 'linkedin' in setting.value:
+                return setting.value['linkedin']
+        except Exception as e:
+            # Database might not be available during initialization
+            pass
+
+    # Return conservative defaults (1 hour per customer)
+    return {
+        'scraping_strategy': 'conservative',
+        'delay_between_profiles_min': 60.0,  # 1 minute
+        'delay_between_profiles_max': 120.0,  # 2 minutes
+        'delay_between_customers_min': 300.0,  # 5 minutes
+        'delay_between_customers_max': 600.0   # 10 minutes
+    }
 
 
 class PlaywrightLinkedInCollector(RateLimitedCollector):
@@ -46,7 +77,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
         LINKEDIN_HEADLESS: Run in headless mode (default: true)
     """
 
-    def __init__(self, customer_config: Dict[str, Any]):
+    def __init__(self, customer_config: Dict[str, Any], db: Session = None):
         super().__init__(customer_config, rate_limit=5)  # Very conservative: 5 profiles/min
 
         if not PLAYWRIGHT_AVAILABLE:
@@ -57,6 +88,15 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
 
         self.user_profiles = customer_config.get('config', {}).get('linkedin_user_profiles', [])
 
+        # Load configurable scraping strategy settings from database
+        linkedin_settings = get_linkedin_settings(db)
+        self.scraping_strategy = linkedin_settings.get('scraping_strategy', 'conservative')
+        self.delay_between_profiles_min = linkedin_settings.get('delay_between_profiles_min', 60.0)
+        self.delay_between_profiles_max = linkedin_settings.get('delay_between_profiles_max', 120.0)
+
+        self.logger.info(f"LinkedIn scraping strategy: {self.scraping_strategy} "
+                        f"(delays: {self.delay_between_profiles_min:.0f}-{self.delay_between_profiles_max:.0f}s between profiles)")
+
         # LinkedIn credentials (optional - for logged-in scraping)
         self.linkedin_email = getattr(settings, 'linkedin_email', None)
         self.linkedin_password = getattr(settings, 'linkedin_password', None)
@@ -64,10 +104,10 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
         # Browser settings
         self.headless = getattr(settings, 'linkedin_headless', True)
 
-        # Session persistence
+        # Session persistence - shared across all customers
         self.session_dir = Path('data/linkedin_sessions')
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        self.session_file = self.session_dir / f'session_{self.customer_id}.json'
+        self.session_file = self.session_dir / 'session_shared.json'
 
         # Anti-detection settings
         self.user_agent = (
@@ -79,9 +119,14 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
     def get_source_type(self) -> str:
         return "linkedin_user"
 
-    async def collect(self) -> List[IntelligenceItemCreate]:
+    async def collect(self, process_items_callback=None) -> List[IntelligenceItemCreate]:
         """
         Collect LinkedIn user profile data using Playwright
+
+        Args:
+            process_items_callback: Optional async callback function to process items
+                                   immediately after each profile is collected.
+                                   Signature: async def callback(items: List[IntelligenceItemCreate]) -> None
 
         Returns:
             List of IntelligenceItemCreate objects
@@ -133,10 +178,18 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                         post_items = await self._collect_profile_posts(
                             page, profile_url, profile_name, profile_role
                         )
+
+                        # Process items immediately if callback provided (for real-time UI updates)
+                        if post_items and process_items_callback:
+                            self.logger.info(f"📤 Processing {len(post_items)} items for {profile_name} immediately")
+                            await process_items_callback(post_items)
+
                         items.extend(post_items)
 
-                        # Small delay between profiles
-                        await asyncio.sleep(2)
+                        # Randomized delay between profiles based on scraping strategy
+                        delay = random.uniform(self.delay_between_profiles_min, self.delay_between_profiles_max)
+                        self.logger.info(f"⏰ Waiting {delay:.1f}s before next profile ({self.scraping_strategy} strategy)")
+                        await asyncio.sleep(delay)
 
                     except Exception as e:
                         self.logger.error(f"Error collecting profile {profile_name}: {e}")
@@ -284,7 +337,8 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
         try:
             # Navigate to profile
             await page.goto(profile_url, wait_until='domcontentloaded')
-            await asyncio.sleep(3)  # Wait for dynamic content
+            # Randomized wait for dynamic content (2-4 seconds)
+            await asyncio.sleep(random.uniform(2.0, 4.0))
 
             # Check if we got blocked
             if 'authwall' in page.url or 'uas/login' in page.url:
@@ -395,7 +449,8 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
             # Navigate to activity page
             activity_url = profile_url.rstrip('/') + '/recent-activity/all/'
             await page.goto(activity_url, wait_until='domcontentloaded')
-            await asyncio.sleep(3)
+            # Randomized wait for posts to load (2-5 seconds)
+            await asyncio.sleep(random.uniform(2.0, 5.0))
 
             # Check if blocked
             if 'authwall' in page.url or 'uas/login' in page.url:
@@ -436,13 +491,62 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
 
                         if post_text and len(post_text) > 20:
                             # Try to get post URL
-                            link_elem = await post.query_selector('a[href*="/posts/"]')
-                            if link_elem:
-                                post_url = await link_elem.get_attribute('href')
-                            else:
-                                # Generate unique URL using hash of content to avoid duplicates
+                            # On recent-activity pages, posts have direct links like:
+                            # https://www.linkedin.com/posts/username_activity-id-hash
+                            post_url = None
+
+                            # Look for the timestamp/date link which is the permalink to the post
+                            # This is the most reliable way to get the actual post URL
+                            link_selectors = [
+                                'a.app-aware-link[href*="/posts/"]',  # Main post permalink (most reliable)
+                                'a[href*="/posts/"]',  # Direct post links
+                                'span.update-components-actor__sub-description a',  # Date link
+                                'a.feed-shared-actor__sub-description-link',  # Actor description link
+                            ]
+
+                            for selector in link_selectors:
+                                try:
+                                    link_elem = await post.query_selector(selector)
+                                    if link_elem:
+                                        href = await link_elem.get_attribute('href')
+                                        if href and '/posts/' in href:
+                                            # Convert relative URLs to absolute
+                                            if href.startswith('/'):
+                                                post_url = f"https://www.linkedin.com{href}"
+                                            elif href.startswith('http'):
+                                                post_url = href
+                                            else:
+                                                post_url = f"https://www.linkedin.com/{href}"
+
+                                            # Clean up URL (remove query params, tracking)
+                                            if '?' in post_url:
+                                                post_url = post_url.split('?')[0]
+
+                                            self.logger.info(f"✓ Found post URL via '{selector}': {post_url}")
+                                            break
+                                except Exception as e:
+                                    self.logger.debug(f"Selector '{selector}' failed: {e}")
+                                    continue
+
+                            # If still no URL, log detailed info for debugging
+                            if not post_url:
+                                self.logger.warning(f"Could not find post URL for {profile_name}")
+
+                                # Try to get any link from the post for debugging
+                                try:
+                                    all_links = await post.query_selector_all('a[href]')
+                                    if all_links:
+                                        self.logger.debug(f"Available links in post: {len(all_links)}")
+                                        for link in all_links[:3]:  # Log first 3 links
+                                            href = await link.get_attribute('href')
+                                            self.logger.debug(f"  Link: {href}")
+                                except:
+                                    pass
+
+                                # Use profile URL with content hash as fallback
                                 content_hash = hashlib.md5(post_text.encode()).hexdigest()[:12]
                                 post_url = f"{profile_url}#post-{content_hash}"
+                                self.logger.warning(f"Using fallback URL: {post_url}")
 
                             # Try to extract post date
                             post_date = datetime.now()  # Default fallback (container timezone)

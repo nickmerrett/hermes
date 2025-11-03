@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core.database import get_db
 from app.models import schemas
@@ -113,11 +113,18 @@ async def get_collection_errors(
     """
     Get collection errors and auth issues
 
-    Returns all collection statuses with errors or auth_required status.
+    Returns collection statuses with errors or auth_required status from the last 24 hours.
     Used to show alert banners in the UI when collectors fail.
+    Errors older than 24 hours are automatically filtered out.
     """
+    # Only show errors from the last 24 hours
+    twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
+
     query = db.query(CollectionStatus).filter(
-        CollectionStatus.status.in_(['error', 'auth_required'])
+        and_(
+            CollectionStatus.status.in_(['error', 'auth_required']),
+            CollectionStatus.updated_at >= twenty_four_hours_ago
+        )
     )
 
     if customer_id:

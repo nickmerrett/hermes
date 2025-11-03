@@ -500,7 +500,20 @@ Hermes is production-ready for internal use with core features fully functional.
 - Add interactive elements (buttons, threads)
 
 ---
+### 15. Move Australian News Sources Configuration into the platofrm modal, rename primary
 
+---
+
+### Bugs ###
+Config what sources are collected hourly, what sources are daily or config for each sources interval and behaviour
+UI Auto Refresh 
+Clearing Alerts behaviour
+fixing being marked as irrelevant
+adding tooltips to buttons
+country focus configuration (per customer)
+daily summary schedule
+
+---
 ## Future Enhancements (Beyond Post-Beta)
 
 ### Additional Features to Consider
@@ -583,5 +596,15 @@ Hermes is production-ready for internal use with core features fully functional.
 
 ---
 
-**Last Updated:** 2025-11-01
+**Last Updated:** 2025-11-03
 **Version:** Beta → 1.0
+
+---
+
+## Recent Additions (November 2025)
+
+### Parallel Collection Architecture ✅
+- Implemented concurrent customer collection (4 workers)
+- Global rate limiter coordination across all sources
+- Incremental LinkedIn processing (items visible immediately)
+- 3x performance improvement (45 min → 5-6 min for 3 customers)

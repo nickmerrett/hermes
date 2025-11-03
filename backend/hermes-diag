@@ -5,20 +5,41 @@ Hermes Diagnostics CLI Tool
 A unified diagnostic tool for debugging and monitoring the Hermes intelligence platform.
 
 Usage:
-    ./hermes-diag sources                    # Show collection statistics by source
-    ./hermes-diag config                     # Check customer configuration
-    ./hermes-diag reddit                     # Check Reddit items and clustering
-    ./hermes-diag reddit-processed           # Check Reddit processing status
-    ./hermes-diag api-feed [customer]        # Test API feed endpoint
-    ./hermes-diag import-config              # Import from config/customers.yaml → Database
-    ./hermes-diag import-config -f backup.yaml # Import from custom YAML file
-    ./hermes-diag export-config              # Export from Database → config/customers.yaml
-    ./hermes-diag export-config -f backup.yaml # Export to custom YAML file
-    ./hermes-diag export-config --force      # Skip confirmation prompt
-    ./hermes-diag backfill-clustering        # Cluster all unclustered items
-    ./hermes-diag backfill-clustering --force # Skip confirmation prompt
-    ./hermes-diag all                        # Run all diagnostics
-    ./hermes-diag --debug sources            # Show SQL queries (debug mode)
+    # Status & Diagnostics
+    ./hermes-diag status                     # Run all diagnostics
+    ./hermes-diag status sources             # Show collection statistics by source
+    ./hermes-diag status config              # Check customer configuration
+
+    # Reddit Tools
+    ./hermes-diag reddit check               # Check Reddit items and clustering
+    ./hermes-diag reddit processed           # Check Reddit processing status
+
+    # LinkedIn Tools
+    ./hermes-diag linkedin login             # Manual LinkedIn login (Playwright browser)
+    ./hermes-diag linkedin dates             # Check LinkedIn post dates and age
+    ./hermes-diag linkedin delete posts      # Delete ALL LinkedIn posts (DESTRUCTIVE)
+    ./hermes-diag linkedin delete profiles   # Delete LinkedIn profile items only
+
+    # Configuration Management
+    ./hermes-diag config import              # Import from config/customers.yaml → Database
+    ./hermes-diag config import -f FILE      # Import from custom YAML file
+    ./hermes-diag config export              # Export from Database → config/customers.yaml
+    ./hermes-diag config export -f FILE      # Export to custom YAML file
+    ./hermes-diag config export --force      # Skip confirmation prompt
+
+    # Maintenance & Repair
+    ./hermes-diag maintenance cluster        # Cluster all unclustered items
+    ./hermes-diag maintenance cluster --force # Skip confirmation
+    ./hermes-diag maintenance vectors        # Rebuild vector store from scratch
+    ./hermes-diag maintenance vectors --force # Skip confirmation
+
+    # Testing & Debugging
+    ./hermes-diag test api-feed [customer]   # Test API feed endpoint
+    ./hermes-diag --debug <command>          # Show SQL queries (debug mode)
+
+    # Legacy Commands (still supported)
+    ./hermes-diag sources                    # Alias for: status sources
+    ./hermes-diag all                        # Alias for: status
 """
 
 import sys
@@ -1024,6 +1045,155 @@ def cmd_backfill_clustering(args):
         db.close()
 
 
+def cmd_linkedin_login(args):
+    """Manual LinkedIn login using Playwright browser automation"""
+    print_header("Manual LinkedIn Login (Playwright)")
+
+    try:
+        import asyncio
+        import json
+        from pathlib import Path
+
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            print_error("Playwright not installed")
+            print()
+            print("Install with:")
+            print("  pip install playwright")
+            print("  playwright install chromium")
+            return
+
+        async def do_manual_login():
+            print("=" * 70)
+            print("This will open a browser window where you can login to LinkedIn.")
+            print()
+            print("After logging in:")
+            print("  1. Complete any security challenges (CAPTCHA, 2FA)")
+            print("  2. Make sure you see your LinkedIn feed")
+            print("  3. Return to this terminal and press Enter")
+            print()
+            print("The session will be saved and reused for automated collection.")
+            print("=" * 70)
+            print()
+
+            input("Press Enter to open browser...")
+
+            # Session storage - shared across all customers
+            session_dir = Path('data/linkedin_sessions')
+            session_dir.mkdir(parents=True, exist_ok=True)
+            session_file = session_dir / 'session_shared.json'
+
+            async with async_playwright() as p:
+                print_info("Launching browser...")
+                browser = await p.chromium.launch(
+                    headless=False,  # NOT headless so you can interact
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                    ]
+                )
+
+                # Create context with realistic settings
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale='en-US',
+                    timezone_id='America/New_York',
+                )
+
+                # Add stealth
+                await context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                """)
+
+                page = await context.new_page()
+
+                # Navigate to LinkedIn login
+                print_info("Opening LinkedIn login page...")
+                await page.goto('https://www.linkedin.com/login')
+
+                print()
+                print("=" * 70)
+                print_success("🌐 BROWSER WINDOW OPENED")
+                print("=" * 70)
+                print()
+                print("Instructions:")
+                print("  1. In the browser window, login to LinkedIn")
+                print("  2. Enter your username and password")
+                print("  3. Complete any security verification (2FA, CAPTCHA, etc.)")
+                print("  4. Wait until you see your LinkedIn feed")
+                print("  5. Come back here and press Enter")
+                print()
+                print_warning("DO NOT close the browser window!")
+                print()
+
+                # Wait for user to login manually
+                input("Press Enter AFTER you have logged in and see your feed...")
+
+                # Check if login was successful
+                current_url = page.url
+                print(f"\nCurrent URL: {current_url}")
+
+                if 'linkedin.com' in current_url and 'login' not in current_url:
+                    print_success("✓ Looks like you're logged in!")
+
+                    # Save the session
+                    print_info("Saving session cookies...")
+                    storage_state = await context.storage_state()
+
+                    with open(session_file, 'w') as f:
+                        json.dump(storage_state, f, indent=2)
+
+                    print_success(f"Session saved to: {session_file}")
+                    print()
+                    print("=" * 70)
+                    print_success("SUCCESS!")
+                    print("=" * 70)
+                    print()
+                    print("Your LinkedIn session has been saved.")
+                    print()
+                    print("✓ This session is shared across ALL customers")
+                    print("✓ All LinkedIn collections will now use this session")
+                    print("✓ No need to login separately for each customer")
+                    print()
+
+                else:
+                    print_warning("Warning: Doesn't look like you're logged in")
+                    print(f"   Expected to see LinkedIn feed, but got: {current_url}")
+                    print()
+
+                    save_anyway = input("Save session anyway? (y/n): ")
+                    if save_anyway.lower() == 'y':
+                        storage_state = await context.storage_state()
+                        with open(session_file, 'w') as f:
+                            json.dump(storage_state, f, indent=2)
+                        print_success(f"Session saved to: {session_file}")
+                    else:
+                        print_error("Session not saved. Try again.")
+
+                # Don't close automatically - let user close browser
+                print()
+                input("Press Enter to close browser and exit...")
+
+                await browser.close()
+                print_info("Browser closed. Goodbye!")
+
+        # Run the async function
+        asyncio.run(do_manual_login())
+
+    except Exception as e:
+        print_error(f"LinkedIn manual login failed: {str(e)}")
+        import traceback
+        if hasattr(args, 'debug') and args.debug:
+            traceback.print_exc()
+
+
 def cmd_all(args):
     """Run all diagnostics"""
     print(f"{Colors.BOLD}{Colors.BLUE}")
@@ -1046,7 +1216,7 @@ def cmd_all(args):
 
 
 def main():
-    """Main CLI entry point"""
+    """Main CLI entry point with hierarchical commands"""
     # We already parsed early for --debug flag at module level
     # Now create the full parser
     full_parser = argparse.ArgumentParser(
@@ -1054,24 +1224,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ./hermes-diag sources                    # Show collection statistics
-  ./hermes-diag config                     # Check customer configuration
-  ./hermes-diag reddit                     # Check Reddit items
-  ./hermes-diag api-feed "ANZ Bank"        # Test API feed for ANZ Bank
-  ./hermes-diag import-config              # Import from config/customers.yaml to DB
-  ./hermes-diag import-config -f backup.yaml # Import from custom YAML file
-  ./hermes-diag export-config              # Export from DB to config/customers.yaml
-  ./hermes-diag export-config -f backup.yaml # Export to custom YAML file
-  ./hermes-diag export-config --force      # Skip confirmation
-  ./hermes-diag backfill-clustering        # Cluster all unclustered items
-  ./hermes-diag backfill-clustering --force # Skip confirmation
-  ./hermes-diag linkedin-dates             # Check LinkedIn post dates and age
-  ./hermes-diag rebuild-vectors            # Rebuild vector store from scratch
-  ./hermes-diag rebuild-vectors --force    # Skip confirmation
-  ./hermes-diag delete-linkedin-posts      # Delete ALL LinkedIn posts (DESTRUCTIVE)
-  ./hermes-diag delete-linkedin-profiles   # Delete LinkedIn profile items only
-  ./hermes-diag all                        # Run all diagnostics
-  ./hermes-diag --debug sources            # Show SQL queries (debug mode)
+  # Status & Diagnostics
+  ./hermes-diag status                     # Run all diagnostics
+  ./hermes-diag status sources             # Show collection statistics
+  ./hermes-diag status config              # Check customer configuration
+
+  # Reddit Tools
+  ./hermes-diag reddit check               # Check Reddit items
+  ./hermes-diag reddit processed           # Check processed status
+
+  # LinkedIn Tools
+  ./hermes-diag linkedin login             # Manual LinkedIn login
+  ./hermes-diag linkedin dates             # Check post dates
+  ./hermes-diag linkedin delete posts      # Delete all posts
+
+  # Configuration
+  ./hermes-diag config import              # Import from YAML to DB
+  ./hermes-diag config export              # Export from DB to YAML
+
+  # Maintenance
+  ./hermes-diag maintenance cluster        # Cluster unclustered items
+  ./hermes-diag maintenance vectors        # Rebuild vector store
+
+  # Testing
+  ./hermes-diag test api-feed "Customer"   # Test API endpoint
+
+  # Legacy (still supported)
+  ./hermes-diag sources                    # Same as: status sources
+  ./hermes-diag all                        # Same as: status
         """
     )
 
@@ -1082,86 +1262,181 @@ Examples:
         help='Show SQL queries and verbose logging'
     )
 
-    subparsers = full_parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = full_parser.add_subparsers(dest='group', help='Command groups')
 
-    # sources command
-    subparsers.add_parser('sources', help='Show collection statistics by source type')
+    # ========== STATUS GROUP ==========
+    status_parser = subparsers.add_parser('status', help='Status and diagnostics')
+    status_subs = status_parser.add_subparsers(dest='subcommand')
+    status_subs.add_parser('sources', help='Show collection statistics by source')
+    status_subs.add_parser('config', help='Check customer configuration')
 
-    # config command
-    subparsers.add_parser('config', help='Check customer configuration in database')
+    # ========== REDDIT GROUP ==========
+    reddit_parser = subparsers.add_parser('reddit', help='Reddit tools')
+    reddit_subs = reddit_parser.add_subparsers(dest='subcommand')
+    reddit_subs.add_parser('check', help='Check Reddit items and clustering')
+    reddit_subs.add_parser('processed', help='Check Reddit processing status')
 
-    # reddit command
-    subparsers.add_parser('reddit', help='Check Reddit items and clustering status')
+    # ========== LINKEDIN GROUP ==========
+    linkedin_parser = subparsers.add_parser('linkedin', help='LinkedIn tools')
+    linkedin_subs = linkedin_parser.add_subparsers(dest='subcommand')
+    linkedin_subs.add_parser('login', help='Manual LinkedIn login (Playwright)')
+    linkedin_subs.add_parser('dates', help='Check LinkedIn post dates')
 
-    # reddit-processed command
-    subparsers.add_parser('reddit-processed', help='Check Reddit processing status')
+    # LinkedIn delete subgroup
+    linkedin_delete = linkedin_subs.add_parser('delete', help='Delete LinkedIn data')
+    linkedin_delete_subs = linkedin_delete.add_subparsers(dest='delete_type')
+    linkedin_delete_posts = linkedin_delete_subs.add_parser('posts', help='Delete ALL posts (DESTRUCTIVE)')
+    linkedin_delete_posts.add_argument('--force', action='store_true', help='Skip confirmation')
+    linkedin_delete_profiles = linkedin_delete_subs.add_parser('profiles', help='Delete profile items (DESTRUCTIVE)')
+    linkedin_delete_profiles.add_argument('--force', action='store_true', help='Skip confirmation')
 
-    # api-feed command
-    api_parser = subparsers.add_parser('api-feed', help='Test API feed endpoint')
-    api_parser.add_argument('customer', nargs='?', help='Customer name to test (optional)')
+    # ========== CONFIG GROUP ==========
+    config_parser = subparsers.add_parser('config', help='Configuration management')
+    config_subs = config_parser.add_subparsers(dest='subcommand')
+    config_import = config_subs.add_parser('import', help='Import from YAML to database')
+    config_import.add_argument('--file', '-f', type=str, help='Path to YAML file')
+    config_export = config_subs.add_parser('export', help='Export from database to YAML')
+    config_export.add_argument('--file', '-f', type=str, help='Path to output YAML file')
+    config_export.add_argument('--force', action='store_true', help='Skip confirmation')
 
-    # import-config command
-    import_parser = subparsers.add_parser('import-config', help='Import customer config from YAML to database')
-    import_parser.add_argument('--file', '-f', type=str, help='Path to YAML file to import (default: config/customers.yaml)')
+    # ========== MAINTENANCE GROUP ==========
+    maintenance_parser = subparsers.add_parser('maintenance', help='Maintenance and repair')
+    maintenance_subs = maintenance_parser.add_subparsers(dest='subcommand')
+    maintenance_cluster = maintenance_subs.add_parser('cluster', help='Cluster all unclustered items')
+    maintenance_cluster.add_argument('--force', action='store_true', help='Skip confirmation')
+    maintenance_vectors = maintenance_subs.add_parser('vectors', help='Rebuild vector store')
+    maintenance_vectors.add_argument('--force', action='store_true', help='Skip confirmation')
 
-    # export-config command
-    export_parser = subparsers.add_parser('export-config', help='Export customer config from database to YAML')
-    export_parser.add_argument('--file', '-f', type=str, help='Path to output YAML file (default: config/customers.yaml)')
-    export_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+    # ========== TEST GROUP ==========
+    test_parser = subparsers.add_parser('test', help='Testing and debugging')
+    test_subs = test_parser.add_subparsers(dest='subcommand')
+    test_api = test_subs.add_parser('api-feed', help='Test API feed endpoint')
+    test_api.add_argument('customer', nargs='?', help='Customer name (optional)')
 
-    # backfill-clustering command
-    backfill_parser = subparsers.add_parser('backfill-clustering', help='Cluster all unclustered items in database')
-    backfill_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
-
-    # linkedin-dates command
-    subparsers.add_parser('linkedin-dates', help='Check LinkedIn post dates and age')
-
-    # rebuild-vectors command
-    rebuild_parser = subparsers.add_parser('rebuild-vectors', help='Rebuild vector store from scratch')
-    rebuild_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
-
-    # delete-linkedin-posts command (DESTRUCTIVE)
-    delete_posts_parser = subparsers.add_parser('delete-linkedin-posts', help='Delete ALL LinkedIn posts (DESTRUCTIVE)')
-    delete_posts_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
-
-    # delete-linkedin-profiles command (DESTRUCTIVE)
-    delete_profiles_parser = subparsers.add_parser('delete-linkedin-profiles', help='Delete LinkedIn profile items only (DESTRUCTIVE)')
-    delete_profiles_parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
-
-    # all command
-    subparsers.add_parser('all', help='Run all diagnostics')
+    # ========== LEGACY COMMANDS (flat, for backwards compatibility) ==========
+    subparsers.add_parser('sources', help='[Legacy] Show collection statistics')
+    subparsers.add_parser('all', help='[Legacy] Run all diagnostics')
+    legacy_reddit = subparsers.add_parser('reddit-processed', help='[Legacy] Check Reddit processing')
+    legacy_linkedin_dates = subparsers.add_parser('linkedin-dates', help='[Legacy] Check LinkedIn dates')
+    legacy_linkedin_login = subparsers.add_parser('linkedin-login', help='[Legacy] LinkedIn manual login')
+    legacy_api = subparsers.add_parser('api-feed', help='[Legacy] Test API endpoint')
+    legacy_api.add_argument('customer', nargs='?', help='Customer name')
+    legacy_import = subparsers.add_parser('import-config', help='[Legacy] Import config')
+    legacy_import.add_argument('--file', '-f', type=str, help='YAML file path')
+    legacy_export = subparsers.add_parser('export-config', help='[Legacy] Export config')
+    legacy_export.add_argument('--file', '-f', type=str, help='YAML file path')
+    legacy_export.add_argument('--force', action='store_true', help='Skip confirmation')
+    legacy_cluster = subparsers.add_parser('backfill-clustering', help='[Legacy] Cluster items')
+    legacy_cluster.add_argument('--force', action='store_true', help='Skip confirmation')
+    legacy_vectors = subparsers.add_parser('rebuild-vectors', help='[Legacy] Rebuild vectors')
+    legacy_vectors.add_argument('--force', action='store_true', help='Skip confirmation')
+    legacy_del_posts = subparsers.add_parser('delete-linkedin-posts', help='[Legacy] Delete LinkedIn posts')
+    legacy_del_posts.add_argument('--force', action='store_true', help='Skip confirmation')
+    legacy_del_profiles = subparsers.add_parser('delete-linkedin-profiles', help='[Legacy] Delete LinkedIn profiles')
+    legacy_del_profiles.add_argument('--force', action='store_true', help='Skip confirmation')
 
     args = full_parser.parse_args()
 
     # Logging was already configured at module level based on --debug flag
 
-    if not args.command:
+    if not args.group:
         full_parser.print_help()
         sys.exit(1)
 
-    # Route to appropriate command handler
-    commands = {
-        'sources': cmd_sources,
-        'config': cmd_config,
-        'reddit': cmd_reddit,
-        'reddit-processed': cmd_reddit_processed,
-        'api-feed': cmd_api_feed,
-        'import-config': cmd_import_config,
-        'export-config': cmd_export_config,
-        'backfill-clustering': cmd_backfill_clustering,
-        'linkedin-dates': cmd_linkedin_dates,
-        'rebuild-vectors': cmd_rebuild_vectors,
-        'delete-linkedin-posts': cmd_delete_linkedin_posts,
-        'delete-linkedin-profiles': cmd_delete_linkedin_profiles,
-        'all': cmd_all,
-    }
+    # Route based on hierarchical or legacy command
+    try:
+        if args.group == 'status':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                cmd_all(args)  # Default: run all diagnostics
+            elif args.subcommand == 'sources':
+                cmd_sources(args)
+            elif args.subcommand == 'config':
+                cmd_config(args)
 
-    handler = commands.get(args.command)
-    if handler:
-        handler(args)
-    else:
-        full_parser.print_help()
-        sys.exit(1)
+        elif args.group == 'reddit':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                print_error("Missing subcommand. Try: reddit check or reddit processed")
+                sys.exit(1)
+            elif args.subcommand == 'check':
+                cmd_reddit(args)
+            elif args.subcommand == 'processed':
+                cmd_reddit_processed(args)
+
+        elif args.group == 'linkedin':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                print_error("Missing subcommand. Try: linkedin login, linkedin dates, or linkedin delete")
+                sys.exit(1)
+            elif args.subcommand == 'login':
+                cmd_linkedin_login(args)
+            elif args.subcommand == 'dates':
+                cmd_linkedin_dates(args)
+            elif args.subcommand == 'delete':
+                if not hasattr(args, 'delete_type') or not args.delete_type:
+                    print_error("Missing delete type. Try: linkedin delete posts or linkedin delete profiles")
+                    sys.exit(1)
+                elif args.delete_type == 'posts':
+                    cmd_delete_linkedin_posts(args)
+                elif args.delete_type == 'profiles':
+                    cmd_delete_linkedin_profiles(args)
+
+        elif args.group == 'config':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                print_error("Missing subcommand. Try: config import or config export")
+                sys.exit(1)
+            elif args.subcommand == 'import':
+                cmd_import_config(args)
+            elif args.subcommand == 'export':
+                cmd_export_config(args)
+
+        elif args.group == 'maintenance':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                print_error("Missing subcommand. Try: maintenance cluster or maintenance vectors")
+                sys.exit(1)
+            elif args.subcommand == 'cluster':
+                cmd_backfill_clustering(args)
+            elif args.subcommand == 'vectors':
+                cmd_rebuild_vectors(args)
+
+        elif args.group == 'test':
+            if not hasattr(args, 'subcommand') or not args.subcommand:
+                print_error("Missing subcommand. Try: test api-feed")
+                sys.exit(1)
+            elif args.subcommand == 'api-feed':
+                cmd_api_feed(args)
+
+        # Legacy flat commands
+        elif args.group == 'sources':
+            cmd_sources(args)
+        elif args.group == 'all':
+            cmd_all(args)
+        elif args.group == 'reddit-processed':
+            cmd_reddit_processed(args)
+        elif args.group == 'linkedin-dates':
+            cmd_linkedin_dates(args)
+        elif args.group == 'linkedin-login':
+            cmd_linkedin_login(args)
+        elif args.group == 'api-feed':
+            cmd_api_feed(args)
+        elif args.group == 'import-config':
+            cmd_import_config(args)
+        elif args.group == 'export-config':
+            cmd_export_config(args)
+        elif args.group == 'backfill-clustering':
+            cmd_backfill_clustering(args)
+        elif args.group == 'rebuild-vectors':
+            cmd_rebuild_vectors(args)
+        elif args.group == 'delete-linkedin-posts':
+            cmd_delete_linkedin_posts(args)
+        elif args.group == 'delete-linkedin-profiles':
+            cmd_delete_linkedin_profiles(args)
+
+        else:
+            full_parser.print_help()
+            sys.exit(1)
+
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user")
+        sys.exit(130)
 
 
 if __name__ == '__main__':

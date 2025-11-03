@@ -113,15 +113,18 @@ class BaseCollector(ABC):
 
         return False
 
-    async def safe_collect(self) -> tuple[List[IntelligenceItemCreate], Optional[str]]:
+    async def safe_collect(self, **kwargs) -> tuple[List[IntelligenceItemCreate], Optional[str]]:
         """
         Safely collect items with error handling
+
+        Args:
+            **kwargs: Additional arguments to pass to collect() (e.g., process_items_callback)
 
         Returns:
             Tuple of (items, error_message)
         """
         try:
-            items = await self.collect()
+            items = await self.collect(**kwargs)
             self.logger.info(
                 f"Collected {len(items)} items from {self.get_source_type()} "
                 f"for customer {self.customer_name}"

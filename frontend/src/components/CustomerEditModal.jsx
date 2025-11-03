@@ -23,7 +23,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
       linkedin_user_profiles: [],
       collection_config: {
         news_enabled: true,
-        stock_enabled: false,
+        yahoo_finance_news_enabled: false,
         rss_enabled: true,
         australian_news_enabled: true,
         google_news_enabled: true,
@@ -70,7 +70,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
           linkedin_user_profiles: config.linkedin_user_profiles || [],
           collection_config: {
             news_enabled: collectionConfig.news_enabled !== undefined ? collectionConfig.news_enabled : true,
-            stock_enabled: collectionConfig.stock_enabled || false,
+            yahoo_finance_news_enabled: collectionConfig.yahoo_finance_news_enabled || collectionConfig.stock_enabled || false,
             rss_enabled: collectionConfig.rss_enabled !== undefined ? collectionConfig.rss_enabled : true,
             australian_news_enabled: collectionConfig.australian_news_enabled !== undefined ? collectionConfig.australian_news_enabled : true,
             google_news_enabled: collectionConfig.google_news_enabled !== undefined ? collectionConfig.google_news_enabled : true,
@@ -680,19 +680,19 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
               <label className="toggle-field">
                 <input
                   type="checkbox"
-                  checked={formData.config.collection_config.stock_enabled}
+                  checked={formData.config.collection_config.yahoo_finance_news_enabled}
                   onChange={(e) => setFormData({
                     ...formData,
                     config: {
                       ...formData.config,
                       collection_config: {
                         ...formData.config.collection_config,
-                        stock_enabled: e.target.checked
+                        yahoo_finance_news_enabled: e.target.checked
                       }
                     }
                   })}
                 />
-                <span>Stock Market</span>
+                <span>Yahoo Finance News</span>
               </label>
               <label className="toggle-field">
                 <input

@@ -1,6 +1,8 @@
 """Collection orchestration - coordinates data gathering from all sources"""
 
+import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Optional, List
 import yaml
@@ -13,9 +15,10 @@ from app.core.vector_store import get_vector_store
 from app.models.database import Customer, Source, IntelligenceItem, ProcessedIntelligence, CollectionJob, CollectionStatus
 from app.utils.deduplication import normalize_url, is_similar_title
 from app.utils.clustering import cluster_item
+from app.utils.rate_limiter import GlobalRateLimiter, TaskQueue
 from app.collectors.news_collector import NewsAPICollector
 from app.collectors.rss_collector import RSSCollector
-from app.collectors.stock_collector import StockCollector
+from app.collectors.yahoo_finance_news_collector import YahooFinanceNewsCollector
 from app.collectors.reddit_collector import RedditCollector
 from app.collectors.hackernews_collector import HackerNewsCollector
 from app.collectors.github_collector import GitHubCollector
@@ -24,11 +27,12 @@ from app.collectors.linkedin_collector import LinkedInCollector, LinkedInUserCol
 
 # Try to import Playwright collector (optional)
 try:
-    from app.collectors.linkedin_playwright_collector import PlaywrightLinkedInCollector
+    from app.collectors.linkedin_playwright_collector import PlaywrightLinkedInCollector, get_linkedin_settings
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     PlaywrightLinkedInCollector = None
+    get_linkedin_settings = None
 from app.collectors.pressrelease_collector import PressReleaseCollector
 from app.collectors.australian_news_collector import AustralianNewsCollector
 from app.collectors.web_scraper_collector import WebScraperCollector
@@ -163,7 +167,7 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
             'github_repos': config.get('github_repos', []),
             'collection_config': {
                 'news_enabled': config.get('news_enabled', True),
-                'stock_enabled': config.get('stock_enabled', False),
+                'yahoo_finance_news_enabled': config.get('yahoo_finance_news_enabled', False),
                 'rss_enabled': config.get('rss_enabled', True),
                 'australian_news_enabled': config.get('australian_news_enabled', True),
                 'google_news_enabled': config.get('google_news_enabled', True),
@@ -339,10 +343,10 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
-    # Collect from stock data
-    if collection_config.get('stock_enabled', True) and customer.stock_symbol:
+    # Collect from Yahoo Finance news
+    if collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol:
         try:
-            collector = StockCollector(customer_config)
+            collector = YahooFinanceNewsCollector(customer_config)
             items, error = await collector.safe_collect()
             if items:
                 await save_and_process_items(items, customer, db)
@@ -350,7 +354,7 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             if error:
                 errors.append(error)
         except Exception as e:
-            error_msg = f"Stock collection error: {str(e)}"
+            error_msg = f"Yahoo Finance news collection error: {str(e)}"
             logger.error(error_msg)
             errors.append(error_msg)
 
@@ -493,13 +497,30 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
         try:
             # Use Playwright collector if available, otherwise fall back to basic collector
             if PLAYWRIGHT_AVAILABLE and PlaywrightLinkedInCollector:
-                logger.info("Using Playwright-based LinkedIn collector")
-                collector = PlaywrightLinkedInCollector(customer_config)
+                logger.info("Using Playwright-based LinkedIn collector with incremental processing")
+                collector = PlaywrightLinkedInCollector(customer_config, db=db)
+
+                # Define callback for incremental item processing (items show up immediately in UI)
+                async def process_linkedin_items_callback(items: List):
+                    """Process and save items immediately after each profile is collected"""
+                    if items:
+                        await save_and_process_items(items, customer, db)
+                        nonlocal items_collected
+                        items_collected += len(items)
+                        logger.info(f"✅ Saved {len(items)} LinkedIn items to database (visible in UI now)")
+
+                # Collect with callback - items are processed as they're collected
+                items, error = await collector.safe_collect(process_items_callback=process_linkedin_items_callback)
+
             else:
                 logger.warning("Playwright not available, using basic LinkedIn collector (limited functionality)")
                 collector = LinkedInUserCollector(customer_config)
+                items, error = await collector.safe_collect()
 
-            items, error = await collector.safe_collect()
+                # For basic collector, save items in bulk (no incremental support)
+                if items:
+                    await save_and_process_items(items, customer, db)
+                    items_collected += len(items)
 
             # Update collection status
             update_collection_status(
@@ -510,11 +531,24 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
                 error_message=error
             )
 
-            if items:
-                await save_and_process_items(items, customer, db)
-                items_collected += len(items)
             if error:
                 errors.append(error)
+
+            # CRITICAL: Add delay after LinkedIn collection to avoid rate limiting across customers
+            # LinkedIn tracks requests globally, not per-customer
+            # Load configured delays from database
+            if get_linkedin_settings:
+                linkedin_settings = get_linkedin_settings(db)
+                delay_min = linkedin_settings.get('delay_between_customers_min', 300.0)
+                delay_max = linkedin_settings.get('delay_between_customers_max', 600.0)
+            else:
+                # Fallback to old aggressive timing if Playwright not available
+                delay_min, delay_max = 10.0, 15.0
+
+            delay = random.uniform(delay_min, delay_max)
+            logger.info(f"⏰ LinkedIn collection complete. Waiting {delay:.1f}s ({delay/60:.1f} min) before next customer to avoid rate limits")
+            await asyncio.sleep(delay)
+
         except Exception as e:
             error_msg = f"LinkedIn user profile collection error: {str(e)}"
             logger.error(error_msg)
@@ -528,6 +562,19 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
                 success=False,
                 error_message=error_msg
             )
+
+            # Still add delay even on error to avoid hammering LinkedIn
+            # Use 30% of configured delay for errors
+            if get_linkedin_settings:
+                linkedin_settings = get_linkedin_settings(db)
+                error_delay_min = linkedin_settings.get('delay_between_customers_min', 300.0) * 0.3
+                error_delay_max = linkedin_settings.get('delay_between_customers_max', 600.0) * 0.3
+            else:
+                error_delay_min, error_delay_max = 5.0, 10.0
+
+            error_delay = random.uniform(error_delay_min, error_delay_max)
+            logger.info(f"⏰ Error occurred. Waiting {error_delay:.1f}s before continuing")
+            await asyncio.sleep(error_delay)
 
     # Collect from Press Release Services
     if collection_config.get('pressrelease_enabled', False):
@@ -814,16 +861,70 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
     return failed_processing_count
 
 
-def run_collection(customer_id: Optional[int] = None):
+async def collect_customer_wrapper(customer_id: int, customer_name: str, global_rate_limiter: GlobalRateLimiter) -> dict:
     """
-    Run collection job
+    Wrapper for collecting a single customer with its own DB session.
+
+    This wrapper ensures each parallel task has its own database session
+    since SQLAlchemy sessions are not thread-safe.
+
+    Args:
+        customer_id: ID of customer to collect for
+        customer_name: Name of customer (for logging)
+        global_rate_limiter: Shared rate limiter instance
+
+    Returns:
+        Dict with collection results
+    """
+    db = SessionLocal()
+
+    try:
+        logger.info(f"Starting parallel collection for customer: {customer_name} (ID: {customer_id})")
+
+        # Load customer in this session (not shared across sessions)
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
+        if not customer:
+            logger.error(f"Customer {customer_id} not found in database")
+            return {
+                'items_collected': 0,
+                'items_failed_processing': 0,
+                'errors': [f"Customer {customer_id} not found"]
+            }
+
+        # Collect for this customer (pass rate limiter for future use)
+        result = await collect_for_customer(customer, db)
+
+        logger.info(
+            f"Completed collection for {customer.name}: "
+            f"{result['items_collected']} items, "
+            f"{len(result['errors'])} errors"
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error collecting for customer {customer_name}: {e}", exc_info=True)
+        return {
+            'items_collected': 0,
+            'items_failed_processing': 0,
+            'errors': [f"Collection failed for {customer_name}: {str(e)}"]
+        }
+    finally:
+        db.close()
+
+
+async def run_collection_async(customer_id: Optional[int] = None, max_concurrent: int = 4):
+    """
+    Run collection job with parallel execution using TaskQueue
 
     Args:
         customer_id: If provided, collect only for this customer.
                     Otherwise, collect for all customers.
+        max_concurrent: Maximum number of customers to collect concurrently
 
-    Note: Database is the source of truth. Customers are managed via UI.
-          Use './hermes-diag sync-config' to import from YAML if needed.
+    Note: Uses GlobalRateLimiter to coordinate rate limits across all sources
+          and TaskQueue for parallel execution of customer collections.
     """
     db = SessionLocal()
 
@@ -839,7 +940,8 @@ def run_collection(customer_id: Optional[int] = None):
             logger.warning("No customers found for collection")
             return
 
-        logger.info(f"Starting collection for {len(customers)} customer(s)")
+        logger.info(f"Starting parallel collection for {len(customers)} customer(s) "
+                   f"with max {max_concurrent} concurrent workers")
 
         # Create collection job record
         job = CollectionJob(
@@ -851,17 +953,49 @@ def run_collection(customer_id: Optional[int] = None):
         db.commit()
         db.refresh(job)
 
-        # Collect for each customer
-        total_items = 0
-        total_failed_processing = 0
-        all_errors = []
+        # Initialize global rate limiter
+        global_rate_limiter = GlobalRateLimiter()
 
-        import asyncio
+        # Initialize task queue with worker pool
+        task_queue = TaskQueue(max_concurrent=max_concurrent)
+        await task_queue.start_workers()
+
+        # Enqueue all customer collections
+        # Pass customer ID and name instead of object to avoid session conflicts
         for customer in customers:
-            result = asyncio.run(collect_for_customer(customer, db))
-            total_items += result['items_collected']
-            total_failed_processing += result.get('items_failed_processing', 0)
-            all_errors.extend(result['errors'])
+            await task_queue.add_task(
+                collect_customer_wrapper,
+                customer.id,
+                customer.name,
+                global_rate_limiter
+            )
+
+        # Wait for all collections to complete
+        await task_queue.wait_completion()
+
+        # Stop workers
+        await task_queue.stop_workers()
+
+        # Aggregate results from all customer collections
+        results = task_queue.get_results()
+        total_items = sum(r['items_collected'] for r in results)
+        total_failed_processing = sum(r.get('items_failed_processing', 0) for r in results)
+        all_errors = []
+        for r in results:
+            all_errors.extend(r['errors'])
+
+        # Add any task-level errors
+        all_errors.extend(task_queue.get_errors())
+
+        # Log rate limiter statistics
+        stats = await global_rate_limiter.get_stats()
+        logger.info("Rate limiter statistics:")
+        for source, stat in stats.items():
+            if stat['current_requests'] > 0:
+                logger.info(
+                    f"  {source}: {stat['current_requests']}/{stat['max_requests']} "
+                    f"requests ({stat['utilization']:.1%} utilization)"
+                )
 
         # Update job status
         job.status = 'completed' if not all_errors else 'completed_with_errors'
@@ -872,7 +1006,10 @@ def run_collection(customer_id: Optional[int] = None):
             job.error_message = '; '.join(all_errors[:5])  # Store first 5 errors
         db.commit()
 
-        logger.info(f"Collection completed: {total_items} items collected ({total_failed_processing} failed AI processing)")
+        logger.info(
+            f"Parallel collection completed: {total_items} items collected "
+            f"({total_failed_processing} failed AI processing), {len(all_errors)} errors"
+        )
 
     except Exception as e:
         logger.error(f"Collection job failed: {e}", exc_info=True)
@@ -884,6 +1021,26 @@ def run_collection(customer_id: Optional[int] = None):
 
     finally:
         db.close()
+
+
+def run_collection(customer_id: Optional[int] = None):
+    """
+    Run collection job (synchronous wrapper for async implementation)
+
+    Args:
+        customer_id: If provided, collect only for this customer.
+                    Otherwise, collect for all customers.
+
+    Note: Database is the source of truth. Customers are managed via UI.
+          Use './hermes-diag sync-config' to import from YAML if needed.
+    """
+    import asyncio
+
+    # Determine concurrent workers based on whether single customer or all
+    max_concurrent = 1 if customer_id else 4
+
+    # Run the async collection
+    asyncio.run(run_collection_async(customer_id, max_concurrent))
 
 
 def purge_old_items(retention_days: int = None):

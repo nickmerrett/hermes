@@ -81,6 +81,13 @@ def get_platform_settings(db: Session = Depends(get_db)):
                 'max_comments_analyze': 15,
                 'posts_per_subreddit': 10,
                 'lookback_days': 7
+            },
+            'linkedin': {
+                'scraping_strategy': 'conservative',  # conservative (1hr), moderate (30min), aggressive (15min)
+                'delay_between_profiles_min': 60.0,  # 1 minute (conservative)
+                'delay_between_profiles_max': 120.0,  # 2 minutes (conservative)
+                'delay_between_customers_min': 300.0,  # 5 minutes (conservative)
+                'delay_between_customers_max': 600.0   # 10 minutes (conservative)
             }
         }
 

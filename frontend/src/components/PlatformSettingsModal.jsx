@@ -114,6 +114,13 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const [redditPostsPerSubreddit, setRedditPostsPerSubreddit] = useState(10);
   const [redditLookbackDays, setRedditLookbackDays] = useState(7);
 
+  // LinkedIn Collector Settings
+  const [linkedinScrapingStrategy, setLinkedinScrapingStrategy] = useState('conservative');
+  const [linkedinDelayProfilesMin, setLinkedinDelayProfilesMin] = useState(60);
+  const [linkedinDelayProfilesMax, setLinkedinDelayProfilesMax] = useState(120);
+  const [linkedinDelayCustomersMin, setLinkedinDelayCustomersMin] = useState(300);
+  const [linkedinDelayCustomersMax, setLinkedinDelayCustomersMax] = useState(600);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -165,6 +172,16 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         setRedditPostsPerSubreddit(reddit.posts_per_subreddit || 10);
         setRedditLookbackDays(reddit.lookback_days || 7);
       }
+
+      // LinkedIn Collector Settings
+      if (settings.collector_config?.linkedin) {
+        const linkedin = settings.collector_config.linkedin;
+        setLinkedinScrapingStrategy(linkedin.scraping_strategy || 'conservative');
+        setLinkedinDelayProfilesMin(linkedin.delay_between_profiles_min || 60);
+        setLinkedinDelayProfilesMax(linkedin.delay_between_profiles_max || 120);
+        setLinkedinDelayCustomersMin(linkedin.delay_between_customers_min || 300);
+        setLinkedinDelayCustomersMax(linkedin.delay_between_customers_max || 600);
+      }
     } catch (err) {
       console.error('Failed to load settings:', err);
       // Not critical, use defaults
@@ -210,6 +227,13 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
             max_comments_analyze: redditMaxCommentsAnalyze,
             posts_per_subreddit: redditPostsPerSubreddit,
             lookback_days: redditLookbackDays
+          },
+          linkedin: {
+            scraping_strategy: linkedinScrapingStrategy,
+            delay_between_profiles_min: linkedinDelayProfilesMin,
+            delay_between_profiles_max: linkedinDelayProfilesMax,
+            delay_between_customers_min: linkedinDelayCustomersMin,
+            delay_between_customers_max: linkedinDelayCustomersMax
           }
         }
       };
@@ -705,6 +729,137 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     <div className="settings-warning">
                       <strong>Performance Note:</strong> Lower engagement thresholds and higher limits will collect more data
                       but may increase noise. Higher AI summarization thresholds reduce API costs.
+                    </div>
+                  </div>
+
+                  {/* LinkedIn Collector Settings */}
+                  <div className="collector-section">
+                    <div className="collector-header">
+                      <h4>LinkedIn Collector</h4>
+                      <p className="collector-description">
+                        Configure rate limiting and scraping strategy to avoid LinkedIn detection and blocking
+                      </p>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">Scraping Strategy</label>
+                      <p className="section-help">Preset timing configurations balancing speed vs. stealth</p>
+
+                      <div className="option-group">
+                        <select
+                          value={linkedinScrapingStrategy}
+                          onChange={(e) => {
+                            const strategy = e.target.value;
+                            setLinkedinScrapingStrategy(strategy);
+
+                            // Update delays based on strategy
+                            if (strategy === 'conservative') {
+                              setLinkedinDelayProfilesMin(60);
+                              setLinkedinDelayProfilesMax(120);
+                              setLinkedinDelayCustomersMin(300);
+                              setLinkedinDelayCustomersMax(600);
+                            } else if (strategy === 'moderate') {
+                              setLinkedinDelayProfilesMin(30);
+                              setLinkedinDelayProfilesMax(60);
+                              setLinkedinDelayCustomersMin(120);
+                              setLinkedinDelayCustomersMax(240);
+                            } else if (strategy === 'aggressive') {
+                              setLinkedinDelayProfilesMin(3);
+                              setLinkedinDelayProfilesMax(6);
+                              setLinkedinDelayCustomersMin(10);
+                              setLinkedinDelayCustomersMax(15);
+                            }
+                          }}
+                          className="settings-select"
+                        >
+                          <option value="conservative">Conservative (Recommended) - ~1 hour/customer</option>
+                          <option value="moderate">Moderate - ~30 min/customer</option>
+                          <option value="aggressive">Aggressive - ~15 min/customer (High risk)</option>
+                        </select>
+                        <p className="option-help">Conservative is slowest but safest. Aggressive is faster but risks getting blocked.</p>
+                      </div>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">Delay Between Profiles</label>
+                      <p className="section-help">Wait time between scraping individual LinkedIn profiles (seconds)</p>
+
+                      <div className="option-row">
+                        <div className="option-group">
+                          <label>Minimum Delay (seconds)</label>
+                          <input
+                            type="number"
+                            min="3"
+                            max="300"
+                            value={linkedinDelayProfilesMin}
+                            onChange={(e) => setLinkedinDelayProfilesMin(parseFloat(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Shortest wait between profiles</p>
+                        </div>
+
+                        <div className="option-group">
+                          <label>Maximum Delay (seconds)</label>
+                          <input
+                            type="number"
+                            min="3"
+                            max="300"
+                            value={linkedinDelayProfilesMax}
+                            onChange={(e) => setLinkedinDelayProfilesMax(parseFloat(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Longest wait between profiles</p>
+                        </div>
+                      </div>
+
+                      <div className="settings-info">
+                        Current range: {linkedinDelayProfilesMin}-{linkedinDelayProfilesMax} seconds
+                        ({(linkedinDelayProfilesMin/60).toFixed(1)}-{(linkedinDelayProfilesMax/60).toFixed(1)} minutes)
+                      </div>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">Delay Between Customers</label>
+                      <p className="section-help">Wait time between collecting different customers (seconds)</p>
+
+                      <div className="option-row">
+                        <div className="option-group">
+                          <label>Minimum Delay (seconds)</label>
+                          <input
+                            type="number"
+                            min="10"
+                            max="3600"
+                            value={linkedinDelayCustomersMin}
+                            onChange={(e) => setLinkedinDelayCustomersMin(parseFloat(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Shortest wait between customers</p>
+                        </div>
+
+                        <div className="option-group">
+                          <label>Maximum Delay (seconds)</label>
+                          <input
+                            type="number"
+                            min="10"
+                            max="3600"
+                            value={linkedinDelayCustomersMax}
+                            onChange={(e) => setLinkedinDelayCustomersMax(parseFloat(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Longest wait between customers</p>
+                        </div>
+                      </div>
+
+                      <div className="settings-info">
+                        Current range: {linkedinDelayCustomersMin}-{linkedinDelayCustomersMax} seconds
+                        ({(linkedinDelayCustomersMin/60).toFixed(1)}-{(linkedinDelayCustomersMax/60).toFixed(1)} minutes)
+                      </div>
+                    </div>
+
+                    <div className="settings-warning">
+                      <strong>⚠️ Important:</strong> LinkedIn actively detects and blocks scraping. Conservative settings are strongly
+                      recommended. Aggressive settings may result in account suspension or IP blocking. Randomized delays help
+                      appear more human-like.
                     </div>
                   </div>
                 </div>

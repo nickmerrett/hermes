@@ -158,10 +158,9 @@ function App() {
   }
 
   const triggerCollection = async () => {
+    // Global collection - collect for ALL customers
     try {
-      await axios.post(`${API_URL}/jobs/trigger`, {}, {
-        params: selectedCustomer ? { customer_id: selectedCustomer } : {}
-      })
+      await axios.post(`${API_URL}/jobs/trigger`, {})
       // Refresh feed and summary after collection
       setTimeout(() => {
         fetchFeed()
@@ -169,6 +168,24 @@ function App() {
       }, 2000)
     } catch (err) {
       console.error('Failed to trigger collection:', err)
+    }
+  }
+
+  const triggerCustomerCollection = async () => {
+    // Per-customer collection - only collect for selected customer
+    if (!selectedCustomer) return
+
+    try {
+      await axios.post(`${API_URL}/jobs/trigger`, {}, {
+        params: { customer_id: selectedCustomer }
+      })
+      // Refresh feed and summary after collection
+      setTimeout(() => {
+        fetchFeed()
+        fetchDailySummary()
+      }, 2000)
+    } catch (err) {
+      console.error('Failed to trigger customer collection:', err)
     }
   }
 
@@ -312,7 +329,7 @@ function App() {
           <button onClick={() => setShowSettingsModal(true)} className="btn-secondary">
             ⚙ Settings
           </button>
-          <button onClick={triggerCollection} className="btn-primary">
+          <button onClick={triggerCollection} className="btn-primary" title="Trigger collection for ALL customers">
             Trigger Collection
           </button>
         </div>
@@ -347,13 +364,22 @@ function App() {
             <h2>{currentCustomer.name}</h2>
             {currentCustomer.domain && <span className="domain">{currentCustomer.domain}</span>}
           </div>
-          <button
-            className="btn-settings-header"
-            onClick={() => setEditingCustomer(currentCustomer)}
-            title="Customer settings"
-          >
-            ⚙
-          </button>
+          <div className="customer-header-actions">
+            <button
+              className="btn-trigger-collection"
+              onClick={triggerCustomerCollection}
+              title="Trigger collection for this customer only"
+            >
+              ▶ Collect
+            </button>
+            <button
+              className="btn-settings-header"
+              onClick={() => setEditingCustomer(currentCustomer)}
+              title="Customer settings"
+            >
+              ⚙
+            </button>
+          </div>
         </div>
       )}
 
