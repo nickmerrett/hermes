@@ -249,6 +249,7 @@ def cmd_config(args):
             print(f"  google_news_enabled:    {config.get('google_news_enabled', 'NOT SET (defaults to True)')}")
             print(f"  australian_news_enabled:{config.get('australian_news_enabled', 'NOT SET (defaults to True)')}")
             print(f"  reddit_enabled:         {config.get('reddit_enabled', 'NOT SET (defaults to False)')}")
+            print(f"  youtube_enabled:        {config.get('youtube_enabled', 'NOT SET (defaults to False)')}")
             print(f"  linkedin_enabled:       {config.get('linkedin_enabled', 'NOT SET (defaults to False)')}")
             print(f"  linkedin_user_enabled:  {config.get('linkedin_user_enabled', 'NOT SET (defaults to False)')}")
 
@@ -258,6 +259,18 @@ def cmd_config(args):
                 print(f"  Reddit subreddits: {subreddits}")
             else:
                 print_error("Reddit is DISABLED or not set")
+
+            if config.get('youtube_enabled'):
+                print_success("YouTube is ENABLED")
+                channels = config.get('youtube_channels', [])
+                print(f"  YouTube channels: {len(channels)} configured")
+                for channel in channels:
+                    if isinstance(channel, dict):
+                        print(f"    - {channel.get('name', 'Unknown')} ({channel.get('channel_id', 'No ID')})")
+                    else:
+                        print(f"    - {channel}")
+            else:
+                print_error("YouTube is DISABLED or not set")
 
     except Exception as e:
         print_error(f"Error: {e}")
@@ -529,6 +542,7 @@ def cmd_import_config(args):
             print(f"  Competitors: {len(customer.competitors or [])} items")
             print(f"  Priority keywords: {len(config.get('priority_keywords', []))} items")
             print(f"  Reddit subreddits: {len(config.get('reddit_subreddits', []))} items")
+            print(f"  YouTube channels: {len(config.get('youtube_channels', []))} items")
             print(f"  RSS feeds: {len(config.get('rss_feeds', []))} items")
             print(f"  LinkedIn profiles: {len(config.get('linkedin_user_profiles', []))} items")
             print(f"  Web scrape sources: {len(config.get('web_scrape_sources', []))} items")
@@ -603,6 +617,7 @@ def cmd_export_config(args):
             print(f"  Competitors: {len(customer.competitors or [])} items")
             print(f"  Priority keywords: {len(config.get('priority_keywords', []))} items")
             print(f"  Reddit subreddits: {len(config.get('reddit_subreddits', []))} items")
+            print(f"  YouTube channels: {len(config.get('youtube_channels', []))} items")
             print(f"  RSS feeds: {len(config.get('rss_feeds', []))} items")
             print(f"  LinkedIn profiles: {len(config.get('linkedin_user_profiles', []))} items")
             print(f"  Web scrape sources: {len(config.get('web_scrape_sources', []))} items")

@@ -63,7 +63,6 @@ class CustomerResearchService:
                 'rss_feeds': [],
                 'twitter_handle': None,
                 'linkedin_company_url': None,
-                'github_org': None,
                 'subreddits': []
             }
         }
@@ -125,8 +124,7 @@ Return ONLY a JSON object (no explanatory text, no markdown formatting):
   "stock_symbol": "SYMB",
   "industry": "Industry name",
   "linkedin_company_url": "https://linkedin.com/company/name",
-  "twitter_handle": "@company",
-  "github_org": "orgname"
+  "twitter_handle": "@company"
 }}
 
 Rules:
@@ -159,8 +157,7 @@ Rules:
                 'stock_symbol': None,
                 'industry': None,
                 'linkedin_company_url': None,
-                'twitter_handle': None,
-                'github_org': None
+                'twitter_handle': None
             }
             defaults.update(result)
 
@@ -176,8 +173,7 @@ Rules:
                 'stock_symbol': None,
                 'industry': None,
                 'linkedin_company_url': None,
-                'twitter_handle': None,
-                'github_org': None
+                'twitter_handle': None
             }
 
     async def _fetch_page_content(self, url: str) -> Optional[str]:
@@ -505,8 +501,6 @@ Use empty arrays if unsure. Return ONLY the JSON object, nothing else."""
     linkedin_company_url: {f'"{research_data.get("linkedin_company_url")}"' if research_data.get('linkedin_company_url') else 'null'}
 {executives_yaml if executives_yaml else ""}
 
-    github_org: {f'"{research_data.get("data_sources", {}).get("github_org")}"' if research_data.get('data_sources', {}).get('github_org') else 'null'}
-
     collection_config:
       news_enabled: true
       stock_enabled: {str(stock_symbol is not None).lower()}
@@ -517,8 +511,6 @@ Use empty arrays if unsure. Return ONLY the JSON object, nothing else."""
       reddit_enabled: {str(bool(subreddits_yaml)).lower()}
       reddit_subreddits:{subreddits_yaml if subreddits_yaml else ' []'}
 
-      hackernews_enabled: false
-      github_enabled: {str(bool(research_data.get('data_sources', {}).get('github_org'))).lower()}
       twitter_enabled: false
       linkedin_enabled: {str(bool(research_data.get('linkedin_company_url'))).lower()}
       linkedin_user_enabled: {str(bool(executives_yaml)).lower()}

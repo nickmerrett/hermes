@@ -9,6 +9,12 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.models import schemas
 from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus
+from app.utils.smart_feed import (
+    get_smart_feed_settings,
+    calculate_effective_priority,
+    should_include_item,
+    apply_diversity_control
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,8 +40,19 @@ async def get_feed(
     Get intelligence feed with filtering and pagination
 
     Returns items sorted by published_date (newest first)
-    When clustered=True, only returns primary items (one per story cluster)
-    Smart Feed (clustered=True) filters out low priority items by default (>= 0.3)
+
+    Smart Feed (clustered=True):
+    - Shows only primary items (one per story cluster)
+    - Applies intelligent filtering based on platform settings:
+      * Priority thresholds (configurable minimum)
+      * Category preferences (always show preferred categories)
+      * Source preferences (always show preferred sources)
+      * Recency boost (boost priority for recent items)
+      * Diversity control (prevent single source domination)
+
+    Full Feed (clustered=False):
+    - Shows all items including duplicates from different sources
+    - No smart filtering applied
     """
     # Build query
     query = db.query(IntelligenceItem).join(
@@ -46,6 +63,9 @@ async def get_feed(
 
     # Apply filters
     filters = []
+
+    # Always filter out ignored items
+    filters.append(IntelligenceItem.ignored == False)
 
     if customer_id:
         filters.append(IntelligenceItem.customer_id == customer_id)
@@ -65,14 +85,27 @@ async def get_feed(
     if sentiment:
         filters.append(ProcessedIntelligence.sentiment == sentiment)
 
-    # Smart Feed: Default minimum priority threshold of 0.3 to filter low-priority items
-    # Full Feed: No default threshold (show everything)
-    # Users can override by explicitly passing min_priority parameter
-    if min_priority is not None:
+    # Load smart feed configuration if using Smart Feed mode
+    smart_config = None
+    if clustered:
+        smart_config = get_smart_feed_settings(db)
+        logger.debug(f"Smart Feed enabled: {smart_config.get('enabled', True)}")
+        logger.debug(f"Smart Feed min_priority: {smart_config.get('min_priority', 0.3)}")
+
+        # Log enabled preferences
+        cat_prefs = smart_config.get('category_preferences', {})
+        enabled_cats = [k for k, v in cat_prefs.items() if v]
+        logger.debug(f"Smart Feed preferred categories: {enabled_cats}")
+
+        src_prefs = smart_config.get('source_preferences', {})
+        enabled_srcs = [k for k, v in src_prefs.items() if v]
+        logger.debug(f"Smart Feed preferred sources: {enabled_srcs}")
+
+    # Apply explicit min_priority if provided
+    # For Smart Feed, skip priority filter here - we'll apply smart filtering after query
+    if min_priority is not None and not clustered:
+        # Only apply to Full Feed if explicitly provided
         filters.append(ProcessedIntelligence.priority_score >= min_priority)
-    elif clustered:
-        # Default threshold for Smart Feed only
-        filters.append(ProcessedIntelligence.priority_score >= 0.3)
 
     if search:
         search_filter = f"%{search}%"
@@ -88,13 +121,51 @@ async def get_feed(
     if filters:
         query = query.filter(and_(*filters))
 
-    # Get total count
-    total = query.count()
+    # For Smart Feed, we need to fetch more items than requested
+    # because filtering will reduce the count
+    fetch_limit = limit * 3 if (clustered and smart_config and smart_config.get('enabled', True)) else limit
 
-    # Apply sorting and pagination
-    items = query.order_by(
+    # Apply sorting and get items
+    all_items = query.order_by(
         desc(IntelligenceItem.published_date)
-    ).offset(offset).limit(limit).all()
+    ).offset(offset).limit(fetch_limit).all()
+
+    # Apply smart feed filtering if enabled
+    if clustered and smart_config and smart_config.get('enabled', True):
+        filtered_items = []
+
+        # Get all processed intelligence data for these items
+        item_ids = [item.id for item in all_items]
+        processed_map = {}
+        if item_ids:
+            processed_list = db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id.in_(item_ids)
+            ).all()
+            processed_map = {p.item_id: p for p in processed_list}
+
+        for item in all_items:
+            # Get processed intelligence data
+            processed = processed_map.get(item.id)
+
+            # Calculate effective priority with recency boost
+            effective_priority = calculate_effective_priority(item, processed, smart_config)
+
+            # Check if item should be included
+            if should_include_item(item, processed, effective_priority, smart_config):
+                filtered_items.append(item)
+
+        logger.info(f"Smart Feed filtered {len(all_items)} -> {len(filtered_items)} items")
+
+        # Apply diversity control
+        filtered_items = apply_diversity_control(filtered_items, smart_config)
+
+        # Limit to requested amount
+        items = filtered_items[:limit]
+        total = len(filtered_items)
+    else:
+        # Full Feed or Smart Feed disabled - use all items
+        items = all_items
+        total = query.count()
 
     return schemas.FeedResponse(
         items=items,
@@ -123,7 +194,8 @@ async def get_collection_errors(
     query = db.query(CollectionStatus).filter(
         and_(
             CollectionStatus.status.in_(['error', 'auth_required']),
-            CollectionStatus.updated_at >= twenty_four_hours_ago
+            CollectionStatus.updated_at >= twenty_four_hours_ago,
+            CollectionStatus.dismissed == False  # Don't show dismissed errors
         )
     )
 
@@ -135,6 +207,7 @@ async def get_collection_errors(
     return {
         "errors": [
             {
+                "id": e.id,  # Include ID for dismissing
                 "customer_id": e.customer_id,
                 "source_type": e.source_type,
                 "status": e.status,
@@ -186,9 +259,57 @@ async def get_cluster_items(cluster_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.patch("/{item_id}/ignore")
+async def ignore_item(item_id: int, db: Session = Depends(get_db)):
+    """Mark an intelligence item as ignored (hide from feed)"""
+    item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Intelligence item not found")
+
+    item.ignored = True
+    item.ignored_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"Marked intelligence item {item_id} as ignored")
+    return {"message": "Item ignored successfully", "item_id": item_id}
+
+
+@router.patch("/{item_id}/unignore")
+async def unignore_item(item_id: int, db: Session = Depends(get_db)):
+    """Un-ignore an intelligence item (show in feed again)"""
+    item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Intelligence item not found")
+
+    item.ignored = False
+    item.ignored_at = None
+    db.commit()
+
+    logger.info(f"Unmarked intelligence item {item_id} as ignored")
+    return {"message": "Item un-ignored successfully", "item_id": item_id}
+
+
+@router.patch("/collection-errors/{error_id}/dismiss")
+async def dismiss_error(error_id: int, db: Session = Depends(get_db)):
+    """Dismiss a collection error (hide from error banner)"""
+    error = db.query(CollectionStatus).filter(CollectionStatus.id == error_id).first()
+
+    if not error:
+        raise HTTPException(status_code=404, detail="Collection error not found")
+
+    error.dismissed = True
+    error.dismissed_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"Dismissed collection error {error_id} for customer {error.customer_id}, source {error.source_type}")
+    return {"message": "Error dismissed successfully", "error_id": error_id}
+
+
 @router.delete("/{item_id}", status_code=204)
 async def delete_item(item_id: int, db: Session = Depends(get_db)):
-    """Delete an intelligence item"""
+    """Delete an intelligence item permanently (use ignore instead if you just want to hide it)"""
     item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
 
     if not item:

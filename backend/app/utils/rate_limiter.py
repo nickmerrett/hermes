@@ -37,8 +37,6 @@ class GlobalRateLimiter:
             'reddit': (60, 60),        # 60 requests per minute (Reddit API limit)
             'news': (100, 60),         # 100 requests per minute
             'rss': (120, 60),          # 120 requests per minute (generous)
-            'github': (60, 60),        # 60 requests per minute (GitHub API limit)
-            'hackernews': (100, 60),   # 100 requests per minute
             'yahoo_finance_news': (30, 60),  # 30 requests per minute (scraping)
             'pressrelease': (60, 60),  # 60 requests per minute
             'web_scraper': (30, 60),   # 30 requests per minute (conservative)

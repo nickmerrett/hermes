@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     github_token: str = ""
 
+    youtube_api_key: str = ""
+
     # Third-party services (optional)
     proxycurl_api_key: str = ""  # For LinkedIn data (deprecated)
 

@@ -20,10 +20,9 @@ from app.collectors.news_collector import NewsAPICollector
 from app.collectors.rss_collector import RSSCollector
 from app.collectors.yahoo_finance_news_collector import YahooFinanceNewsCollector
 from app.collectors.reddit_collector import RedditCollector
-from app.collectors.hackernews_collector import HackerNewsCollector
-from app.collectors.github_collector import GitHubCollector
 from app.collectors.twitter_collector import TwitterCollector
 from app.collectors.linkedin_collector import LinkedInCollector, LinkedInUserCollector
+from app.collectors.youtube_collector import YouTubeCollector
 
 # Try to import Playwright collector (optional)
 try:
@@ -163,8 +162,6 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
             'linkedin_company_id': config.get('linkedin_company_id'),
             'linkedin_company_url': config.get('linkedin_company_url'),
             'linkedin_user_profiles': config.get('linkedin_user_profiles', []),
-            'github_org': config.get('github_org'),
-            'github_repos': config.get('github_repos', []),
             'collection_config': {
                 'news_enabled': config.get('news_enabled', True),
                 'yahoo_finance_news_enabled': config.get('yahoo_finance_news_enabled', False),
@@ -172,13 +169,13 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
                 'australian_news_enabled': config.get('australian_news_enabled', True),
                 'google_news_enabled': config.get('google_news_enabled', True),
                 'reddit_enabled': config.get('reddit_enabled', False),
-                'hackernews_enabled': config.get('hackernews_enabled', False),
-                'github_enabled': config.get('github_enabled', False),
+                'youtube_enabled': config.get('youtube_enabled', False),
                 'twitter_enabled': config.get('twitter_enabled', False),
                 'linkedin_enabled': config.get('linkedin_enabled', False),
                 'linkedin_user_enabled': config.get('linkedin_user_enabled', False),
                 'pressrelease_enabled': config.get('pressrelease_enabled', False),
                 'reddit_subreddits': config.get('reddit_subreddits', []),
+                'youtube_channels': config.get('youtube_channels', []),
                 'priority_keywords': config.get('priority_keywords', []),
                 'web_scrape_sources': config.get('web_scrape_sources', [])
             },
@@ -236,8 +233,7 @@ def sync_customers_to_db(db: Session):
         # Add all other config fields from YAML
         config_fields = [
             'description', 'notes', 'twitter_handle', 'linkedin_company_url',
-            'linkedin_company_id', 'github_org', 'github_repos', 'rss_feeds',
-            'linkedin_user_profiles'
+            'linkedin_company_id', 'rss_feeds', 'linkedin_user_profiles'
         ]
         for field in config_fields:
             if field in cust_config:
@@ -300,18 +296,85 @@ def sync_customers_to_db(db: Session):
         db.commit()
 
 
-async def collect_for_customer(customer: Customer, db: Session) -> dict:
+async def collect_for_customer(customer: Customer, db: Session, collection_type: str = 'manual') -> dict:
     """
     Collect intelligence for a single customer
+
+    Args:
+        customer: Customer object to collect for
+        db: Database session
+        collection_type: Type of collection ('hourly', 'daily', 'manual')
+                        Determines which sources to collect from based on their configured intervals
 
     Returns:
         Dict with collection statistics including failed AI processing count
     """
-    logger.info(f"Starting collection for customer: {customer.name}")
+    logger.info(f"Starting {collection_type} collection for customer: {customer.name}")
 
     items_collected = 0
     items_failed_processing = 0
     errors = []
+
+    # Load source intervals configuration from platform settings
+    from app.models.database import PlatformSettings
+    source_intervals = {}
+    try:
+        intervals_setting = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'source_intervals'
+        ).first()
+        if intervals_setting and intervals_setting.value:
+            source_intervals = intervals_setting.value
+    except Exception as e:
+        logger.warning(f"Failed to load source intervals config: {e}")
+
+    # Helper function to check if a source should run based on elapsed time
+    def should_collect_source(source_type: str) -> bool:
+        """
+        Check if source should be collected based on elapsed time since last run
+
+        Uses source_intervals (in hours) and CollectionStatus.last_run to determine
+        if enough time has passed since the last collection.
+        """
+        # Manual collections always run all sources
+        if collection_type == 'manual':
+            return True
+
+        # Get configured interval in hours (default to 1 hour if not configured)
+        interval_hours = source_intervals.get(source_type, 1)
+
+        # Handle legacy string values for backward compatibility
+        if isinstance(interval_hours, str):
+            if interval_hours == 'hourly':
+                interval_hours = 1
+            elif interval_hours == 'daily':
+                interval_hours = 24
+            else:
+                interval_hours = 1  # Default to hourly for unknown strings
+
+        # Check last run time from CollectionStatus table
+        status = db.query(CollectionStatus).filter(
+            CollectionStatus.customer_id == customer.id,
+            CollectionStatus.source_type == source_type
+        ).first()
+
+        if not status or not status.last_run:
+            # Never run before - should collect
+            logger.debug(f"Source {source_type} has never run - will collect")
+            return True
+
+        # Calculate time elapsed since last run
+        time_since_last = datetime.utcnow() - status.last_run
+        hours_elapsed = time_since_last.total_seconds() / 3600
+
+        # Run if enough time has passed
+        should_run = hours_elapsed >= interval_hours
+
+        if should_run:
+            logger.debug(f"Source {source_type}: {hours_elapsed:.1f}h elapsed >= {interval_hours}h interval - will collect")
+        else:
+            logger.debug(f"Source {source_type}: {hours_elapsed:.1f}h elapsed < {interval_hours}h interval - skipping")
+
+        return should_run
 
     # Prepare customer config for collectors
     customer_config = {
@@ -327,11 +390,21 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
     collection_config = customer.config or {}
 
     # Collect from NewsAPI
-    if collection_config.get('news_enabled', True):
+    if collection_config.get('news_enabled', True) and should_collect_source('news_api'):
         try:
             if settings.news_api_key:
                 collector = NewsAPICollector(customer_config)
                 items, error = await collector.safe_collect()
+
+                # Update collection status
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='news_api',
+                    success=(error is None),
+                    error_message=error
+                )
+
                 if items:
                     failed = await save_and_process_items(items, customer, db)
                     items_collected += len(items)
@@ -343,11 +416,32 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='news_api',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('news_enabled', True):
+        logger.debug(f"Skipping NewsAPI - not due for collection yet")
+
     # Collect from Yahoo Finance news
-    if collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol:
+    if collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol and should_collect_source('yahoo_finance_news'):
         try:
             collector = YahooFinanceNewsCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='yahoo_finance_news',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -358,13 +452,27 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='yahoo_finance_news',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol:
+        logger.debug(f"Skipping Yahoo Finance news - not due for collection yet")
+
     # Collect from RSS feeds
-    if collection_config.get('rss_enabled', True):
+    if collection_config.get('rss_enabled', True) and should_collect_source('rss'):
         rss_sources = db.query(Source).filter(
             Source.customer_id == customer.id,
             Source.type == 'rss',
             Source.enabled == True
         ).all()
+
+        rss_error = None
+        rss_success = True
 
         for source in rss_sources:
             try:
@@ -388,14 +496,29 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
 
                 if error:
                     errors.append(error)
+                    rss_error = error
+                    rss_success = False
 
             except Exception as e:
                 error_msg = f"RSS collection error for {source.name}: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
+                rss_error = error_msg
+                rss_success = False
+
+        # Update collection status for RSS (tracks all RSS feeds collectively)
+        update_collection_status(
+            db=db,
+            customer_id=customer.id,
+            source_type='rss',
+            success=rss_success,
+            error_message=rss_error
+        )
+    elif collection_config.get('rss_enabled', True):
+        logger.debug(f"Skipping RSS feeds - not due for collection yet")
 
     # Collect from Reddit
-    if collection_config.get('reddit_enabled', False):
+    if collection_config.get('reddit_enabled', False) and should_collect_source('reddit'):
         try:
             if settings.reddit_client_id and settings.reddit_client_secret:
                 collector = RedditCollector(customer_config, db=db)
@@ -429,43 +552,77 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
                 success=False,
                 error_message=error_msg
             )
+    elif collection_config.get('reddit_enabled', False):
+        logger.debug(f"Skipping Reddit - not scheduled for {collection_type} collection")
 
-    # Collect from Hacker News
-    if collection_config.get('hackernews_enabled', False):
+    # Collect from YouTube
+    if collection_config.get('youtube_enabled', False) and should_collect_source('youtube'):
         try:
-            collector = HackerNewsCollector(customer_config)
-            items, error = await collector.safe_collect()
-            if items:
-                await save_and_process_items(items, customer, db)
-                items_collected += len(items)
-            if error:
-                errors.append(error)
+            if settings.youtube_api_key:
+                logger.info(f"Starting YouTube collection for {customer.name}")
+                collector = YouTubeCollector(customer_config, db=db)
+                items, error = await collector.safe_collect()
+
+                # Update collection status
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='youtube',
+                    success=(error is None),
+                    error_message=error
+                )
+
+                if items:
+                    failed = await save_and_process_items(items, customer, db)
+                    items_collected += len(items)
+                    items_failed_processing += failed
+                    logger.info(f"YouTube collection complete: {len(items)} items collected, {failed} failed processing")
+                else:
+                    logger.info(f"YouTube collection complete: no items found")
+                if error:
+                    errors.append(error)
+            else:
+                error_msg = "YouTube enabled but YOUTUBE_API_KEY not configured in environment"
+                logger.warning(error_msg)
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='youtube',
+                    success=False,
+                    error_message=error_msg
+                )
         except Exception as e:
-            error_msg = f"Hacker News collection error: {str(e)}"
+            error_msg = f"YouTube collection error: {str(e)}"
             logger.error(error_msg)
             errors.append(error_msg)
 
-    # Collect from GitHub
-    if collection_config.get('github_enabled', False):
-        try:
-            collector = GitHubCollector(customer_config)
-            items, error = await collector.safe_collect()
-            if items:
-                await save_and_process_items(items, customer, db)
-                items_collected += len(items)
-            if error:
-                errors.append(error)
-        except Exception as e:
-            error_msg = f"GitHub collection error: {str(e)}"
-            logger.error(error_msg)
-            errors.append(error_msg)
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='youtube',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('youtube_enabled', False):
+        logger.debug(f"Skipping YouTube - not due for collection yet")
 
     # Collect from Twitter/X
-    if collection_config.get('twitter_enabled', False):
+    if collection_config.get('twitter_enabled', False) and should_collect_source('twitter'):
         try:
             if settings.twitter_bearer_token:
                 collector = TwitterCollector(customer_config)
                 items, error = await collector.safe_collect()
+
+                # Update collection status
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='twitter',
+                    success=(error is None),
+                    error_message=error
+                )
+
                 if items:
                     failed = await save_and_process_items(items, customer, db)
                     items_collected += len(items)
@@ -477,11 +634,32 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='twitter',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('twitter_enabled', False):
+        logger.debug(f"Skipping Twitter - not due for collection yet")
+
     # Collect from LinkedIn (company pages)
-    if collection_config.get('linkedin_enabled', False):
+    if collection_config.get('linkedin_enabled', False) and should_collect_source('linkedin'):
         try:
             collector = LinkedInCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='linkedin',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -492,8 +670,19 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='linkedin',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('linkedin_enabled', False):
+        logger.debug(f"Skipping LinkedIn company pages - not due for collection yet")
+
     # Collect from LinkedIn (individual user profiles)
-    if collection_config.get('linkedin_user_enabled', False):
+    if collection_config.get('linkedin_user_enabled', False) and should_collect_source('linkedin_user'):
         try:
             # Use Playwright collector if available, otherwise fall back to basic collector
             if PLAYWRIGHT_AVAILABLE and PlaywrightLinkedInCollector:
@@ -575,12 +764,24 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             error_delay = random.uniform(error_delay_min, error_delay_max)
             logger.info(f"⏰ Error occurred. Waiting {error_delay:.1f}s before continuing")
             await asyncio.sleep(error_delay)
+    elif collection_config.get('linkedin_user_enabled', False):
+        logger.debug(f"Skipping LinkedIn user profiles - not scheduled for {collection_type} collection")
 
     # Collect from Press Release Services
-    if collection_config.get('pressrelease_enabled', False):
+    if collection_config.get('pressrelease_enabled', False) and should_collect_source('pressrelease'):
         try:
             collector = PressReleaseCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='pressrelease',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -591,11 +792,32 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='pressrelease',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('pressrelease_enabled', False):
+        logger.debug(f"Skipping Press Release services - not due for collection yet")
+
     # Collect from Australian News Sites
-    if collection_config.get('australian_news_enabled', True):  # Enabled by default
+    if collection_config.get('australian_news_enabled', True) and should_collect_source('australian_news'):  # Enabled by default
         try:
             collector = AustralianNewsCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='australian_news',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -606,11 +828,32 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='australian_news',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('australian_news_enabled', True):
+        logger.debug(f"Skipping Australian News - not due for collection yet")
+
     # Collect from Google News
-    if collection_config.get('google_news_enabled', True):  # Enabled by default
+    if collection_config.get('google_news_enabled', True) and should_collect_source('google_news'):  # Enabled by default
         try:
             collector = GoogleNewsCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='google_news',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -621,11 +864,32 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='google_news',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('google_news_enabled', True):
+        logger.debug(f"Skipping Google News - not due for collection yet")
+
     # Collect from Web Scraper Sources
-    if collection_config.get('web_scrape_sources'):
+    if collection_config.get('web_scrape_sources') and should_collect_source('web_scrape'):
         try:
             collector = WebScraperCollector(customer_config)
             items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='web_scrape',
+                success=(error is None),
+                error_message=error
+            )
+
             if items:
                 await save_and_process_items(items, customer, db)
                 items_collected += len(items)
@@ -636,7 +900,18 @@ async def collect_for_customer(customer: Customer, db: Session) -> dict:
             logger.error(error_msg)
             errors.append(error_msg)
 
-    logger.info(f"Completed collection for {customer.name}: {items_collected} items ({items_failed_processing} failed AI processing)")
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='web_scrape',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('web_scrape_sources'):
+        logger.debug(f"Skipping Web Scraper - not due for collection yet")
+
+    logger.info(f"Completed {collection_type} collection for {customer.name}: {items_collected} items ({items_failed_processing} failed AI processing)")
 
     return {
         'customer_id': customer.id,
@@ -658,11 +933,32 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
     Returns:
         Number of items that failed AI processing
     """
+    from app.collectors.base import BaseCollector
+    from app.models.database import PlatformSettings
+
     ai_processor = get_ai_processor()
     vector_store = get_vector_store()
     failed_processing_count = 0
 
+    # Load collection config for blacklist
+    collection_config = {}
+    try:
+        config_setting = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'collection_config'
+        ).first()
+        if config_setting and config_setting.value:
+            collection_config = config_setting.value
+    except Exception as e:
+        logger.warning(f"Failed to load collection config: {e}")
+
+    blacklist_config = collection_config.get('domain_blacklist', {})
+
     for item_create in items:
+        # Check domain blacklist first
+        if BaseCollector.is_url_blacklisted(item_create.url, blacklist_config):
+            logger.debug(f"Skipping blacklisted URL: {item_create.url}")
+            continue
+
         # Level 1 Deduplication: Check by normalized URL
         if item_create.url:
             normalized_url = normalize_url(item_create.url)
@@ -750,6 +1046,18 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                     logger.info(f"Retrying AI processing for item {db_item.id} (attempt {attempt + 1}/{max_retries}) after {wait_time}s...")
                     await asyncio.sleep(wait_time)
 
+                # Determine if this is a trusted source (never mark as unrelated/advertisement)
+                # Trusted sources: press releases, official company newsrooms
+                is_trusted = db_item.source_type in ['press_release', 'pressrelease', 'web_scrape']
+
+                # Check if this specific RSS feed is marked as trusted
+                if db_item.source_type == 'rss' and db_item.url:
+                    # Get list of trusted RSS feed URLs from config
+                    rss_feeds = customer_config.get('rss_feeds', [])
+                    trusted_rss_urls = [feed.get('url', '') for feed in rss_feeds if feed.get('trusted', False)]
+                    # Check if the item URL contains any trusted RSS feed URL
+                    is_trusted = any(trusted_url and trusted_url in db_item.url for trusted_url in trusted_rss_urls)
+
                 processed_data = await ai_processor.process_item(
                     title=db_item.title,
                     content=db_item.content or "",
@@ -757,7 +1065,8 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                     source_type=db_item.source_type,
                     keywords=keywords,
                     competitors=competitors,
-                    priority_keywords=priority_keywords
+                    priority_keywords=priority_keywords,
+                    is_trusted_source=is_trusted
                 )
 
                 # If we got here, processing succeeded
@@ -861,7 +1170,7 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
     return failed_processing_count
 
 
-async def collect_customer_wrapper(customer_id: int, customer_name: str, global_rate_limiter: GlobalRateLimiter) -> dict:
+async def collect_customer_wrapper(customer_id: int, customer_name: str, global_rate_limiter: GlobalRateLimiter, collection_type: str = 'manual') -> dict:
     """
     Wrapper for collecting a single customer with its own DB session.
 
@@ -872,6 +1181,7 @@ async def collect_customer_wrapper(customer_id: int, customer_name: str, global_
         customer_id: ID of customer to collect for
         customer_name: Name of customer (for logging)
         global_rate_limiter: Shared rate limiter instance
+        collection_type: Type of collection ('hourly', 'daily', 'manual')
 
     Returns:
         Dict with collection results
@@ -879,7 +1189,7 @@ async def collect_customer_wrapper(customer_id: int, customer_name: str, global_
     db = SessionLocal()
 
     try:
-        logger.info(f"Starting parallel collection for customer: {customer_name} (ID: {customer_id})")
+        logger.info(f"Starting parallel {collection_type} collection for customer: {customer_name} (ID: {customer_id})")
 
         # Load customer in this session (not shared across sessions)
         customer = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -893,7 +1203,7 @@ async def collect_customer_wrapper(customer_id: int, customer_name: str, global_
             }
 
         # Collect for this customer (pass rate limiter for future use)
-        result = await collect_for_customer(customer, db)
+        result = await collect_for_customer(customer, db, collection_type)
 
         logger.info(
             f"Completed collection for {customer.name}: "
@@ -914,7 +1224,7 @@ async def collect_customer_wrapper(customer_id: int, customer_name: str, global_
         db.close()
 
 
-async def run_collection_async(customer_id: Optional[int] = None, max_concurrent: int = 4):
+async def run_collection_async(customer_id: Optional[int] = None, max_concurrent: int = 4, collection_type: str = 'manual'):
     """
     Run collection job with parallel execution using TaskQueue
 
@@ -922,6 +1232,8 @@ async def run_collection_async(customer_id: Optional[int] = None, max_concurrent
         customer_id: If provided, collect only for this customer.
                     Otherwise, collect for all customers.
         max_concurrent: Maximum number of customers to collect concurrently
+        collection_type: Type of collection ('hourly', 'daily', 'manual')
+                        Determines which sources to collect from based on their configured intervals
 
     Note: Uses GlobalRateLimiter to coordinate rate limits across all sources
           and TaskQueue for parallel execution of customer collections.
@@ -967,7 +1279,8 @@ async def run_collection_async(customer_id: Optional[int] = None, max_concurrent
                 collect_customer_wrapper,
                 customer.id,
                 customer.name,
-                global_rate_limiter
+                global_rate_limiter,
+                collection_type
             )
 
         # Wait for all collections to complete
@@ -1023,13 +1336,14 @@ async def run_collection_async(customer_id: Optional[int] = None, max_concurrent
         db.close()
 
 
-def run_collection(customer_id: Optional[int] = None):
+def run_collection(customer_id: Optional[int] = None, collection_type: str = 'manual'):
     """
     Run collection job (synchronous wrapper for async implementation)
 
     Args:
         customer_id: If provided, collect only for this customer.
                     Otherwise, collect for all customers.
+        collection_type: Type of collection ('hourly', 'daily', 'manual')
 
     Note: Database is the source of truth. Customers are managed via UI.
           Use './hermes-diag sync-config' to import from YAML if needed.
@@ -1040,7 +1354,7 @@ def run_collection(customer_id: Optional[int] = None):
     max_concurrent = 1 if customer_id else 4
 
     # Run the async collection
-    asyncio.run(run_collection_async(customer_id, max_concurrent))
+    asyncio.run(run_collection_async(customer_id, max_concurrent, collection_type))
 
 
 def purge_old_items(retention_days: int = None):

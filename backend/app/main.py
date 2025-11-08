@@ -1,5 +1,11 @@
 """Main FastAPI application"""
 
+import os
+# Suppress HuggingFace tokenizers parallelism warning when using multiprocessing/forking
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+# Disable ChromaDB telemetry to suppress posthog errors
+os.environ['ANONYMIZED_TELEMETRY'] = 'False'
+
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

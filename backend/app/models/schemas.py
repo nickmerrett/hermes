@@ -47,6 +47,7 @@ class CustomerBase(BaseModel):
     keywords: List[str] = []
     competitors: List[str] = []
     stock_symbol: Optional[str] = None
+    tab_color: Optional[str] = '#ffffff'
     config: Optional[Dict[str, Any]] = None
 
 
@@ -62,6 +63,7 @@ class CustomerUpdate(BaseModel):
     keywords: Optional[List[str]] = None
     competitors: Optional[List[str]] = None
     stock_symbol: Optional[str] = None
+    tab_color: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
 
 

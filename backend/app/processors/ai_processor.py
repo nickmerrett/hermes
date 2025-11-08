@@ -38,7 +38,8 @@ class AIProcessor:
         source_type: str,
         keywords: List[str] = None,
         competitors: List[str] = None,
-        priority_keywords: List[str] = None
+        priority_keywords: List[str] = None,
+        is_trusted_source: bool = False
     ) -> Dict[str, Any]:
         """
         Process an intelligence item with AI
@@ -51,6 +52,7 @@ class AIProcessor:
             keywords: Customer keywords for relevance checking
             competitors: List of competitor names
             priority_keywords: Keywords that indicate high priority
+            is_trusted_source: If True, never mark as unrelated/advertisement (newsroom RSS, press releases)
 
         Returns:
             Dict with summary, category, sentiment, entities, tags, priority_score
@@ -64,7 +66,8 @@ class AIProcessor:
                 source_type,
                 keywords or [],
                 competitors or [],
-                priority_keywords or []
+                priority_keywords or [],
+                is_trusted_source
             )
 
             # Call Claude API
@@ -95,7 +98,8 @@ class AIProcessor:
         source_type: str,
         keywords: List[str],
         competitors: List[str],
-        priority_keywords: List[str]
+        priority_keywords: List[str],
+        is_trusted_source: bool = False
     ) -> str:
         """
         Build the analysis prompt for Claude
@@ -108,6 +112,7 @@ class AIProcessor:
             keywords: Customer keywords
             competitors: Competitor names
             priority_keywords: High priority keywords
+            is_trusted_source: If True, never mark as unrelated/advertisement
 
         Returns:
             Prompt string
@@ -130,6 +135,18 @@ class AIProcessor:
         if priority_keywords:
             priority_context = f"\nHIGH PRIORITY KEYWORDS (boost score if mentioned): {', '.join(priority_keywords[:10])}"
 
+        # Build trusted source guidance
+        trusted_source_guidance = ""
+        if is_trusted_source:
+            trusted_source_guidance = f"""
+
+⚠️  IMPORTANT: This content is from a TRUSTED SOURCE (official company newsroom, press release, or verified RSS feed).
+- NEVER mark as "unrelated" or "advertisement"
+- Always treat as relevant (is_relevant: true)
+- These are official communications from {customer_name} or authoritative sources
+- If unsure about category, use "product_update", "financial", "leadership", or "other" - NOT "unrelated" or "advertisement"
+"""
+
         return f"""You are an AI analyst helping a technical sales team monitor intelligence about {customer_name}.
 
 Your goal is to provide ACTIONABLE insights that help sales professionals:
@@ -139,7 +156,7 @@ Your goal is to provide ACTIONABLE insights that help sales professionals:
 - Prepare for conversations with relevant context
 
 ===== CONTEXT =====
-Customer Being Monitored: {customer_name}{competitor_context}{keyword_context}{priority_context}
+Customer Being Monitored: {customer_name}{competitor_context}{keyword_context}{priority_context}{trusted_source_guidance}
 
 ===== CONTENT TO ANALYZE =====
 Source Type: {source_type}

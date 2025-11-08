@@ -18,9 +18,7 @@ const ErrorBanner = ({ errors, onDismiss }) => {
       'reddit': 'Reddit',
       'linkedin_user': 'LinkedIn',
       'linkedin': 'LinkedIn',
-      'twitter': 'Twitter',
-      'hackernews': 'Hacker News',
-      'github': 'GitHub'
+      'twitter': 'Twitter'
     }
 
     const sourceName = sourceNames[sourceType] || sourceType

@@ -28,6 +28,8 @@ trafilatura==1.12.2  # Advanced web scraping and content extraction
 asyncpraw==7.7.1         # Async Reddit API
 tweepy==4.14.0           # Twitter/X API
 PyGithub==2.1.1          # GitHub API
+google-api-python-client==2.100.0  # YouTube Data API v3
+youtube-transcript-api==1.2.3      # YouTube transcript fetching
 
 # Scheduling
 apscheduler==3.10.4

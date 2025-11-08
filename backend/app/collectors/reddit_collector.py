@@ -98,16 +98,24 @@ class RedditCollector(RateLimitedCollector):
         items = []
 
         if not self.reddit_client_id or not self.reddit_client_secret:
-            self.logger.warning("Reddit API credentials not configured")
-            return items
+            error_msg = "Reddit API credentials not configured. Please set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET environment variables."
+            self.logger.warning(error_msg)
+            raise Exception(error_msg)
 
         # Use async context manager for Reddit client
-        async with asyncpraw.Reddit(
-            client_id=self.reddit_client_id,
-            client_secret=self.reddit_client_secret,
-            user_agent=self.reddit_user_agent
-        ) as reddit:
-            try:
+        try:
+            async with asyncpraw.Reddit(
+                client_id=self.reddit_client_id,
+                client_secret=self.reddit_client_secret,
+                user_agent=self.reddit_user_agent
+            ) as reddit:
+                # Test connection by getting a simple endpoint
+                try:
+                    await reddit.user.me()
+                except Exception as auth_error:
+                    error_msg = f"Reddit authentication failed. Please verify your REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are correct. Error: {str(auth_error)}"
+                    self.logger.error(error_msg)
+                    raise Exception(error_msg)
                 # Search across specified subreddits
                 for keyword in self.keywords[:5]:  # Limit keywords to avoid rate limiting
                     if not self._check_rate_limit():
@@ -138,9 +146,9 @@ class RedditCollector(RateLimitedCollector):
 
                 self.logger.info(f"Collected {len(items)} items from Reddit")
 
-            except Exception as e:
-                self.logger.error(f"Error collecting from Reddit: {e}")
-                raise
+        except Exception as e:
+            self.logger.error(f"Error collecting from Reddit: {e}")
+            raise
 
         return items
 

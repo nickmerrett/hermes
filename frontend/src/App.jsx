@@ -30,9 +30,29 @@ function App() {
   const [expandedClusters, setExpandedClusters] = useState({})
   const [clusterItems, setClusterItems] = useState({})
   const [collectionErrors, setCollectionErrors] = useState([])
-  const [dismissedErrors, setDismissedErrors] = useState([])
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+
+  // Auto-refresh settings (persisted in localStorage)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => {
+    const saved = localStorage.getItem('autoRefreshEnabled')
+    return saved !== null ? JSON.parse(saved) : true
+  })
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(() => {
+    const saved = localStorage.getItem('autoRefreshInterval')
+    return saved ? parseInt(saved) : 300000 // 5 minutes default
+  })
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
+  const [lastRefreshTime, setLastRefreshTime] = useState(null)
+
+  // Persist auto-refresh settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('autoRefreshEnabled', JSON.stringify(autoRefreshEnabled))
+  }, [autoRefreshEnabled])
+
+  useEffect(() => {
+    localStorage.setItem('autoRefreshInterval', autoRefreshInterval.toString())
+  }, [autoRefreshInterval])
 
   useEffect(() => {
     fetchCustomers()
@@ -43,6 +63,20 @@ function App() {
     const errorInterval = setInterval(fetchCollectionErrors, 120000)
     return () => clearInterval(errorInterval)
   }, [])
+
+  // Auto-refresh feed
+  useEffect(() => {
+    if (!autoRefreshEnabled) return
+
+    const refreshInterval = setInterval(async () => {
+      setIsAutoRefreshing(true)
+      await fetchFeed()
+      setLastRefreshTime(new Date())
+      setIsAutoRefreshing(false)
+    }, autoRefreshInterval)
+
+    return () => clearInterval(refreshInterval)
+  }, [autoRefreshEnabled, autoRefreshInterval, filters, selectedCustomer, showClustered])
 
   useEffect(() => {
     fetchFeed()
@@ -131,6 +165,11 @@ function App() {
     }
   }
 
+  const handleManualRefresh = async () => {
+    await fetchFeed()
+    setLastRefreshTime(new Date())
+  }
+
   const fetchClusterItems = async (clusterId) => {
     try {
       const response = await axios.get(`${API_URL}/feed/cluster/${clusterId}`)
@@ -190,12 +229,12 @@ function App() {
   }
 
   const ignoreItem = async (itemId) => {
-    if (!confirm('Are you sure you want to ignore this article?')) {
+    if (!confirm('Are you sure you want to ignore this article? It will be hidden from your feed.')) {
       return
     }
 
     try {
-      await axios.delete(`${API_URL}/feed/${itemId}`)
+      await axios.patch(`${API_URL}/feed/${itemId}/ignore`)
       // Remove item from feed or search results locally
       if (searchResults) {
         setSearchResults({
@@ -217,26 +256,21 @@ function App() {
     try {
       const params = selectedCustomer ? { customer_id: selectedCustomer } : {}
       const response = await axios.get(`${API_URL}/feed/collection-errors`, { params })
-
-      // Filter out dismissed errors
-      const errors = response.data.errors.filter(error => {
-        const key = `${error.customer_id}-${error.source_type}`
-        return !dismissedErrors.includes(key)
-      })
-
-      setCollectionErrors(errors)
+      setCollectionErrors(response.data.errors)
     } catch (err) {
       console.error('Failed to fetch collection errors:', err)
     }
   }
 
-  const dismissError = (error) => {
-    const key = `${error.customer_id}-${error.source_type}`
-    setDismissedErrors(prev => [...prev, key])
-    setCollectionErrors(prev => prev.filter(e => {
-      const eKey = `${e.customer_id}-${e.source_type}`
-      return eKey !== key
-    }))
+  const dismissError = async (error) => {
+    try {
+      await axios.patch(`${API_URL}/feed/collection-errors/${error.id}/dismiss`)
+      // Remove from local state
+      setCollectionErrors(prev => prev.filter(e => e.id !== error.id))
+    } catch (err) {
+      console.error('Failed to dismiss error:', err)
+      alert('Failed to dismiss error')
+    }
   }
 
   const handleDeleteCustomer = async (customerId) => {
@@ -326,12 +360,21 @@ function App() {
       <header className="header">
         <h1>Hermes</h1>
         <div className="header-actions">
-          <button onClick={() => setShowSettingsModal(true)} className="btn-secondary">
-            ⚙ Settings
-          </button>
+          <label className="auto-refresh-toggle">
+              <input
+                type="checkbox"
+                checked={autoRefreshEnabled}
+                onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+              />
+              <span>Auto-refresh</span>
+          </label>
           <button onClick={triggerCollection} className="btn-primary" title="Trigger collection for ALL customers">
-            Trigger Collection
+            Full Collection
           </button>
+          <button onClick={() => setShowSettingsModal(true)} className="btn-secondary">
+          ⚙
+          </button>
+          
         </div>
       </header>
 
@@ -343,6 +386,10 @@ function App() {
               key={customer.id}
               className={`customer-tab ${selectedCustomer === customer.id ? 'active' : ''}`}
               onClick={() => setSelectedCustomer(customer.id)}
+              style={{
+                backgroundColor: customer.tab_color || '#ffffff',
+                borderColor: selectedCustomer === customer.id ? '#3b82f6' : '#d1d5db'
+              }}
             >
               {customer.name}
             </button>
@@ -359,7 +406,12 @@ function App() {
 
       {/* Customer Info Header */}
       {selectedCustomer && currentCustomer && (
-        <div className="customer-info-header">
+        <div
+          className="customer-info-header"
+          style={{
+            backgroundColor: currentCustomer?.tab_color || '#ffffff'
+          }}
+        >
           <div>
             <h2>{currentCustomer.name}</h2>
             {currentCustomer.domain && <span className="domain">{currentCustomer.domain}</span>}
@@ -384,7 +436,14 @@ function App() {
       )}
 
       {/* Main Content Area with Sidebar Layout */}
-      <div className="main-layout">
+      <div
+        className="main-layout"
+        style={{
+          backgroundColor: currentCustomer?.tab_color || '#ffffff',
+          padding: '24px',
+          borderRadius: '0 0 8px 8px'
+        }}
+      >
         {/* Left Side - Main Feed */}
         <div className="main-content">
 
@@ -466,6 +525,7 @@ function App() {
               <option value="google_news">Google News</option>
               <option value="rss">RSS Feed</option>
               <option value="reddit">Reddit</option>
+              <option value="youtube">YouTube</option>
               <option value="stock">Stock Market</option>
               <option value="australian_news">Australian News</option>
               <option value="web_scrape">Web Scrape</option>
@@ -482,12 +542,15 @@ function App() {
             </select>
 
             <button
-              onClick={() => fetchFeed()}
+              onClick={handleManualRefresh}
               className="btn-refresh-feed"
               title="Refresh feed"
+              disabled={loading}
             >
               ↻ Refresh
             </button>
+
+
           </div>
 
           <div className="feed">
@@ -568,7 +631,7 @@ function App() {
 
                 <div className="item-footer">
                   <div className="item-footer-left">
-                    {showClustered && (
+                    {item.cluster_id && (
                       <button
                         className="source-count-badge"
                         onClick={() => toggleCluster(item.cluster_id)}
@@ -589,7 +652,7 @@ function App() {
                 </div>
 
                 {/* Cluster Items - Shown when expanded */}
-                {showClustered && expandedClusters[item.cluster_id] && (
+                {item.cluster_id && expandedClusters[item.cluster_id] && (
                   <div className="cluster-items">
                     <div className="cluster-header">
                       <h4>All Sources for This Story</h4>
@@ -818,8 +881,28 @@ function App() {
       {/* Platform Settings Modal */}
       {showSettingsModal && (
         <PlatformSettingsModal
-          onClose={() => setShowSettingsModal(false)}
+          onClose={() => {
+            // Reload auto-refresh settings from localStorage
+            const savedEnabled = localStorage.getItem('autoRefreshEnabled')
+            const savedInterval = localStorage.getItem('autoRefreshInterval')
+            if (savedEnabled !== null) {
+              setAutoRefreshEnabled(JSON.parse(savedEnabled))
+            }
+            if (savedInterval) {
+              setAutoRefreshInterval(parseInt(savedInterval))
+            }
+            setShowSettingsModal(false)
+          }}
           onSave={() => {
+            // Reload auto-refresh settings from localStorage
+            const savedEnabled = localStorage.getItem('autoRefreshEnabled')
+            const savedInterval = localStorage.getItem('autoRefreshInterval')
+            if (savedEnabled !== null) {
+              setAutoRefreshEnabled(JSON.parse(savedEnabled))
+            }
+            if (savedInterval) {
+              setAutoRefreshInterval(parseInt(savedInterval))
+            }
             // Refresh daily summary if settings changed
             if (selectedCustomer) {
               fetchDailySummary()

@@ -35,6 +35,31 @@ class BaseCollector(ABC):
         self.domain = customer_config.get('domain')
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
+    @staticmethod
+    def is_url_blacklisted(url: Optional[str], blacklist_config: Dict[str, Any]) -> bool:
+        """
+        Check if a URL contains a blacklisted domain
+
+        Args:
+            url: URL to check
+            blacklist_config: Domain blacklist configuration from collection_config
+
+        Returns:
+            True if URL is blacklisted, False otherwise
+        """
+        if not url or not blacklist_config.get('enabled', True):
+            return False
+
+        blacklisted_domains = blacklist_config.get('domains', [])
+        url_lower = url.lower()
+
+        for domain in blacklisted_domains:
+            if domain.lower() in url_lower:
+                logger.info(f"URL blocked by blacklist: {url} (contains {domain})")
+                return True
+
+        return False
+
     @abstractmethod
     async def collect(self) -> List[IntelligenceItemCreate]:
         """

@@ -21,6 +21,7 @@ class Customer(Base):
     keywords = Column(JSON)  # List of keywords to search
     competitors = Column(JSON)  # List of competitor names
     stock_symbol = Column(String(10))
+    tab_color = Column(String(7), default='#ffffff')  # Hex color for tab background
     config = Column(JSON)  # Additional configuration
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -70,6 +71,10 @@ class IntelligenceItem(Base):
     is_cluster_primary = Column(Boolean, default=False, index=True)  # Is this the primary/representative item?
     source_tier = Column(String(20), nullable=True)  # official/primary/secondary/aggregator/social
     cluster_member_count = Column(Integer, default=1)  # How many items in this cluster (denormalized for performance)
+
+    # User actions
+    ignored = Column(Boolean, default=False, index=True)  # User has ignored/dismissed this item
+    ignored_at = Column(DateTime, nullable=True)  # When item was ignored
 
     # Relationships
     customer = relationship("Customer", back_populates="intelligence_items")
@@ -151,6 +156,8 @@ class CollectionStatus(Base):
     last_success = Column(DateTime)  # Last time this collector succeeded
     error_message = Column(Text)
     error_count = Column(Integer, default=0)  # Consecutive failures
+    dismissed = Column(Boolean, default=False, index=True)  # User has dismissed this error
+    dismissed_at = Column(DateTime, nullable=True)  # When error was dismissed
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (

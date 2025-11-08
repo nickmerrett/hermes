@@ -11,14 +11,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     keywords: [],
     competitors: [],
     stock_symbol: '',
+    tab_color: '#ffffff',
     config: {
       description: '',
       notes: '',
       twitter_handle: '',
       linkedin_company_url: '',
       linkedin_company_id: '',
-      github_org: '',
-      github_repos: [],
       rss_feeds: [],
       linkedin_user_profiles: [],
       collection_config: {
@@ -28,13 +27,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         australian_news_enabled: true,
         google_news_enabled: true,
         reddit_enabled: false,
-        hackernews_enabled: false,
-        github_enabled: false,
+        youtube_enabled: false,
         twitter_enabled: false,
         linkedin_enabled: false,
         linkedin_user_enabled: false,
         pressrelease_enabled: false,
         reddit_subreddits: [],
+        youtube_channels: [],
         priority_keywords: [],
         web_scrape_sources: []
       }
@@ -58,14 +57,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         keywords: customer.keywords || [],
         competitors: customer.competitors || [],
         stock_symbol: customer.stock_symbol || '',
+        tab_color: customer.tab_color || '#ffffff',
         config: {
           description: config.description || '',
           notes: config.notes || '',
           twitter_handle: config.twitter_handle || '',
           linkedin_company_url: config.linkedin_company_url || '',
           linkedin_company_id: config.linkedin_company_id || '',
-          github_org: config.github_org || '',
-          github_repos: config.github_repos || [],
           rss_feeds: config.rss_feeds || [],
           linkedin_user_profiles: config.linkedin_user_profiles || [],
           collection_config: {
@@ -75,13 +73,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
             australian_news_enabled: collectionConfig.australian_news_enabled !== undefined ? collectionConfig.australian_news_enabled : true,
             google_news_enabled: collectionConfig.google_news_enabled !== undefined ? collectionConfig.google_news_enabled : true,
             reddit_enabled: collectionConfig.reddit_enabled || false,
-            hackernews_enabled: collectionConfig.hackernews_enabled || false,
-            github_enabled: collectionConfig.github_enabled || false,
+            youtube_enabled: collectionConfig.youtube_enabled || false,
             twitter_enabled: collectionConfig.twitter_enabled || false,
             linkedin_enabled: collectionConfig.linkedin_enabled || false,
             linkedin_user_enabled: collectionConfig.linkedin_user_enabled || false,
             pressrelease_enabled: collectionConfig.pressrelease_enabled || false,
             reddit_subreddits: collectionConfig.reddit_subreddits || [],
+            youtube_channels: collectionConfig.youtube_channels || [],
             priority_keywords: collectionConfig.priority_keywords || [],
             web_scrape_sources: (collectionConfig.web_scrape_sources || []).map(source => ({
               name: source.name || '',
@@ -127,6 +125,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         keywords: formData.keywords,
         competitors: formData.competitors,
         stock_symbol: formData.stock_symbol,
+        tab_color: formData.tab_color,
         config: flatConfig
       };
 
@@ -213,32 +212,6 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     setFormData({
       ...formData,
       config: { ...formData.config, linkedin_user_profiles: newProfiles }
-    });
-  };
-
-  // GitHub Repo management
-  const addGithubRepo = () => {
-    const newRepos = [...formData.config.github_repos, ''];
-    setFormData({
-      ...formData,
-      config: { ...formData.config, github_repos: newRepos }
-    });
-  };
-
-  const updateGithubRepo = (index, value) => {
-    const newRepos = [...formData.config.github_repos];
-    newRepos[index] = value;
-    setFormData({
-      ...formData,
-      config: { ...formData.config, github_repos: newRepos }
-    });
-  };
-
-  const removeGithubRepo = (index) => {
-    const newRepos = formData.config.github_repos.filter((_, i) => i !== index);
-    setFormData({
-      ...formData,
-      config: { ...formData.config, github_repos: newRepos }
     });
   };
 
@@ -355,6 +328,41 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
             </div>
 
             <div className="form-field">
+              <label>Tab Color</label>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="color"
+                  value={formData.tab_color}
+                  onChange={(e) => setFormData({ ...formData, tab_color: e.target.value })}
+                  style={{ width: '60px', height: '40px', cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: '4px' }}
+                />
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>{formData.tab_color}</span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {['#ffffff', '#fef3c7', '#fecaca', '#fed7aa', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#fbcfe8', '#e5e7eb'].map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, tab_color: color })}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        backgroundColor: color,
+                        border: formData.tab_color === color ? '3px solid #3b82f6' : '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+              </div>
+              <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                Choose a background color for this customer's tab for quick visual identification
+              </small>
+            </div>
+
+            <div className="form-field">
               <label>Description</label>
               <textarea
                 value={formData.config.description}
@@ -420,19 +428,6 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                   config: { ...formData.config, linkedin_company_id: e.target.value }
                 })}
                 placeholder="company-name"
-              />
-            </div>
-
-            <div className="form-field">
-              <label>GitHub Organization</label>
-              <input
-                type="text"
-                value={formData.config.github_org}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  config: { ...formData.config, github_org: e.target.value }
-                })}
-                placeholder="github-org"
               />
             </div>
           </div>
@@ -624,6 +619,104 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
           </div>
 
           <div className="form-section">
+            <div className="section-header">
+              <h3>YouTube Channels to Monitor</h3>
+              <button type="button" onClick={() => {
+                const newChannels = [...formData.config.collection_config.youtube_channels, { channel_id: '', name: '' }];
+                setFormData({
+                  ...formData,
+                  config: {
+                    ...formData.config,
+                    collection_config: {
+                      ...formData.config.collection_config,
+                      youtube_channels: newChannels
+                    }
+                  }
+                });
+              }} className="btn-add-small">
+                + Add Channel
+              </button>
+            </div>
+            <div className="complex-list">
+              {formData.config.collection_config.youtube_channels.map((channel, idx) => (
+                <div key={idx} className="complex-item">
+                  <div className="complex-item-header">
+                    <span className="complex-item-number">Channel #{idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newChannels = formData.config.collection_config.youtube_channels.filter((_, i) => i !== idx);
+                        setFormData({
+                          ...formData,
+                          config: {
+                            ...formData.config,
+                            collection_config: {
+                              ...formData.config.collection_config,
+                              youtube_channels: newChannels
+                            }
+                          }
+                        });
+                      }}
+                      className="tag-remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="complex-item-fields">
+                    <div className="form-field">
+                      <label>Channel ID</label>
+                      <input
+                        type="text"
+                        value={channel.channel_id}
+                        onChange={(e) => {
+                          const newChannels = [...formData.config.collection_config.youtube_channels];
+                          newChannels[idx] = { ...newChannels[idx], channel_id: e.target.value };
+                          setFormData({
+                            ...formData,
+                            config: {
+                              ...formData.config,
+                              collection_config: {
+                                ...formData.config.collection_config,
+                                youtube_channels: newChannels
+                              }
+                            }
+                          });
+                        }}
+                        placeholder="UCxxx... (from YouTube channel URL)"
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label>Channel Name</label>
+                      <input
+                        type="text"
+                        value={channel.name}
+                        onChange={(e) => {
+                          const newChannels = [...formData.config.collection_config.youtube_channels];
+                          newChannels[idx] = { ...newChannels[idx], name: e.target.value };
+                          setFormData({
+                            ...formData,
+                            config: {
+                              ...formData.config,
+                              collection_config: {
+                                ...formData.config.collection_config,
+                                youtube_channels: newChannels
+                              }
+                            }
+                          });
+                        }}
+                        placeholder="e.g., Company Official Channel"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="option-help" style={{ marginTop: '12px' }}>
+              YouTube will also search for videos using your customer's general keywords. Only videos with available transcripts will be processed.
+            </p>
+          </div>
+
+          <div className="form-section">
             <h3>Collection Sources</h3>
             <div className="toggles-grid">
               <label className="toggle-field">
@@ -731,6 +824,23 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
               <label className="toggle-field">
                 <input
                   type="checkbox"
+                  checked={formData.config.collection_config.youtube_enabled}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        youtube_enabled: e.target.checked
+                      }
+                    }
+                  })}
+                />
+                <span>YouTube</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
                   checked={formData.config.collection_config.linkedin_enabled}
                   onChange={(e) => setFormData({
                     ...formData,
@@ -778,40 +888,6 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                   })}
                 />
                 <span>Twitter</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={formData.config.collection_config.hackernews_enabled}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    config: {
-                      ...formData.config,
-                      collection_config: {
-                        ...formData.config.collection_config,
-                        hackernews_enabled: e.target.checked
-                      }
-                    }
-                  })}
-                />
-                <span>Hacker News</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={formData.config.collection_config.github_enabled}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    config: {
-                      ...formData.config,
-                      collection_config: {
-                        ...formData.config.collection_config,
-                        github_enabled: e.target.checked
-                      }
-                    }
-                  })}
-                />
-                <span>GitHub</span>
               </label>
               <label className="toggle-field">
                 <input
@@ -872,38 +948,24 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                         placeholder="https://example.com/feed.xml"
                       />
                     </div>
+                    <label className="toggle-field" style={{ marginTop: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={feed.trusted || false}
+                        onChange={(e) => updateRssFeed(idx, 'trusted', e.target.checked)}
+                      />
+                      <span>Trusted Source</span>
+                      <small style={{ display: 'block', marginLeft: '24px', color: '#6b7280', marginTop: '4px' }}>
+                        Official newsroom/press releases - never marked as irrelevant
+                      </small>
+                    </label>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="form-section">
-            <div className="section-header">
-              <h3>GitHub Repositories</h3>
-              <button type="button" onClick={addGithubRepo} className="btn-add-small">
-                + Add
-              </button>
-            </div>
-            <div className="tag-list">
-              {formData.config.github_repos.map((repo, idx) => (
-                <div key={idx} className="tag-item">
-                  <input
-                    type="text"
-                    value={repo}
-                    onChange={(e) => updateGithubRepo(idx, e.target.value)}
-                    placeholder="owner/repo-name"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeGithubRepo(idx)}
-                    className="tag-remove"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
+            <p className="option-help" style={{ marginTop: '12px' }}>
+              Mark RSS feeds from official company newsrooms or press release pages as "Trusted" to ensure they're never categorized as irrelevant or advertisements.
+            </p>
           </div>
 
           <div className="form-section">

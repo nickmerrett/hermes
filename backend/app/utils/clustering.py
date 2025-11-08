@@ -57,7 +57,6 @@ SOURCE_TIERS = {
     # Tier 5: Community/Social
     'reddit': 5,
     'twitter': 5,
-    'hackernews': 5,
 }
 
 

@@ -5,11 +5,11 @@ from datetime import datetime
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
-import yaml
-import os
+from sqlalchemy.orm import Session
 
 from app.collectors.base import BaseCollector
 from app.models.schemas import IntelligenceItemCreate
+from app.models.database import PlatformSettings
 
 
 class AustralianNewsCollector(BaseCollector):
@@ -26,90 +26,70 @@ class AustralianNewsCollector(BaseCollector):
     - news.com.au (News.com.au)
     """
 
-    def __init__(self, customer_config: Dict[str, Any]):
+    def __init__(self, customer_config: Dict[str, Any], db: Session = None):
         super().__init__(customer_config)
 
-        # Get Australian news sources from config or use defaults
-        collection_config = customer_config.get('config', {})
-        custom_sources = collection_config.get('australian_news_sources', [])
-
-        # Build news_feeds from config
-        self.news_feeds = {}
-
-        if custom_sources:
-            # Use custom sources from YAML config
-            for source in custom_sources:
-                source_key = source.get('key', source.get('name', '').lower().replace(' ', '_'))
-                source_name = source.get('name')
-                feeds = source.get('feeds', [])
-
-                if not source_name or not feeds:
-                    self.logger.warning(f"Skipping invalid source config: {source}")
-                    continue
-
-                # Convert feeds list to dict format
-                feed_dict = {'name': source_name}
-                for i, feed_url in enumerate(feeds):
-                    if i == 0:
-                        feed_dict['rss'] = feed_url
-                    else:
-                        feed_dict[f'rss_{i}'] = feed_url
-
-                self.news_feeds[source_key] = feed_dict
-        else:
-            # Use default sources if not configured
-            self.news_feeds = self._get_default_sources()
+        # Load sources from platform settings
+        self.news_feeds = self._load_sources_from_settings(db)
 
         self.headers = {
             'User-Agent': 'CustomerIntelligenceTool/1.0 (News Aggregator)',
         }
 
+    def _load_sources_from_settings(self, db: Session = None) -> Dict[str, Dict[str, str]]:
+        """Load Australian news sources from platform settings"""
+
+        if db:
+            try:
+                setting = db.query(PlatformSettings).filter(
+                    PlatformSettings.key == 'australian_news_sources'
+                ).first()
+
+                if setting and setting.value and 'sources' in setting.value:
+                    # Filter to only enabled sources
+                    all_sources = setting.value['sources']
+                    enabled_sources = [s for s in all_sources if s.get('enabled', True)]
+
+                    if enabled_sources:
+                        # Convert platform settings format to internal format
+                        news_feeds = {}
+                        for source in enabled_sources:
+                            source_key = source.get('name', '').lower().replace(' ', '_')
+                            source_name = source.get('name')
+                            feeds = source.get('feeds', [])
+
+                            if not source_name or not feeds:
+                                self.logger.warning(f"Skipping invalid source config: {source}")
+                                continue
+
+                            # Convert feeds list to dict format
+                            feed_dict = {'name': source_name}
+                            for i, feed_url in enumerate(feeds):
+                                if i == 0:
+                                    feed_dict['rss'] = feed_url
+                                else:
+                                    feed_dict[f'rss_{i}'] = feed_url
+
+                            news_feeds[source_key] = feed_dict
+
+                        if news_feeds:
+                            self.logger.info(f"Loaded {len(news_feeds)} Australian news sources from platform settings")
+                            return news_feeds
+            except Exception as e:
+                self.logger.warning(f"Error loading Australian news sources from settings: {e}")
+
+        # Use fallback defaults if database not available or not configured
+        return self._get_default_sources()
+
     def _get_default_sources(self) -> Dict[str, Dict[str, str]]:
-        """Load default Australian news sources from config file"""
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            '../../config/australian_news_sources.yaml'
-        )
-
-        # Fallback to absolute path if relative doesn't work
-        if not os.path.exists(config_path):
-            config_path = '/app/config/australian_news_sources.yaml'
-
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-
-            sources = {}
-            for source in config.get('sources', []):
-                source_key = source.get('key')
-                source_name = source.get('name')
-                feeds = source.get('feeds', [])
-
-                if not source_key or not source_name or not feeds:
-                    continue
-
-                # Convert feeds list to dict format
-                feed_dict = {'name': source_name}
-                for i, feed_url in enumerate(feeds):
-                    if i == 0:
-                        feed_dict['rss'] = feed_url
-                    else:
-                        feed_dict[f'rss_{i}'] = feed_url
-
-                sources[source_key] = feed_dict
-
-            self.logger.info(f"Loaded {len(sources)} Australian news sources from config")
-            return sources
-
-        except Exception as e:
-            self.logger.error(f"Error loading Australian news sources config: {e}")
-            # Return minimal fallback
-            return {
-                'abc': {
-                    'name': 'ABC News Australia',
-                    'rss': 'https://www.abc.net.au/news/feed/2942460/rss.xml'
-                }
+        """Return default Australian news sources as fallback"""
+        self.logger.info("Using default Australian news sources fallback")
+        return {
+            'abc_news': {
+                'name': 'ABC News',
+                'rss': 'https://www.abc.net.au/news/feed/51120/rss.xml'
             }
+        }
 
     def get_source_type(self) -> str:
         return "australian_news"

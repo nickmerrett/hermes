@@ -90,6 +90,18 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     product_updates: true,
     market_changes: true
   });
+  const [summaryScheduleEnabled, setSummaryScheduleEnabled] = useState(false);
+  const [summaryScheduleHour, setSummaryScheduleHour] = useState(8);
+  const [summaryScheduleMinute, setSummaryScheduleMinute] = useState(0);
+  const [summaryScheduleDays, setSummaryScheduleDays] = useState({
+    mon: true,
+    tue: true,
+    wed: true,
+    thu: true,
+    fri: true,
+    sat: false,
+    sun: false
+  });
 
   // AI Configuration Settings
   const [aiModel, setAiModel] = useState('claude-3-5-sonnet-20241022');
@@ -100,6 +112,43 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const [dailyCollectionEnabled, setDailyCollectionEnabled] = useState(true);
   const [dailyCollectionHour, setDailyCollectionHour] = useState(10);
   const [retentionDays, setRetentionDays] = useState(90);
+  const [collectionDays, setCollectionDays] = useState({
+    mon: true,
+    tue: true,
+    wed: true,
+    thu: true,
+    fri: true,
+    sat: true,
+    sun: true
+  });
+
+  // Source Intervals Settings (in hours)
+  const [sourceIntervals, setSourceIntervals] = useState({
+    news_api: 1,
+    rss: 1,
+    yahoo_finance_news: 1,
+    australian_news: 6,
+    google_news: 6,
+    twitter: 3,
+    youtube: 12,
+    reddit: 24,
+    linkedin: 24,
+    linkedin_user: 24,
+    pressrelease: 12,
+    web_scrape: 12
+  });
+
+  // Domain Blacklist Settings
+  const [blacklistEnabled, setBlacklistEnabled] = useState(true);
+  const [blacklistedDomains, setBlacklistedDomains] = useState([
+    'yahoo.com',
+    'msn.com',
+    'aol.com',
+    'bing.com',
+    'pinterest.com',
+    'tumblr.com'
+  ]);
+  const [newDomain, setNewDomain] = useState('');
 
   // Clustering Settings
   const [clusteringEnabled, setClusteringEnabled] = useState(true);
@@ -114,12 +163,59 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const [redditPostsPerSubreddit, setRedditPostsPerSubreddit] = useState(10);
   const [redditLookbackDays, setRedditLookbackDays] = useState(7);
 
+  // YouTube Collector Settings
+  const [youtubeMinViews, setYoutubeMinViews] = useState(100);
+  const [youtubeMinChannelSubscribers, setYoutubeMinChannelSubscribers] = useState(1000);
+  const [youtubeEnableKeywordSearch, setYoutubeEnableKeywordSearch] = useState(true);
+
   // LinkedIn Collector Settings
   const [linkedinScrapingStrategy, setLinkedinScrapingStrategy] = useState('conservative');
   const [linkedinDelayProfilesMin, setLinkedinDelayProfilesMin] = useState(60);
   const [linkedinDelayProfilesMax, setLinkedinDelayProfilesMax] = useState(120);
   const [linkedinDelayCustomersMin, setLinkedinDelayCustomersMin] = useState(300);
   const [linkedinDelayCustomersMax, setLinkedinDelayCustomersMax] = useState(600);
+
+  // Australian News Sources Settings
+  const [australianNewsSources, setAustralianNewsSources] = useState({
+    sources: []
+  });
+
+  // Smart Feed Settings
+  const [smartFeedEnabled, setSmartFeedEnabled] = useState(true);
+  const [smartFeedMinPriority, setSmartFeedMinPriority] = useState(0.3);
+  const [smartFeedHighPriorityThreshold, setSmartFeedHighPriorityThreshold] = useState(0.7);
+  const [recencyBoostEnabled, setRecencyBoostEnabled] = useState(true);
+  const [recencyBoostAmount, setRecencyBoostAmount] = useState(0.1);
+  const [recencyBoostHours, setRecencyBoostHours] = useState(24);
+  const [categoryPreferences, setCategoryPreferences] = useState({
+    product_update: false,
+    financial: true,
+    market_news: false,
+    competitor: true,
+    challenge: true,
+    opportunity: true,
+    leadership: true,
+    partnership: true,
+    advertisement: false,
+    unrelated: false,
+    other: false
+  });
+  const [sourcePreferences, setSourcePreferences] = useState({
+    linkedin: true,
+    press_release: true,
+    reddit: false,
+    twitter: false,
+    youtube: false,
+    rss: true,
+    google_news: false,
+    yahoo_finance_news: true,
+    yahoo_news: false,
+    australian_news: false,
+    news_api: false,
+    web_scraper: false
+  });
+  const [diversityEnabled, setDiversityEnabled] = useState(true);
+  const [maxConsecutiveSameSource, setMaxConsecutiveSameSource] = useState(3);
 
   // Load settings on mount
   useEffect(() => {
@@ -135,6 +231,31 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
       // Daily Briefing Settings
       if (settings.daily_briefing) {
         setSelectedTemplate(settings.daily_briefing.template || 'standard');
+
+        // Load schedule settings
+        if (settings.daily_briefing.schedule) {
+          setSummaryScheduleEnabled(settings.daily_briefing.schedule.enabled || false);
+          setSummaryScheduleHour(settings.daily_briefing.schedule.hour || 8);
+          setSummaryScheduleMinute(settings.daily_briefing.schedule.minute || 0);
+
+          // Load days of week (default: Monday-Friday)
+          if (settings.daily_briefing.schedule.days_of_week) {
+            const daysArray = Array.isArray(settings.daily_briefing.schedule.days_of_week)
+              ? settings.daily_briefing.schedule.days_of_week
+              : settings.daily_briefing.schedule.days_of_week.split(',');
+
+            const daysObj = {
+              mon: daysArray.includes('mon'),
+              tue: daysArray.includes('tue'),
+              wed: daysArray.includes('wed'),
+              thu: daysArray.includes('thu'),
+              fri: daysArray.includes('fri'),
+              sat: daysArray.includes('sat'),
+              sun: daysArray.includes('sun')
+            };
+            setSummaryScheduleDays(daysObj);
+          }
+        }
         setCustomPrompt(settings.daily_briefing.custom_prompt || '');
         setBriefingLength(settings.daily_briefing.length || 'standard');
         setBriefingTone(settings.daily_briefing.tone || 'professional');
@@ -153,6 +274,35 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         setDailyCollectionEnabled(settings.collection_config.daily_enabled !== undefined ? settings.collection_config.daily_enabled : true);
         setDailyCollectionHour(settings.collection_config.daily_hour || 10);
         setRetentionDays(settings.collection_config.retention_days || 90);
+
+        // Load collection days (default: all days)
+        if (settings.collection_config.collection_days) {
+          const daysArray = Array.isArray(settings.collection_config.collection_days)
+            ? settings.collection_config.collection_days
+            : settings.collection_config.collection_days.split(',');
+
+          const daysObj = {
+            mon: daysArray.includes('mon'),
+            tue: daysArray.includes('tue'),
+            wed: daysArray.includes('wed'),
+            thu: daysArray.includes('thu'),
+            fri: daysArray.includes('fri'),
+            sat: daysArray.includes('sat'),
+            sun: daysArray.includes('sun')
+          };
+          setCollectionDays(daysObj);
+        }
+
+        // Domain Blacklist
+        if (settings.collection_config.domain_blacklist) {
+          setBlacklistEnabled(settings.collection_config.domain_blacklist.enabled !== undefined ? settings.collection_config.domain_blacklist.enabled : true);
+          setBlacklistedDomains(settings.collection_config.domain_blacklist.domains || []);
+        }
+      }
+
+      // Source Intervals Settings
+      if (settings.source_intervals) {
+        setSourceIntervals(settings.source_intervals);
       }
 
       // Clustering Settings
@@ -173,6 +323,14 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         setRedditLookbackDays(reddit.lookback_days || 7);
       }
 
+      // YouTube Collector Settings
+      if (settings.collector_config?.youtube) {
+        const youtube = settings.collector_config.youtube;
+        setYoutubeMinViews(youtube.min_views || 100);
+        setYoutubeMinChannelSubscribers(youtube.min_channel_subscribers || 1000);
+        setYoutubeEnableKeywordSearch(youtube.enable_keyword_search !== undefined ? youtube.enable_keyword_search : true);
+      }
+
       // LinkedIn Collector Settings
       if (settings.collector_config?.linkedin) {
         const linkedin = settings.collector_config.linkedin;
@@ -181,6 +339,38 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         setLinkedinDelayProfilesMax(linkedin.delay_between_profiles_max || 120);
         setLinkedinDelayCustomersMin(linkedin.delay_between_customers_min || 300);
         setLinkedinDelayCustomersMax(linkedin.delay_between_customers_max || 600);
+      }
+
+      // Australian News Sources
+      if (settings.australian_news_sources) {
+        setAustralianNewsSources(settings.australian_news_sources);
+      }
+
+      // Smart Feed Settings
+      if (settings.smart_feed_config) {
+        const sf = settings.smart_feed_config;
+        setSmartFeedEnabled(sf.enabled !== undefined ? sf.enabled : true);
+        setSmartFeedMinPriority(sf.min_priority || 0.3);
+        setSmartFeedHighPriorityThreshold(sf.high_priority_threshold || 0.7);
+
+        if (sf.recency_boost) {
+          setRecencyBoostEnabled(sf.recency_boost.enabled !== undefined ? sf.recency_boost.enabled : true);
+          setRecencyBoostAmount(sf.recency_boost.boost_amount || 0.1);
+          setRecencyBoostHours(sf.recency_boost.time_threshold_hours || 24);
+        }
+
+        if (sf.category_preferences) {
+          setCategoryPreferences(sf.category_preferences);
+        }
+
+        if (sf.source_preferences) {
+          setSourcePreferences(sf.source_preferences);
+        }
+
+        if (sf.diversity) {
+          setDiversityEnabled(sf.diversity.enabled !== undefined ? sf.diversity.enabled : true);
+          setMaxConsecutiveSameSource(sf.diversity.max_consecutive_same_source || 3);
+        }
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -202,7 +392,13 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
           length: briefingLength,
           tone: briefingTone,
           focus_areas: focusAreas,
-          prompt: selectedTemplate === 'custom' ? customPrompt : PROMPT_TEMPLATES[selectedTemplate].prompt
+          prompt: selectedTemplate === 'custom' ? customPrompt : PROMPT_TEMPLATES[selectedTemplate].prompt,
+          schedule: {
+            enabled: summaryScheduleEnabled,
+            hour: summaryScheduleHour,
+            minute: summaryScheduleMinute,
+            days_of_week: Object.keys(summaryScheduleDays).filter(day => summaryScheduleDays[day])
+          }
         },
         ai_config: {
           model: aiModel,
@@ -212,7 +408,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
           hourly_enabled: hourlyCollectionEnabled,
           daily_enabled: dailyCollectionEnabled,
           daily_hour: dailyCollectionHour,
-          retention_days: retentionDays
+          retention_days: retentionDays,
+          collection_days: Object.keys(collectionDays).filter(day => collectionDays[day]),
+          domain_blacklist: {
+            enabled: blacklistEnabled,
+            domains: blacklistedDomains
+          }
         },
         clustering_config: {
           enabled: clusteringEnabled,
@@ -228,6 +429,11 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
             posts_per_subreddit: redditPostsPerSubreddit,
             lookback_days: redditLookbackDays
           },
+          youtube: {
+            min_views: youtubeMinViews,
+            min_channel_subscribers: youtubeMinChannelSubscribers,
+            enable_keyword_search: youtubeEnableKeywordSearch
+          },
           linkedin: {
             scraping_strategy: linkedinScrapingStrategy,
             delay_between_profiles_min: linkedinDelayProfilesMin,
@@ -235,7 +441,25 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
             delay_between_customers_min: linkedinDelayCustomersMin,
             delay_between_customers_max: linkedinDelayCustomersMax
           }
-        }
+        },
+        smart_feed_config: {
+          enabled: smartFeedEnabled,
+          min_priority: smartFeedMinPriority,
+          high_priority_threshold: smartFeedHighPriorityThreshold,
+          recency_boost: {
+            enabled: recencyBoostEnabled,
+            boost_amount: recencyBoostAmount,
+            time_threshold_hours: recencyBoostHours
+          },
+          category_preferences: categoryPreferences,
+          source_preferences: sourcePreferences,
+          diversity: {
+            enabled: diversityEnabled,
+            max_consecutive_same_source: maxConsecutiveSameSource
+          }
+        },
+        source_intervals: sourceIntervals,
+        australian_news_sources: australianNewsSources
       };
 
       await axios.put(`${API_URL}/api/settings/platform`, settings);
@@ -263,6 +487,39 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     setFocusAreas({
       ...focusAreas,
       [area]: !focusAreas[area]
+    });
+  };
+
+  const toggleCategoryPreference = (category) => {
+    setCategoryPreferences({
+      ...categoryPreferences,
+      [category]: !categoryPreferences[category]
+    });
+  };
+
+  const toggleSourcePreference = (source) => {
+    setSourcePreferences({
+      ...sourcePreferences,
+      [source]: !sourcePreferences[source]
+    });
+  };
+
+  const addBlacklistedDomain = () => {
+    const domain = newDomain.trim().toLowerCase();
+    if (domain && !blacklistedDomains.includes(domain)) {
+      setBlacklistedDomains([...blacklistedDomains, domain]);
+      setNewDomain('');
+    }
+  };
+
+  const removeBlacklistedDomain = (domain) => {
+    setBlacklistedDomains(blacklistedDomains.filter(d => d !== domain));
+  };
+
+  const updateSourceInterval = (source, interval) => {
+    setSourceIntervals({
+      ...sourceIntervals,
+      [source]: interval
     });
   };
 
@@ -305,6 +562,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
             onClick={() => setActiveTab('collectors')}
           >
             Collector Settings
+          </button>
+          <button
+            className={`settings-tab ${activeTab === 'smartfeed' ? 'active' : ''}`}
+            onClick={() => setActiveTab('smartfeed')}
+          >
+            Smart Feed
           </button>
         </div>
 
@@ -408,6 +671,96 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                       ))}
                     </div>
                   </div>
+
+                  {/* Automatic Summary Generation Schedule */}
+                  <div className="form-section">
+                    <label className="section-label">Automatic Generation Schedule</label>
+                    <p className="section-help">Automatically generate daily summaries at a scheduled time</p>
+
+                    <div className="collection-schedule-group">
+                      <label className="schedule-option">
+                        <input
+                          type="checkbox"
+                          checked={summaryScheduleEnabled}
+                          onChange={(e) => setSummaryScheduleEnabled(e.target.checked)}
+                        />
+                        <div className="schedule-info">
+                          <div className="schedule-name">Enable Automatic Daily Summary Generation</div>
+                          <div className="schedule-description">
+                            Generate AI summaries for all customers at the scheduled time each day
+                          </div>
+                        </div>
+                      </label>
+
+                      {summaryScheduleEnabled && (
+                        <div style={{ marginTop: '16px', paddingLeft: '32px' }}>
+                          <label className="section-label" style={{ fontSize: '14px', marginBottom: '8px' }}>
+                            Generation Time
+                          </label>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <div>
+                              <label style={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
+                                Hour
+                              </label>
+                              <select
+                                value={summaryScheduleHour}
+                                onChange={(e) => setSummaryScheduleHour(parseInt(e.target.value))}
+                                className="settings-select"
+                                style={{ width: '100px' }}
+                              >
+                                {Array.from({ length: 24 }, (_, i) => (
+                                  <option key={i} value={i}>
+                                    {i.toString().padStart(2, '0')}:00
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <p className="option-help" style={{ margin: 0 }}>
+                              Summaries will be generated at {summaryScheduleHour.toString().padStart(2, '0')}:{summaryScheduleMinute.toString().padStart(2, '0')} server time
+                            </p>
+                          </div>
+
+                          <div style={{ marginTop: '20px' }}>
+                            <label className="section-label" style={{ fontSize: '14px', marginBottom: '8px' }}>
+                              Days of Week
+                            </label>
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                              {[
+                                { key: 'mon', label: 'Monday' },
+                                { key: 'tue', label: 'Tuesday' },
+                                { key: 'wed', label: 'Wednesday' },
+                                { key: 'thu', label: 'Thursday' },
+                                { key: 'fri', label: 'Friday' },
+                                { key: 'sat', label: 'Saturday' },
+                                { key: 'sun', label: 'Sunday' }
+                              ].map(({ key, label }) => (
+                                <label key={key} className="toggle-field" style={{ flex: '0 0 auto' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={summaryScheduleDays[key]}
+                                    onChange={(e) => setSummaryScheduleDays({
+                                      ...summaryScheduleDays,
+                                      [key]: e.target.checked
+                                    })}
+                                  />
+                                  <span>{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <p className="option-help" style={{ marginTop: '8px' }}>
+                              Select which days of the week to generate summaries (default: Monday-Friday)
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="settings-info" style={{ marginTop: '12px' }}>
+                      <strong>Note:</strong> When enabled, daily summaries will be automatically generated for all customers at the scheduled time.
+                      You can also manually refresh summaries anytime in the Executive Summary section.
+                      Changing this setting requires a server restart to take effect.
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -463,57 +816,114 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     Configure automated collection schedules and data retention policies
                   </p>
 
-                  {/* Collection Schedules */}
+                  {/* Collection Timing */}
                   <div className="form-section">
-                    <label className="section-label">Collection Schedules</label>
-                    <p className="section-help">Configure when intelligence collection runs automatically</p>
+                    <label className="section-label">Collection Timing</label>
+                    <p className="section-help">Configure automated collection schedule and per-source intervals</p>
 
-                    <div className="collection-schedule-group">
+                    <div className="collection-schedule-group" style={{ marginBottom: '24px' }}>
                       <label className="schedule-option">
                         <input
                           type="checkbox"
-                          checked={hourlyCollectionEnabled}
-                          onChange={(e) => setHourlyCollectionEnabled(e.target.checked)}
+                          checked={hourlyCollectionEnabled || dailyCollectionEnabled}
+                          onChange={(e) => {
+                            setHourlyCollectionEnabled(e.target.checked);
+                            setDailyCollectionEnabled(e.target.checked);
+                          }}
                         />
                         <div className="schedule-info">
-                          <div className="schedule-name">Hourly Collection</div>
+                          <div className="schedule-name">Enable Periodic Collection</div>
                           <div className="schedule-description">
-                            Run lightweight collection every hour (news, social media, RSS)
+                            Runs every hour and collects from sources where enough time has elapsed based on their configured intervals
                           </div>
                         </div>
                       </label>
 
-                      <label className="schedule-option">
-                        <input
-                          type="checkbox"
-                          checked={dailyCollectionEnabled}
-                          onChange={(e) => setDailyCollectionEnabled(e.target.checked)}
-                        />
-                        <div className="schedule-info">
-                          <div className="schedule-name">Daily Comprehensive Collection</div>
-                          <div className="schedule-description">
-                            Run full collection with all sources and deep processing
+                      {(hourlyCollectionEnabled || dailyCollectionEnabled) && (
+                        <div style={{ marginTop: '16px', paddingLeft: '32px' }}>
+                          <label className="section-label" style={{ fontSize: '14px', marginBottom: '8px' }}>
+                            Collection Days
+                          </label>
+                          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                            {[
+                              { key: 'mon', label: 'Monday' },
+                              { key: 'tue', label: 'Tuesday' },
+                              { key: 'wed', label: 'Wednesday' },
+                              { key: 'thu', label: 'Thursday' },
+                              { key: 'fri', label: 'Friday' },
+                              { key: 'sat', label: 'Saturday' },
+                              { key: 'sun', label: 'Sunday' }
+                            ].map(({ key, label }) => (
+                              <label key={key} className="toggle-field" style={{ flex: '0 0 auto' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={collectionDays[key]}
+                                  onChange={(e) => setCollectionDays({
+                                    ...collectionDays,
+                                    [key]: e.target.checked
+                                  })}
+                                />
+                                <span>{label}</span>
+                              </label>
+                            ))}
                           </div>
+                          <p className="option-help" style={{ marginTop: '8px' }}>
+                            Select which days of the week to run collection (default: all days)
+                          </p>
                         </div>
-                      </label>
+                      )}
                     </div>
 
-                    {dailyCollectionEnabled && (
-                      <div className="option-group" style={{ marginTop: '16px' }}>
-                        <label>Daily Collection Time (24-hour format)</label>
-                        <select
-                          value={dailyCollectionHour}
-                          onChange={(e) => setDailyCollectionHour(parseInt(e.target.value))}
-                          className="settings-select"
-                        >
-                          {[...Array(24)].map((_, hour) => (
-                            <option key={hour} value={hour}>
-                              {hour.toString().padStart(2, '0')}:00 ({hour === 0 ? 'Midnight' : hour === 12 ? 'Noon' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`})
-                            </option>
-                          ))}
-                        </select>
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '20px' }}>
+                      <label className="section-label" style={{ fontSize: '15px', marginBottom: '8px' }}>Source Intervals</label>
+                      <p className="section-help">Configure how often each source is checked for new content</p>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px', marginTop: '16px' }}>
+                        {Object.entries({
+                          news_api: 'News API',
+                          rss: 'RSS Feeds',
+                          yahoo_finance_news: 'Yahoo Finance News',
+                          australian_news: 'Australian News',
+                          google_news: 'Google News',
+                          twitter: 'Twitter/X',
+                          youtube: 'YouTube',
+                          reddit: 'Reddit',
+                          linkedin: 'LinkedIn (Company)',
+                          linkedin_user: 'LinkedIn (User Profiles)',
+                          pressrelease: 'Press Releases',
+                          web_scrape: 'Web Scraper'
+                        }).map(([key, label]) => (
+                          <div key={key} className="interval-setting">
+                            <label>{label}</label>
+                            <select
+                              value={sourceIntervals[key]}
+                              onChange={(e) => updateSourceInterval(key, parseInt(e.target.value))}
+                              className="settings-select"
+                            >
+                              <option value={1}>Every hour</option>
+                              <option value={3}>Every 3 hours</option>
+                              <option value={6}>Every 6 hours</option>
+                              <option value={12}>Every 12 hours</option>
+                              <option value={24}>Every 24 hours (daily)</option>
+                              <option value={48}>Every 2 days</option>
+                              <option value={168}>Every week</option>
+                            </select>
+                          </div>
+                        ))}
                       </div>
-                    )}
+
+                      <p className="option-help" style={{ marginTop: '16px' }}>
+                        The periodic job runs every hour at :00 (1:00, 2:00, etc.) and checks each source's last collection time.
+                        Sources are only collected when their configured interval has elapsed since the last run.
+                      </p>
+                    </div>
+
+                    <div className="settings-warning" style={{ marginTop: '20px' }}>
+                      <strong>Note:</strong> Source interval changes take effect on the next periodic collection run (top of each hour).
+                      The collection logic checks elapsed time since last run for each source and only collects when the configured
+                      interval has passed.
+                    </div>
+
                   </div>
 
                   {/* Data Retention */}
@@ -540,10 +950,140 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     </div>
                   </div>
 
-                  <div className="settings-warning">
-                    <strong>Note:</strong> Collection schedule changes take effect immediately. The scheduler will be updated
-                    on the next scheduled run. Reducing retention period will not immediately delete old data - purge runs daily at midnight.
+                  {/* Domain Blacklist */}
+                  <div className="form-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e5e7eb' }}>
+                    <label className="section-label">Domain Blacklist</label>
+                    <p className="section-help">Block intelligence items from low-quality or spammy domains</p>
+
+                    <label className="schedule-option">
+                      <input
+                        type="checkbox"
+                        checked={blacklistEnabled}
+                        onChange={(e) => setBlacklistEnabled(e.target.checked)}
+                      />
+                      <div className="schedule-info">
+                        <div className="schedule-name">Enable Domain Blacklist</div>
+                        <div className="schedule-description">
+                          Filter out URLs from blacklisted domains during collection
+                        </div>
+                      </div>
+                    </label>
+
+                    {blacklistEnabled && (
+                      <>
+                        <div className="option-group" style={{ marginTop: '16px' }}>
+                          <label>Add Domain to Blacklist</label>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                              type="text"
+                              value={newDomain}
+                              onChange={(e) => setNewDomain(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  addBlacklistedDomain();
+                                }
+                              }}
+                              placeholder="example.com"
+                              className="settings-input"
+                              style={{ flex: 1 }}
+                            />
+                            <button
+                              type="button"
+                              onClick={addBlacklistedDomain}
+                              className="btn-save"
+                              style={{ padding: '8px 16px' }}
+                            >
+                              Add
+                            </button>
+                          </div>
+                          <p className="option-help">
+                            Enter domain names to block (e.g., yahoo.com, msn.com)
+                          </p>
+                        </div>
+
+                        {blacklistedDomains.length > 0 && (
+                          <div className="option-group">
+                            <label>Blacklisted Domains ({blacklistedDomains.length})</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                              {blacklistedDomains.map(domain => (
+                                <div
+                                  key={domain}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '6px 12px',
+                                    background: '#f3f4f6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                  }}
+                                >
+                                  <span>{domain}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBlacklistedDomain(domain)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#ef4444',
+                                      cursor: 'pointer',
+                                      padding: '0 4px',
+                                      fontSize: '16px',
+                                      fontWeight: 'bold'
+                                    }}
+                                    title="Remove domain"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
+
+                  {/* UI Auto-Refresh */}
+                  <div className="form-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e5e7eb' }}>
+                    <label className="section-label">UI Auto-Refresh</label>
+                    <p className="section-help">Configure how often the feed automatically refreshes with new intelligence</p>
+
+                    <label className="schedule-option">
+                      <input
+                        type="checkbox"
+                        checked={localStorage.getItem('autoRefreshEnabled') !== 'false'}
+                        onChange={(e) => localStorage.setItem('autoRefreshEnabled', e.target.checked)}
+                      />
+                      <div className="schedule-info">
+                        <div className="schedule-name">Enable Auto-Refresh</div>
+                        <div className="schedule-description">
+                          Automatically poll for new intelligence items at the configured interval
+                        </div>
+                      </div>
+                    </label>
+
+                    <div className="option-group" style={{ marginTop: '16px' }}>
+                      <label>Refresh Interval</label>
+                      <select
+                        value={localStorage.getItem('autoRefreshInterval') || '300000'}
+                        onChange={(e) => localStorage.setItem('autoRefreshInterval', e.target.value)}
+                        className="settings-select"
+                      >
+                        <option value="60000">1 minute (Frequent)</option>
+                        <option value="120000">2 minutes</option>
+                        <option value="300000">5 minutes (Recommended)</option>
+                        <option value="600000">10 minutes</option>
+                        <option value="900000">15 minutes</option>
+                        <option value="1800000">30 minutes</option>
+                      </select>
+                      <p className="option-help">
+                        How often to check for new intelligence items. Shorter intervals provide more up-to-date information but may use more resources.
+                      </p>
+                    </div>
+                  </div>
+
 
                   {/* Clustering Configuration */}
                   <div className="form-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e5e7eb' }}>
@@ -732,6 +1272,75 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     </div>
                   </div>
 
+                  {/* YouTube Collector Settings */}
+                  <div className="collector-section">
+                    <div className="collector-header">
+                      <h4>YouTube Collector</h4>
+                      <p className="collector-description">
+                        Monitor YouTube videos via transcripts with quality filters for views and channel size
+                      </p>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">Collection Options</label>
+                      <p className="section-help">Configure what types of videos to collect</p>
+
+                      <div style={{ marginBottom: '20px' }}>
+                        <label className="toggle-field">
+                          <input
+                            type="checkbox"
+                            checked={youtubeEnableKeywordSearch}
+                            onChange={(e) => setYoutubeEnableKeywordSearch(e.target.checked)}
+                          />
+                          <span>Enable Keyword Search</span>
+                        </label>
+                        <p className="option-help" style={{ marginLeft: '24px', marginTop: '4px' }}>
+                          Search YouTube for videos matching customer keywords. Disable to only monitor configured channels.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">Quality Filters</label>
+                      <p className="section-help">Minimum thresholds to filter low-quality or unpopular videos</p>
+
+                      <div className="option-row">
+                        <div className="option-group">
+                          <label>Minimum Views</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100000"
+                            step="100"
+                            value={youtubeMinViews}
+                            onChange={(e) => setYoutubeMinViews(parseInt(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Videos must have at least this many views</p>
+                        </div>
+
+                        <div className="option-group">
+                          <label>Minimum Channel Subscribers</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1000000"
+                            step="1000"
+                            value={youtubeMinChannelSubscribers}
+                            onChange={(e) => setYoutubeMinChannelSubscribers(parseInt(e.target.value))}
+                            className="settings-input"
+                          />
+                          <p className="option-help">Channel must have at least this many subscribers</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="settings-warning">
+                      <strong>Note:</strong> Higher thresholds filter out smaller channels and less popular videos.
+                      Set to 0 to disable filtering. Configured channels in customer settings will always be collected regardless of filters.
+                    </div>
+                  </div>
+
                   {/* LinkedIn Collector Settings */}
                   <div className="collector-section">
                     <div className="collector-header">
@@ -862,6 +1471,321 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                       appear more human-like.
                     </div>
                   </div>
+
+                  {/* Australian News Sources */}
+                  <div className="collector-section">
+                    <div className="collector-header">
+                      <h4>Australian News Sources</h4>
+                      <p className="collector-description">
+                        Configure RSS feeds from Australian news outlets to monitor
+                      </p>
+                    </div>
+
+                    <div className="form-section">
+                      <label className="section-label">News Sources</label>
+                      <p className="section-help">Enable/disable sources and manage RSS feeds</p>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {australianNewsSources.sources && australianNewsSources.sources.map((source, idx) => (
+                          <div key={idx} style={{
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            backgroundColor: source.enabled ? '#ffffff' : '#f9fafb'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={source.enabled}
+                                  onChange={(e) => {
+                                    const newSources = [...australianNewsSources.sources];
+                                    newSources[idx].enabled = e.target.checked;
+                                    setAustralianNewsSources({ sources: newSources });
+                                  }}
+                                />
+                                {source.name}
+                              </label>
+                              <button
+                                className="btn-secondary"
+                                onClick={() => {
+                                  const newSources = australianNewsSources.sources.filter((_, i) => i !== idx);
+                                  setAustralianNewsSources({ sources: newSources });
+                                }}
+                                style={{ padding: '4px 12px', fontSize: '14px', width: 'auto', height: 'auto' }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
+                                Source Name
+                              </label>
+                              <input
+                                type="text"
+                                value={source.name}
+                                onChange={(e) => {
+                                  const newSources = [...australianNewsSources.sources];
+                                  newSources[idx].name = e.target.value;
+                                  setAustralianNewsSources({ sources: newSources });
+                                }}
+                                className="settings-input"
+                                placeholder="e.g., ABC News"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
+                                RSS Feed URLs (one per line)
+                              </label>
+                              <textarea
+                                value={source.feeds.join('\n')}
+                                onChange={(e) => {
+                                  const newSources = [...australianNewsSources.sources];
+                                  newSources[idx].feeds = e.target.value.split('\n').filter(f => f.trim());
+                                  setAustralianNewsSources({ sources: newSources });
+                                }}
+                                className="settings-input"
+                                rows="3"
+                                placeholder="https://example.com/rss.xml"
+                                style={{ fontFamily: 'monospace', fontSize: '13px' }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          className="btn-primary"
+                          onClick={() => {
+                            const newSources = [
+                              ...australianNewsSources.sources,
+                              {
+                                name: 'New Source',
+                                enabled: true,
+                                feeds: []
+                              }
+                            ];
+                            setAustralianNewsSources({ sources: newSources });
+                          }}
+                          style={{ alignSelf: 'flex-start' }}
+                        >
+                          + Add News Source
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="settings-info">
+                      <strong>Note:</strong> Australian News collector uses these RSS feeds to monitor regional news sources.
+                      Disable sources you don't need to reduce collection time and noise.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Smart Feed Tab */}
+              {activeTab === 'smartfeed' && (
+                <div className="settings-section">
+                  <h3>Smart Feed Configuration</h3>
+                  <p className="settings-description">
+                    Configure intelligent filtering to show the most relevant intelligence in your feed
+                  </p>
+
+                  {/* Enable/Disable Smart Feed */}
+                  <div className="form-section">
+                    <label className="schedule-option">
+                      <input
+                        type="checkbox"
+                        checked={smartFeedEnabled}
+                        onChange={(e) => setSmartFeedEnabled(e.target.checked)}
+                      />
+                      <div className="schedule-info">
+                        <div className="schedule-name">Enable Smart Feed Filtering</div>
+                        <div className="schedule-description">
+                          Apply intelligent filtering when Smart Feed toggle is enabled in the main feed
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {smartFeedEnabled && (
+                    <>
+                      {/* Priority Thresholds */}
+                      <div className="form-section">
+                        <label className="section-label">Priority Filtering</label>
+                        <p className="section-help">Filter items based on AI-calculated priority scores</p>
+
+                        <div className="option-group" style={{ marginTop: '16px' }}>
+                          <label>Minimum Priority: {(smartFeedMinPriority * 100).toFixed(0)}%</label>
+                          <input
+                            type="range"
+                            min="0.0"
+                            max="1.0"
+                            step="0.1"
+                            value={smartFeedMinPriority}
+                            onChange={(e) => setSmartFeedMinPriority(parseFloat(e.target.value))}
+                            className="similarity-slider"
+                          />
+                          <p className="option-help">
+                            Items below this priority will be filtered out from the smart feed
+                          </p>
+                        </div>
+
+                        <div className="option-group">
+                          <label>High Priority Threshold: {(smartFeedHighPriorityThreshold * 100).toFixed(0)}%</label>
+                          <input
+                            type="range"
+                            min="0.0"
+                            max="1.0"
+                            step="0.1"
+                            value={smartFeedHighPriorityThreshold}
+                            onChange={(e) => setSmartFeedHighPriorityThreshold(parseFloat(e.target.value))}
+                            className="similarity-slider"
+                          />
+                          <p className="option-help">
+                            Single-source items above this threshold always show, even if unclustered
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Recency Boost */}
+                      <div className="form-section">
+                        <label className="section-label">Recency Boost</label>
+                        <p className="section-help">Boost priority for recent items to surface fresh intelligence</p>
+
+                        <label className="schedule-option">
+                          <input
+                            type="checkbox"
+                            checked={recencyBoostEnabled}
+                            onChange={(e) => setRecencyBoostEnabled(e.target.checked)}
+                          />
+                          <div className="schedule-info">
+                            <div className="schedule-name">Enable Recency Boost</div>
+                            <div className="schedule-description">
+                              Automatically increase priority for recently published items
+                            </div>
+                          </div>
+                        </label>
+
+                        {recencyBoostEnabled && (
+                          <>
+                            <div className="option-group" style={{ marginTop: '16px' }}>
+                              <label>Boost Amount: +{(recencyBoostAmount * 100).toFixed(0)}%</label>
+                              <input
+                                type="range"
+                                min="0.0"
+                                max="0.3"
+                                step="0.05"
+                                value={recencyBoostAmount}
+                                onChange={(e) => setRecencyBoostAmount(parseFloat(e.target.value))}
+                                className="similarity-slider"
+                              />
+                              <p className="option-help">
+                                Amount to add to priority score for recent items
+                              </p>
+                            </div>
+
+                            <div className="option-group">
+                              <label>Time Threshold</label>
+                              <select
+                                value={recencyBoostHours}
+                                onChange={(e) => setRecencyBoostHours(parseInt(e.target.value))}
+                                className="settings-select"
+                              >
+                                <option value={6}>6 hours</option>
+                                <option value={12}>12 hours</option>
+                                <option value={24}>24 hours (Recommended)</option>
+                                <option value={48}>48 hours</option>
+                                <option value={72}>72 hours</option>
+                              </select>
+                              <p className="option-help">
+                                Items newer than this get the recency boost
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Category Preferences */}
+                      <div className="form-section">
+                        <label className="section-label">Category Preferences</label>
+                        <p className="section-help">Always show items from selected categories, regardless of priority</p>
+                        <div className="focus-areas-grid">
+                          {Object.entries(categoryPreferences).map(([key, enabled]) => (
+                            <label key={key} className="focus-area-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={() => toggleCategoryPreference(key)}
+                              />
+                              <span>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Source Preferences */}
+                      <div className="form-section">
+                        <label className="section-label">Source Preferences</label>
+                        <p className="section-help">Always show items from selected sources, regardless of priority</p>
+                        <div className="focus-areas-grid">
+                          {Object.entries(sourcePreferences).map(([key, enabled]) => (
+                            <label key={key} className="focus-area-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={() => toggleSourcePreference(key)}
+                              />
+                              <span>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Diversity Settings */}
+                      <div className="form-section">
+                        <label className="section-label">Feed Diversity</label>
+                        <p className="section-help">Prevent feed from being dominated by a single source</p>
+
+                        <label className="schedule-option">
+                          <input
+                            type="checkbox"
+                            checked={diversityEnabled}
+                            onChange={(e) => setDiversityEnabled(e.target.checked)}
+                          />
+                          <div className="schedule-info">
+                            <div className="schedule-name">Enable Diversity Control</div>
+                            <div className="schedule-description">
+                              Limit consecutive items from the same source for variety
+                            </div>
+                          </div>
+                        </label>
+
+                        {diversityEnabled && (
+                          <div className="option-group" style={{ marginTop: '16px' }}>
+                            <label>Max Consecutive Same Source</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={maxConsecutiveSameSource}
+                              onChange={(e) => setMaxConsecutiveSameSource(parseInt(e.target.value))}
+                              className="settings-input"
+                            />
+                            <p className="option-help">
+                              Maximum number of items from the same source before requiring a different source
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="settings-info" style={{ marginTop: '24px' }}>
+                        <strong>How Smart Feed Works:</strong> When enabled, the feed applies priority filtering,
+                        category/source preferences, recency boosts, and diversity controls to surface the most
+                        relevant intelligence while filtering noise. Use Full Feed to see everything unfiltered.
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </>
