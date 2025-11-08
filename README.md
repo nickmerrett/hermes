@@ -11,12 +11,13 @@ An AI-powered platform that aggregates and analyzes information from 10+ sources
 - **Google News** - Auto-generated company & competitor searches
 - **RSS Feeds** - Company blogs, newsrooms, press releases
 - **Stock Market** - Yahoo Finance (with ASX support)
-- **Australian News** - ITNews, ABC News, AFR
+- **Australian News** - ABC News, Guardian AU, SMH, and more
 - **LinkedIn** - Executive profiles and company updates
 - **Reddit** - Community discussions and insights
-- **Hacker News** - Tech industry conversations
-- **GitHub** - Repository activity and releases
+- **YouTube** - Video content via transcripts with quality filters
 - **Twitter/X** - Social media monitoring
+- **GitHub** - Repository activity and releases
+- **Web Scraper** - Custom sources with CSS selectors
 
 ### 🤖 AI-Powered Processing (Claude Sonnet 4.5)
 - **Smart Summarization** - Concise, actionable summaries
@@ -134,10 +135,20 @@ npm run dev
 
 ## 📚 Documentation
 
-- **[Setup Guide](docs/SETUP.md)** - Complete installation and configuration
-- **[Configuration](docs/CONFIGURATION.md)** - Data sources and customer config
-- **[Development Guide](docs/DEVELOPMENT.md)** - Contributing and development setup
-- **[Utility Tools](backend/tools/README.md)** - Database tools and maintenance scripts
+### Getting Started
+- **Quick Start** - See installation instructions above
+- **[Roadmap](ROADMAP.md)** - Development roadmap and completed features
+
+### Operations & Maintenance
+- **[Diagnostics CLI](docs/operations/DIAGNOSTICS.md)** - hermes-diag tool reference
+- **[Utility Tools](docs/operations/TOOLS.md)** - Database migrations and maintenance scripts
+
+### Data Sources
+- **[Collector Overview](docs/collectors/README.md)** - All available data sources and configuration
+- **[YouTube Setup](docs/collectors/YOUTUBE.md)** - YouTube API setup and channel monitoring
+
+### Architecture
+- **[Collection Architecture](docs/architecture/COLLECTION_ARCHITECTURE.md)** - Parallel collection, rate limiting, and scraping strategies
 
 ## 🚀 API Reference
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './PlatformSettingsModal.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Default prompt templates
 const PROMPT_TEMPLATES = {
@@ -225,7 +225,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/settings/platform`);
+      const response = await axios.get(`${API_URL}/settings/platform`);
       const settings = response.data;
 
       // Daily Briefing Settings
@@ -462,7 +462,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         australian_news_sources: australianNewsSources
       };
 
-      await axios.put(`${API_URL}/api/settings/platform`, settings);
+      await axios.put(`${API_URL}/settings/platform`, settings);
 
       if (onSave) {
         onSave();

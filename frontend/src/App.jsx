@@ -275,7 +275,7 @@ function App() {
 
   const handleDeleteCustomer = async (customerId) => {
     try {
-      await axios.delete(`${API_URL}/api/customers/${customerId}`)
+      await axios.delete(`${API_URL}/customers/${customerId}`)
       // Refresh customer list
       fetchCustomers()
       // Clear selection if deleted customer was selected

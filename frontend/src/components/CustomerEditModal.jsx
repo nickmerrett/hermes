@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './CustomerEditModal.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function CustomerEditModal({ customer, onClose, onSave, onDelete }) {
   const [formData, setFormData] = useState({
@@ -129,7 +129,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         config: flatConfig
       };
 
-      await axios.put(`${API_URL}/api/customers/${customer.id}`, payload);
+      await axios.put(`${API_URL}/customers/${customer.id}`, payload);
       onSave();
       onClose();
     } catch (err) {
