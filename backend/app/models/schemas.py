@@ -1,9 +1,23 @@
 """Pydantic schemas for API request/response validation"""
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_serializer
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+
+
+# Custom datetime serialization for all models
+class BaseModelWithTimezone(BaseModel):
+    """Base model with timezone-aware datetime serialization"""
+
+    model_config = ConfigDict(
+        # Serialize datetime as ISO 8601 with 'Z' suffix for UTC
+        json_encoders={
+            datetime: lambda dt: dt.isoformat() + 'Z' if dt and dt.tzinfo is None else (
+                dt.astimezone(None).isoformat().replace('+00:00', 'Z') if dt else None
+            )
+        }
+    )
 
 
 class SentimentType(str, Enum):
@@ -67,14 +81,13 @@ class CustomerUpdate(BaseModel):
     config: Optional[Dict[str, Any]] = None
 
 
-class CustomerResponse(CustomerBase):
+class CustomerResponse(CustomerBase, BaseModelWithTimezone):
     """Schema for customer response"""
     id: int
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Intelligence Item Schemas
@@ -94,7 +107,7 @@ class IntelligenceItemCreate(IntelligenceItemBase):
     raw_data: Optional[Dict[str, Any]] = None
 
 
-class ProcessedIntelligenceResponse(BaseModel):
+class ProcessedIntelligenceResponse(BaseModelWithTimezone):
     """Schema for processed intelligence data"""
     summary: Optional[str] = None
     category: Optional[str] = None
@@ -110,11 +123,10 @@ class ProcessedIntelligenceResponse(BaseModel):
     last_processing_error: Optional[str] = None
     last_processing_attempt: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
-class IntelligenceItemResponse(IntelligenceItemBase):
+class IntelligenceItemResponse(IntelligenceItemBase, BaseModelWithTimezone):
     """Schema for intelligence item response"""
     id: int
     customer_id: int
@@ -128,8 +140,7 @@ class IntelligenceItemResponse(IntelligenceItemBase):
     source_tier: Optional[str] = None
     cluster_member_count: int = 1
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IntelligenceItemDetail(IntelligenceItemResponse):
@@ -176,7 +187,7 @@ class SourceCreate(SourceBase):
     customer_id: int
 
 
-class SourceResponse(SourceBase):
+class SourceResponse(SourceBase, BaseModelWithTimezone):
     """Schema for source response"""
     id: int
     customer_id: int
@@ -184,12 +195,11 @@ class SourceResponse(SourceBase):
     last_status: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Collection Job Schemas
-class CollectionJobResponse(BaseModel):
+class CollectionJobResponse(BaseModelWithTimezone):
     """Schema for collection job response"""
     id: int
     job_type: str
@@ -202,8 +212,7 @@ class CollectionJobResponse(BaseModel):
     items_failed_processing: int = 0
     error_message: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Search Schema

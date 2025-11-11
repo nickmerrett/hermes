@@ -959,27 +959,29 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
             logger.debug(f"Skipping blacklisted URL: {item_create.url}")
             continue
 
-        # Level 1 Deduplication: Check by normalized URL
+        # Level 1 Deduplication: Check by normalized URL (per customer)
         if item_create.url:
             normalized_url = normalize_url(item_create.url)
 
-            # Check for exact URL match first
+            # Check for exact URL match first (for this customer)
             existing = db.query(IntelligenceItem).filter(
+                IntelligenceItem.customer_id == item_create.customer_id,
                 IntelligenceItem.url == item_create.url
             ).first()
 
             if existing:
-                logger.debug(f"Duplicate URL (exact): {item_create.url}")
+                logger.debug(f"Duplicate URL (exact) for customer {item_create.customer_id}: {item_create.url}")
                 continue
 
             # Check for normalized URL match (catches tracking params, AMP, etc.)
             if normalized_url != item_create.url:
                 existing_normalized = db.query(IntelligenceItem).filter(
+                    IntelligenceItem.customer_id == item_create.customer_id,
                     IntelligenceItem.url == normalized_url
                 ).first()
 
                 if existing_normalized:
-                    logger.debug(f"Duplicate URL (normalized): {item_create.url} -> {normalized_url}")
+                    logger.debug(f"Duplicate URL (normalized) for customer {item_create.customer_id}: {item_create.url} -> {normalized_url}")
                     continue
 
         # Level 2 Deduplication: Check for similar title within 24 hours
@@ -1378,7 +1380,7 @@ def purge_old_items(retention_days: int = None):
 
         # Find old items
         old_items = db.query(IntelligenceItem).filter(
-            IntelligenceItem.created_at < cutoff_date
+            IntelligenceItem.collected_date < cutoff_date
         ).all()
 
         if not old_items:

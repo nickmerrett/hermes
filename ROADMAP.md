@@ -6,6 +6,80 @@ Hermes is production-ready for internal use with core features fully functional.
 
 ## Post-Beta Enhancement Roadmap
 
+### Priority 0: Critical Improvements
+
+#### 28. Add Source Citations to Daily Executive Summary
+**Status:** Pending
+**Effort:** Medium
+**Description:** Include references and citations in daily executive summaries so users can verify claims and explore source material.
+
+**Current Problem:**
+- Daily summaries make claims without attribution
+- Users can't verify information or find original sources
+- No way to trace summary statements back to specific articles
+- Reduces trust and credibility of AI-generated summaries
+
+**Proposed Solution - Inline Citations:**
+```markdown
+The company announced Q3 earnings beat analyst expectations [1], with revenue
+up 15% year-over-year [2]. Management cited strong demand in the Asia-Pacific
+region [1] and successful product launches [3].
+
+---
+Sources:
+[1] Company Q3 Earnings Report - Press Release - Oct 15, 2025
+    https://company.com/investors/q3-2025
+[2] Q3 Revenue Growth Exceeds Forecasts - Reuters - Oct 15, 2025
+    https://reuters.com/article/...
+[3] New Product Line Drives Growth - TechCrunch - Oct 12, 2025
+    https://techcrunch.com/2025/10/12/...
+```
+
+**Implementation Phases:**
+
+**Phase 1: Enhanced AI Prompt (2-3 days)**
+- Update daily summary AI prompt to include citation tracking
+- Instruct Claude to reference source articles using [1], [2], [3] format
+- Generate bibliography with article titles, sources, dates, URLs
+- Test with various customer data sets
+
+**Phase 2: Structured Citation Data (1 week)**
+- Add `citations` field to DailySummary model (JSON array)
+- Structure: `{ref_id, item_id, title, source, date, url, excerpt}`
+- Store mapping between summary claims and source articles
+- Backend: Link citations back to IntelligenceItem records
+
+**Phase 3: Enhanced UI Display (1 week)**
+- **Inline Citations**: Clickable [1], [2], [3] references in summary text
+- **Sources Section**: Collapsible bibliography at bottom of summary
+- **Hover Preview**: Tooltip shows article title and excerpt on citation hover
+- **Click Action**: Opens article detail modal or navigates to source URL
+- **Visual Indicators**: Icons for source types (press release, news, social, etc.)
+
+**Phase 4: Source Quality Indicators (3-4 days)**
+- **Tier Badges**: Display source tier (official/primary/secondary/aggregator/social)
+- **Authority Indicators**: Highlight authoritative sources (Reuters, Bloomberg, company newsroom)
+- **Freshness**: Show how recent the source is ("2 hours ago")
+- **Multiple Sources**: Badge showing "Confirmed by 3 sources" when multiple articles report same fact
+
+**Benefits:**
+- ✅ Increased trust and credibility
+- ✅ Verifiable claims with source material
+- ✅ Better understanding of where information comes from
+- ✅ Easier fact-checking and validation
+- ✅ Transparency in AI-generated content
+- ✅ Compliance with AI content guidelines (attribution)
+
+**Future Enhancements:**
+- Citation analytics - Track which sources are cited most frequently
+- Source quality scoring - Weight citations by source authority
+- Multi-source verification - Highlight facts confirmed by multiple sources
+- Disputed claims - Flag when sources disagree
+- Citation export - Export bibliography in academic formats (BibTeX, APA)
+- Interactive timeline - Show how story developed across sources over time
+
+---
+
 ### Priority 1: Data Source Improvements
 
 #### 1. Fix Stock Market Data Collection
@@ -1366,6 +1440,12 @@ opportunities:
 ---
 
 ## Recent Additions (November 2025)
+
+### Session 2025-11-11 ✅
+- **URL Deduplication Fix** - Changed from globally unique URLs to per-customer unique (customer_id, url) constraint, allowing same article to be collected for multiple customers
+- **Timezone Display Fix** - Added 'Z' suffix to datetime serialization ensuring UTC timestamps display correctly in browser (fixes 11-hour offset issue for Australian timezone)
+- **ANZ Keyword Expansion** - Expanded from 7 to 24 keywords including industry terms, comparative terms, executive names, and common patterns
+- **Migration Scripts** - Created database migration for URL uniqueness and verification scripts for both database schema and timezone handling
 
 ### Session 2025-11-06 ✅
 - **UI Auto-Refresh** - Configurable automatic feed polling with intervals from 1-30 minutes, visual indicators, and localStorage persistence

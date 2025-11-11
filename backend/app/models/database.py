@@ -56,12 +56,12 @@ class IntelligenceItem(Base):
     __tablename__ = "intelligence_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     source_id = Column(Integer, ForeignKey("sources.id"))
     source_type = Column(String(50), nullable=False, index=True)
     title = Column(Text, nullable=False)
     content = Column(Text)
-    url = Column(String(2048), unique=True, index=True)
+    url = Column(String(2048), index=True)  # Changed: No longer globally unique
     published_date = Column(DateTime, index=True)
     collected_date = Column(DateTime, default=datetime.utcnow, index=True)
     raw_data = Column(JSON)  # Store original data for debugging
@@ -80,6 +80,11 @@ class IntelligenceItem(Base):
     customer = relationship("Customer", back_populates="intelligence_items")
     source = relationship("Source", back_populates="intelligence_items")
     processed = relationship("ProcessedIntelligence", back_populates="item", uselist=False, cascade="all, delete-orphan")
+
+    # Composite unique constraint: same URL can exist for different customers
+    __table_args__ = (
+        UniqueConstraint('customer_id', 'url', name='uix_customer_url'),
+    )
 
 
 class ProcessedIntelligence(Base):

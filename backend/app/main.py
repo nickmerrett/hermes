@@ -9,11 +9,14 @@ os.environ['ANONYMIZED_TELEMETRY'] = 'False'
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
 import logging
 from typing import List, Optional
+from datetime import datetime
+import json
 
 from app.config.settings import settings
 from app.core.database import init_db, get_db
@@ -59,12 +62,40 @@ async def lifespan(app: FastAPI):
         shutdown_scheduler()
 
 
+# Custom JSON encoder to handle datetime serialization with UTC timezone
+class CustomJSONResponse(JSONResponse):
+    """Custom JSON response that ensures datetimes are serialized as UTC with 'Z' suffix"""
+
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            default=self.datetime_encoder
+        ).encode("utf-8")
+
+    @staticmethod
+    def datetime_encoder(obj):
+        """Encode datetime objects as ISO 8601 with 'Z' suffix for UTC"""
+        if isinstance(obj, datetime):
+            # If datetime is naive (no timezone), assume it's UTC and add 'Z' suffix
+            if obj.tzinfo is None:
+                return obj.isoformat() + 'Z'
+            # If datetime has timezone, convert to UTC and add 'Z' suffix
+            utc_dt = obj.astimezone(None)
+            return utc_dt.isoformat().replace('+00:00', 'Z')
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="Hermes",
     description="Automated customer intelligence aggregation and analysis platform",
     version=__version__,
-    lifespan=lifespan
+    lifespan=lifespan,
+    default_response_class=CustomJSONResponse  # Use custom JSON response
 )
 
 # Configure CORS
