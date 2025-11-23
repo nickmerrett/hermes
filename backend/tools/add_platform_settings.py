@@ -66,7 +66,8 @@ Keep the summary professional, actionable, and under 300 words."""
             ai_config = PlatformSettings(
                 key='ai_config',
                 value={
-                    'model': 'claude-3-5-sonnet-20241022',
+                    'model': 'claude-sonnet-4-5-20250929',
+                    'model_cheap': 'claude-haiku-4-5-20250929',
                     'embedding_model': 'sentence-transformers/all-MiniLM-L6-v2'
                 }
             )

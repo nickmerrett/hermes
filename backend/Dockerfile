@@ -37,5 +37,5 @@ RUN mkdir -p /app/data/db /app/data/chroma /app/data/linkedin_sessions
 # Expose API port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application with multiple workers for concurrent request handling
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--timeout-keep-alive", "75"]

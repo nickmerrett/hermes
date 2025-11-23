@@ -13,6 +13,7 @@ chromadb==0.5.5  # Updated for NumPy 2.0 compatibility
 
 # AI & ML
 anthropic==0.18.1
+openai==1.54.0  # OpenAI and OpenAI-compatible API support
 sentence-transformers==3.0.1  # Updated for NumPy 2.0 compatibility
 tiktoken==0.6.0
 

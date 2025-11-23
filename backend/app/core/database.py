@@ -10,12 +10,14 @@ from app.config.settings import settings
 from app.models.database import Base
 
 
-# Enable foreign key constraints for SQLite
+# Enable foreign key constraints and WAL mode for SQLite
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_conn, connection_record):
-    """Enable foreign key support in SQLite"""
+    """Enable foreign key support and WAL mode in SQLite for better concurrency"""
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging for concurrent access
+    cursor.execute("PRAGMA busy_timeout=5000")  # Wait up to 5 seconds for locks
     cursor.close()
 
 

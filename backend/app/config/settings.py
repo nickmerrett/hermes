@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
     news_api_key: str = ""
 
     # Social Media API Keys
@@ -50,8 +51,17 @@ class Settings(BaseSettings):
     daily_collection_hour: int = 10  # Hour (0-23) to run daily comprehensive collection
 
     # AI Processing
-    ai_model: str = "claude-sonnet-4-5-20250929"  # Claude model to use for processing (Claude Sonnet 4.5)
-    ai_api_base_url: str = "https://api.anthropic.com"  # Anthropic API base URL (can override for proxies)
+    ai_provider: str = "anthropic"  # Provider for premium model: anthropic or openai
+    ai_model: str = "claude-sonnet-4-5-20250929"  # Model for daily summaries and complex tasks
+    ai_provider_cheap: str = "anthropic"  # Provider for economy model: anthropic or openai
+    ai_model_cheap: str = "claude-haiku-4-5-20250929"  # Cheaper model for entity extraction, filtering, article summaries
+    model_override_in_ui: bool = False  # Allow UI to override model settings from environment variables
+
+    # API Base URLs
+    anthropic_api_base_url: str = "https://api.anthropic.com"  # Anthropic API base URL (can override for proxies)
+    openai_base_url: str = "https://api.openai.com/v1"  # OpenAI API base URL (supports OpenAI, LM Studio, Ollama, etc.)
+
+    # Other AI Settings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     max_tokens_summary: int = 800  # Max tokens for AI summaries
 

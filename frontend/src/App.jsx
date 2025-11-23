@@ -625,6 +625,24 @@ function App() {
                           ))}
                         </div>
                       )}
+
+                      {/* Pain Points */}
+                      {item.processed.pain_points_opportunities && item.processed.pain_points_opportunities.pain_points && item.processed.pain_points_opportunities.pain_points.length > 0 && (
+                        <div className="tags">
+                          {item.processed.pain_points_opportunities.pain_points.map((pain, i) => (
+                            <span key={i} className="tag tag-pain-point">⚠️ {pain}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Opportunities */}
+                      {item.processed.pain_points_opportunities && item.processed.pain_points_opportunities.opportunities && item.processed.pain_points_opportunities.opportunities.length > 0 && (
+                        <div className="tags">
+                          {item.processed.pain_points_opportunities.opportunities.map((opp, i) => (
+                            <span key={i} className="tag tag-opportunity">✨ {opp}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -752,6 +770,24 @@ function App() {
                         <div className="tags">
                           {item.processed.tags.slice(0, 3).map((tag, i) => (
                             <span key={i} className="tag">{tag}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Pain Points */}
+                      {item.processed.pain_points_opportunities && item.processed.pain_points_opportunities.pain_points && item.processed.pain_points_opportunities.pain_points.length > 0 && (
+                        <div className="tags">
+                          {item.processed.pain_points_opportunities.pain_points.map((pain, i) => (
+                            <span key={i} className="tag tag-pain-point">⚠️ {pain}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Opportunities */}
+                      {item.processed.pain_points_opportunities && item.processed.pain_points_opportunities.opportunities && item.processed.pain_points_opportunities.opportunities.length > 0 && (
+                        <div className="tags">
+                          {item.processed.pain_points_opportunities.opportunities.map((opp, i) => (
+                            <span key={i} className="tag tag-opportunity">✨ {opp}</span>
                           ))}
                         </div>
                       )}

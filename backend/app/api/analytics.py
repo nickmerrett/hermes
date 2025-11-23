@@ -13,6 +13,14 @@ from app.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Import OpenAI (optional)
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger.warning("OpenAI package not installed. OpenAI models will not be available for daily summaries.")
 router = APIRouter()
 
 
@@ -244,12 +252,71 @@ async def get_daily_summary_ai(
                 "summary": "AI summarization is not available (API key not configured)."
             }
 
-        client = Anthropic(api_key=settings.anthropic_api_key)
+        # Get model from environment variables (or UI override if enabled)
+        premium_model = settings.ai_model  # Default from env
 
-        # Get custom prompt from platform settings
+        # Only check database for model override if MODEL_OVERRIDE_IN_UI is enabled
+        if settings.model_override_in_ui:
+            ai_config_settings = db.query(PlatformSettings).filter(
+                PlatformSettings.key == 'ai_config'
+            ).first()
+            if ai_config_settings and isinstance(ai_config_settings.value, dict):
+                config = ai_config_settings.value
+                premium_model = config.get('model', settings.ai_model)
+
+        # Get custom prompt from platform settings if available
         briefing_settings = db.query(PlatformSettings).filter(
             PlatformSettings.key == 'daily_briefing'
         ).first()
+
+        # Get provider from environment settings (premium model for daily summaries)
+        provider = settings.ai_provider
+
+        # Initialize the appropriate client based on provider
+        if provider == 'anthropic':
+            if not settings.anthropic_api_key:
+                return {
+                    "customer_id": customer_id,
+                    "customer_name": customer.name,
+                    "period": "last_24_hours",
+                    "total_items": len(recent_items),
+                    "summary": "AI summarization is not available (ANTHROPIC_API_KEY not configured)."
+                }
+            client = Anthropic(
+                api_key=settings.anthropic_api_key,
+                base_url=settings.anthropic_api_base_url
+            )
+            client_type = 'anthropic'
+        elif provider == 'openai':
+            if not OPENAI_AVAILABLE:
+                return {
+                    "customer_id": customer_id,
+                    "customer_name": customer.name,
+                    "period": "last_24_hours",
+                    "total_items": len(recent_items),
+                    "summary": "AI summarization is not available (OpenAI package not installed. Run: pip install openai)."
+                }
+            if not settings.openai_api_key:
+                return {
+                    "customer_id": customer_id,
+                    "customer_name": customer.name,
+                    "period": "last_24_hours",
+                    "total_items": len(recent_items),
+                    "summary": "AI summarization is not available (OPENAI_API_KEY not configured)."
+                }
+            client = OpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url
+            )
+            client_type = 'openai'
+        else:
+            return {
+                "customer_id": customer_id,
+                "customer_name": customer.name,
+                "period": "last_24_hours",
+                "total_items": len(recent_items),
+                "summary": f"AI summarization is not available (Unknown provider: {provider}. Set AI_PROVIDER to 'anthropic' or 'openai')."
+            }
 
         # Use custom prompt or fall back to default
         if briefing_settings and briefing_settings.value.get('prompt'):
@@ -280,13 +347,23 @@ Keep the summary professional, actionable, and under 300 words."""
 
 Write the briefing now:"""
 
-        response = client.messages.create(
-            model=settings.ai_model,
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        summary_text = response.content[0].text
+        # Call AI API based on provider
+        if client_type == 'anthropic':
+            response = client.messages.create(
+                model=premium_model,
+                max_tokens=1200,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            summary_text = response.content[0].text
+        elif client_type == 'openai':
+            response = client.chat.completions.create(
+                model=premium_model,
+                max_tokens=1200,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            summary_text = response.choices[0].message.content
+        else:
+            raise ValueError(f"Unknown client type: {client_type}")
 
         # Save summary to database
         summary_record = DailySummary(

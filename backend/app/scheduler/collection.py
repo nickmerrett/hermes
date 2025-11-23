@@ -936,7 +936,7 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
     from app.collectors.base import BaseCollector
     from app.models.database import PlatformSettings
 
-    ai_processor = get_ai_processor()
+    ai_processor = get_ai_processor(db)  # Pass db to get cheap model from platform settings
     vector_store = get_vector_store()
     failed_processing_count = 0
 
@@ -1102,6 +1102,7 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                 priority_score=processed_data['priority_score'],
                 entities=processed_data['entities'],
                 tags=processed_data['tags'],
+                pain_points_opportunities=processed_data.get('pain_points_opportunities', {'pain_points': [], 'opportunities': []}),
                 needs_reprocessing=False,
                 processing_attempts=max_retries if max_retries > 1 else 1,
                 last_processing_attempt=datetime.utcnow()

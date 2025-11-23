@@ -99,6 +99,7 @@ class ProcessedIntelligence(Base):
     priority_score = Column(Float, default=0.5, index=True)  # 0.0 to 1.0
     entities = Column(JSON)  # Extracted entities (people, companies, technologies)
     tags = Column(JSON)  # Generated tags
+    pain_points_opportunities = Column(JSON)  # {"pain_points": [...], "opportunities": [...]}
     processed_date = Column(DateTime, default=datetime.utcnow)
 
     # AI processing status tracking

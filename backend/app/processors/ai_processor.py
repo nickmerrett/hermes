@@ -1,15 +1,25 @@
-"""AI processor for summarization and classification using Claude API"""
+"""AI processor for summarization and classification using Claude or OpenAI API"""
 
 from typing import Dict, Any, List, Optional
 import json
 import logging
 from anthropic import Anthropic
 import re
+from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.models.schemas import CategoryType, SentimentType
+from app.models.database import PlatformSettings
 
 logger = logging.getLogger(__name__)
+
+# Import OpenAI (will be optional)
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger.warning("OpenAI package not installed. OpenAI models will not be available.")
 
 
 class AIProcessor:
@@ -22,12 +32,45 @@ class AIProcessor:
     - Priority scoring
     """
 
-    def __init__(self):
-        if not settings.anthropic_api_key:
-            raise ValueError("ANTHROPIC_API_KEY not configured")
+    def __init__(self, db: Optional[Session] = None):
+        # Get model name from platform settings (for article processing = cheap model)
+        # Provider config comes from environment variables
+        self.model = settings.ai_model_cheap  # default from env
 
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.ai_model
+        if db:
+            ai_config_row = db.query(PlatformSettings).filter(
+                PlatformSettings.key == 'ai_config'
+            ).first()
+            if ai_config_row and isinstance(ai_config_row.value, dict):
+                config = ai_config_row.value
+                # Get cheap model name from platform settings (GUI)
+                self.model = config.get('model_cheap', settings.ai_model_cheap)
+
+        # Get provider from environment settings (economy model)
+        self.provider = settings.ai_provider_cheap
+
+        # Initialize the appropriate client based on provider
+        if self.provider == 'anthropic':
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY not configured")
+            self.client = Anthropic(
+                api_key=settings.anthropic_api_key,
+                base_url=settings.anthropic_api_base_url
+            )
+            self.client_type = 'anthropic'
+        elif self.provider == 'openai':
+            if not OPENAI_AVAILABLE:
+                raise ValueError("OpenAI package not installed. Run: pip install openai")
+            if not settings.openai_api_key:
+                raise ValueError("OPENAI_API_KEY not configured")
+            self.client = OpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url
+            )
+            self.client_type = 'openai'
+        else:
+            raise ValueError(f"Unknown AI provider: {self.provider}. Set AI_PROVIDER_CHEAP to 'anthropic' or 'openai'")
+
         self.max_tokens = settings.max_tokens_summary
 
     async def process_item(
@@ -70,17 +113,30 @@ class AIProcessor:
                 is_trusted_source
             )
 
-            # Call Claude API
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
+            # Call AI API based on provider
+            if self.client_type == 'anthropic':
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = response.content[0].text
+            elif self.client_type == 'openai':
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = response.choices[0].message.content
+            else:
+                raise ValueError(f"Unknown client type: {self.client_type}")
 
             # Parse response
-            result = self._parse_response(response.content[0].text)
+            result = self._parse_response(response_text)
 
             logger.debug(f"Processed item: {title[:50]}...")
             return result
@@ -217,7 +273,26 @@ Content:
 
 6. TAGS: 3-6 highly relevant tags for filtering/search
 
-7. PRIORITY_SCORE (0.0-1.0): How URGENT is this for the sales team?
+7. PAIN_POINTS_OPPORTUNITIES: Identify business pain points and sales opportunities:
+   - pain_points: List 0-3 specific business challenges (3 WORDS MAXIMUM!!!)
+     GOOD (2-3 words): "FTTN reliability issues", "Enterprise churn risk", "Cloud migration delays"
+     BAD (too long): "Enterprise customers with strong ESG procurement criteria may prioritize NBN"
+     BAD (too long): "Customer vulnerability to service degradation during peak demand periods"
+   - opportunities: List 0-3 specific sales opportunities (3 WORDS MAXIMUM!!!)
+     GOOD (2-3 words): "FTTP upgrade campaign", "Disaster recovery positioning", "Bundle migration offers"
+     BAD (too long): "Opportunity to align sales messaging with NBN Co's sustainability initiatives"
+     BAD (too long): "Positioning superior service quality and resilience as value drivers"
+
+   ULTRA CRITICAL REQUIREMENTS:
+   - Each entry MUST be 3 words or less - NO EXCEPTIONS!
+   - Use ONLY keywords/noun phrases, NEVER full sentences
+   - DO NOT combine multiple points into one entry - split them up!
+   - If you have multiple ideas, create SEPARATE short entries for each
+   - If you write more than 3 words, START OVER and cut it down
+   - Empty arrays are better than long entries
+   ONLY include if explicitly mentioned or strongly implied. If none found, use empty arrays.
+
+8. PRIORITY_SCORE (0.0-1.0): How URGENT is this for the sales team?
 
    Score HIGH (0.8-1.0) if:
    - Major competitive win/loss or threat
@@ -264,6 +339,10 @@ Format response as JSON:
     "people": ["Person1", "Person2"]
   }},
   "tags": ["tag1", "tag2", "tag3"],
+  "pain_points_opportunities": {{
+    "pain_points": ["Pain point 1", "Pain point 2"],
+    "opportunities": ["Opportunity 1", "Opportunity 2"]
+  }},
   "priority_score": 0.0
 }}"""
 
@@ -344,6 +423,7 @@ Focus on:
                     'sentiment': self._validate_sentiment(data.get('sentiment', 'neutral')),
                     'entities': data.get('entities', {}),
                     'tags': data.get('tags', []),
+                    'pain_points_opportunities': data.get('pain_points_opportunities', {'pain_points': [], 'opportunities': []}),
                     'priority_score': self._validate_priority(data.get('priority_score', 0.5))
                 }
             else:
@@ -404,6 +484,10 @@ Focus on:
                 'people': []
             },
             'tags': [],
+            'pain_points_opportunities': {
+                'pain_points': [],
+                'opportunities': []
+            },
             'priority_score': 0.5
         }
 
@@ -449,9 +533,22 @@ Focus on:
 _ai_processor: Optional[AIProcessor] = None
 
 
-def get_ai_processor() -> AIProcessor:
-    """Get or create global AI processor instance"""
+def get_ai_processor(db: Optional[Session] = None) -> AIProcessor:
+    """
+    Get or create AI processor instance
+
+    Args:
+        db: Optional database session to fetch model config from platform settings.
+            If provided, creates a new instance with the latest model config.
+            If None, returns cached instance with default model.
+    """
     global _ai_processor
+
+    # If db session provided, create new instance to get latest model config
+    if db:
+        return AIProcessor(db)
+
+    # Otherwise use cached instance
     if _ai_processor is None:
         _ai_processor = AIProcessor()
     return _ai_processor

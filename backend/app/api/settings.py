@@ -61,7 +61,8 @@ def get_platform_settings(db: Session = Depends(get_db)):
 
     if 'ai_config' not in settings:
         settings['ai_config'] = {
-            'model': 'claude-3-5-sonnet-20241022',
+            'model': 'claude-sonnet-4-5-20250929',
+            'model_cheap': 'claude-haiku-4-5-20250929',
             'embedding_model': 'sentence-transformers/all-MiniLM-L6-v2'
         }
 
@@ -404,3 +405,22 @@ Keep the summary professional, actionable, and under 300 words.""",
         }
 
     return setting.value
+
+
+@router.get("/settings/ai-config-status")
+def get_ai_config_status():
+    """
+    Get AI configuration status including whether UI override is enabled
+    and current env var values
+    """
+    from app.config.settings import settings
+
+    return {
+        "model_override_enabled": settings.model_override_in_ui,
+        "env_values": {
+            "ai_model": settings.ai_model,
+            "ai_model_cheap": settings.ai_model_cheap,
+            "ai_provider": settings.ai_provider,
+            "ai_provider_cheap": settings.ai_provider_cheap
+        }
+    }

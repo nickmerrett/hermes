@@ -13,6 +13,7 @@ services:
       - TZ=Australia/Sydney
       # API Keys
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - NEWS_API_KEY=${NEWS_API_KEY}
       # Reddit API
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
@@ -26,7 +27,14 @@ services:
       - DATABASE_PATH=/app/data/db/intelligence.db
       - CHROMA_PATH=/app/data/chroma
       - ENABLE_SCHEDULER=${ENABLE_SCHEDULER:-true}
-      - AI_MODEL=${AI_MODEL:-claude-3-5-sonnet-20241022}
+      # AI Configuration
+      - AI_PROVIDER=${AI_PROVIDER:-anthropic}
+      - AI_PROVIDER_CHEAP=${AI_PROVIDER_CHEAP:-anthropic}
+      - AI_MODEL=${AI_MODEL:-claude-sonnet-4-5-20250929}
+      - AI_MODEL_CHEAP=${AI_MODEL_CHEAP:-claude-haiku-4-5-20250929}
+      - MODEL_OVERRIDE_IN_UI=${MODEL_OVERRIDE_IN_UI:-false}
+      - ANTHROPIC_API_BASE_URL=${ANTHROPIC_API_BASE_URL:-https://api.anthropic.com}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       # LinkedIn Playwright settings
       - LINKEDIN_EMAIL=${LINKEDIN_EMAIL:-}

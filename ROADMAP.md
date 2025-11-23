@@ -655,6 +655,238 @@ research_config:
 
 ---
 
+#### 30. Automatic Entity & Keyword Discovery
+**Status:** Pending
+**Effort:** Large
+**Description:** AI-powered system to automatically identify new entities (people, companies, products, keywords) from collected intelligence that should be added to monitoring configuration.
+
+**Business Value:**
+- Discover emerging topics without manual keyword updates
+- Identify new executives, partners, competitors automatically
+- Surface new product names and industry terms
+- Reduce manual configuration overhead
+- Ensure comprehensive coverage as landscape evolves
+
+**Use Cases:**
+- **New People** - Executive hires, board appointments, key hires mentioned frequently
+- **New Companies** - Competitors, partners, acquisition targets, emerging startups
+- **New Products** - Product launches, service names, brand names
+- **New Keywords** - Emerging technologies, industry buzzwords, trending topics
+- **New Locations** - New offices, markets, geographic expansion
+- **New Events** - Conferences, initiatives, programs mentioned repeatedly
+
+**Implementation:**
+
+**Phase 1: Entity Extraction (2-3 months)**
+- **Named Entity Recognition (NER)** - Extract people, organizations, products from intelligence
+- **Entity Database** - Store discovered entities with metadata
+- **Frequency Tracking** - Count mentions across intelligence items
+- **Context Analysis** - Understand entity relationships and significance
+- **Entity Types:**
+  - PERSON - Names of individuals
+  - ORGANIZATION - Companies, institutions
+  - PRODUCT - Product/service names
+  - TECHNOLOGY - Technical terms, frameworks
+  - LOCATION - Cities, countries, regions
+  - EVENT - Conferences, programs, initiatives
+
+**Phase 2: Significance Scoring (1-2 months)**
+- **Mention Frequency** - How often entity appears
+- **Recency** - Recent vs old mentions
+- **Context Importance** - Mentioned in headlines vs passing reference
+- **Source Authority** - Mentioned in tier 1 sources vs social media
+- **Relationship Strength** - How closely related to customer
+- **Trend Detection** - Increasing mentions over time
+- **Confidence Score** - AI confidence in entity relevance
+
+**Scoring Algorithm:**
+```python
+significance_score = (
+    mention_count * 0.3 +
+    recency_boost * 0.2 +
+    context_importance * 0.25 +
+    source_tier_weight * 0.15 +
+    trend_velocity * 0.1
+)
+```
+
+**Phase 3: Discovery UI (2-3 weeks)**
+- **Discoveries Tab** - New section in customer view
+- **Entity Cards** - Show discovered entities with:
+  - Entity name and type
+  - Significance score and trend indicator
+  - First seen / last seen dates
+  - Mention count and timeline
+  - Sample intelligence items mentioning entity
+  - "Add to Monitoring" button
+- **Filter/Sort** - By entity type, score, date, trending
+- **Bulk Actions** - Add multiple entities at once
+- **Dismiss/Ignore** - Mark entities as not relevant
+
+**Phase 4: Automated Suggestions (1-2 months)**
+- **Proactive Notifications** - Alert when high-significance entities discovered
+- **Auto-Add Rules** - Automatically add entities above threshold
+- **Smart Categorization** - Suggest which config field to add to:
+  - High-level executive → LinkedIn monitoring
+  - Competitor company → competitors list
+  - Industry term → keywords
+  - Product name → priority keywords
+- **Review Queue** - Weekly digest of discoveries for approval
+
+**Phase 5: Learning & Refinement (Ongoing)**
+- **User Feedback Loop** - Track which suggestions are accepted/rejected
+- **Pattern Learning** - Learn customer-specific entity preferences
+- **False Positive Reduction** - Improve filtering based on dismissals
+- **Entity Relationships** - Map connections between entities
+- **Temporal Analysis** - Detect entity lifecycle (emerging → established → declining)
+
+**Data Model:**
+```yaml
+discovered_entities:
+  - id: "ent_001"
+    customer_id: 123
+    entity_name: "Jane Smith"
+    entity_type: "PERSON"
+    first_seen: "2025-11-01"
+    last_seen: "2025-11-10"
+    mention_count: 15
+    significance_score: 0.87
+    trending: true
+    confidence: 0.92
+    context_summary: "New CFO hired, mentioned in 15 articles"
+    intelligence_items: [456, 789, 1011, ...]
+    status: "suggested"  # suggested, added, dismissed
+    suggested_field: "linkedin_user_profiles"  # Where to add
+
+keywords_discovered:
+  - id: "kw_001"
+    customer_id: 123
+    keyword: "quantum computing initiative"
+    first_seen: "2025-11-05"
+    mention_count: 8
+    significance_score: 0.73
+    trend_velocity: 0.15  # Growing 15% per week
+    context: "Customer launched new quantum computing program"
+    status: "suggested"
+```
+
+**API Endpoints:**
+- `GET /api/discoveries/{customer_id}` - List discovered entities
+- `GET /api/discoveries/{customer_id}/trending` - Trending entities
+- `POST /api/discoveries/{discovery_id}/add` - Add to monitoring
+- `POST /api/discoveries/{discovery_id}/dismiss` - Mark as irrelevant
+- `GET /api/discoveries/{customer_id}/suggestions` - Auto-suggestions
+
+**UI Mockup:**
+```
+┌─ Discoveries (12 new) ────────────────────────────────┐
+│ Filter: [All] [People] [Companies] [Keywords] [Trending] │
+│                                                           │
+│ 🔥 Jane Smith (PERSON)                      Score: 0.87  │
+│    New CFO • 15 mentions • Trending ↗                    │
+│    First seen 10 days ago • Last seen today              │
+│    Mentioned in: Reuters, TechCrunch, LinkedIn           │
+│    [Add to LinkedIn Monitoring] [Dismiss] [View Items]   │
+│                                                           │
+│ 🔥 Quantum Computing Initiative (KEYWORD)   Score: 0.73  │
+│    Product/Technology • 8 mentions • Trending ↗          │
+│    Customer launched new R&D program                     │
+│    [Add to Priority Keywords] [Dismiss]                  │
+│                                                           │
+│ 📈 Acme Security Corp (ORGANIZATION)        Score: 0.65  │
+│    Potential Competitor • 12 mentions                    │
+│    Mentioned alongside customer in 5 articles            │
+│    [Add to Competitors] [Dismiss]                        │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Technical Implementation:**
+
+**NER Approaches:**
+- **Claude AI** - Use Claude's entity extraction capabilities (current approach)
+- **spaCy NER** - Fast, pre-trained NER models (en_core_web_lg)
+- **Hybrid** - Claude for context + spaCy for speed
+- **Custom Training** - Fine-tune on business intelligence corpus
+
+**Entity Linking:**
+- Link discovered entities to external sources (LinkedIn, Wikipedia, Crunchbase)
+- Enrich entity data with additional context
+- Verify entity identity (distinguish John Smith A from John Smith B)
+
+**Storage:**
+- New tables: `discovered_entities`, `entity_mentions`
+- Many-to-many: entities ↔ intelligence_items
+- Indexed by customer, type, score, status
+
+**Performance:**
+- Background processing (don't slow down collection)
+- Incremental entity extraction (process new items only)
+- Cached entity database for fast queries
+- Debounce trending calculations (hourly)
+
+**Configuration:**
+```yaml
+entity_discovery:
+  enabled: true
+  auto_extract: true
+  min_mentions: 3  # Minimum mentions to surface
+  min_score: 0.5   # Minimum significance score
+  auto_add_threshold: 0.9  # Auto-add entities above this score
+  entity_types: ["PERSON", "ORGANIZATION", "PRODUCT", "TECHNOLOGY"]
+  notification_enabled: true
+  weekly_digest: true
+```
+
+**Example Workflow:**
+1. Intelligence collected: "Acme Corp announces Jane Smith as new CFO"
+2. AI extracts entities: "Jane Smith" (PERSON), "CFO" (TITLE)
+3. Entity stored with metadata, linked to intelligence item
+4. Over next week, Jane mentioned in 15 more articles
+5. Significance score climbs to 0.87
+6. System suggests: "Add Jane Smith to LinkedIn monitoring?"
+7. User clicks "Add" → Jane's profile automatically added to config
+8. Future collections now monitor Jane's LinkedIn posts
+9. User receives notifications about Jane's activities
+
+**Integration Points:**
+- **LinkedIn Collector** - Auto-add discovered executives
+- **Customer Config** - Update keywords, competitors, etc.
+- **Analytics** - Track discovery accuracy and acceptance rate
+- **Notifications** - Alert on high-value discoveries
+
+**Success Metrics:**
+- Entities discovered per week
+- Discovery acceptance rate (% added to monitoring)
+- False positive rate (% dismissed)
+- Coverage improvement (new entities missed by manual config)
+- Time saved on manual configuration
+
+**Future Enhancements:**
+- **Entity Timeline** - Visualize entity mentions over time
+- **Entity Relationships** - Graph of connections between entities
+- **Cross-Customer Insights** - Industry-wide entity trends
+- **Entity Profiles** - Dedicated pages for each discovered entity
+- **Smart Alerts** - Alert when tracked entities interact (merger, partnership)
+- **Entity Sentiment** - Track sentiment toward discovered entities
+- **Multi-Language** - Detect entities in non-English content
+- **Entity Disambiguation** - Resolve name conflicts (same name, different person)
+
+**Challenges:**
+- Name ambiguity (common names, nicknames)
+- Context understanding (is "Apple" the company or fruit?)
+- Noise filtering (one-off mentions vs significant entities)
+- Entity lifecycle management (when to stop tracking)
+- Privacy considerations (tracking individuals)
+
+**Privacy & Ethics:**
+- Only suggest publicly mentioned individuals
+- Respect LinkedIn privacy settings
+- Allow users to opt-out of entity tracking
+- Clear about what data is collected
+- Comply with data protection regulations
+
+---
+
 ### Priority 3: User Experience
 
 #### 12. Fix Mobile Browser Layout
@@ -1200,6 +1432,129 @@ Users must manually find the channel ID (UCxxx...) from YouTube's page source, w
 
 ---
 
+#### 29. Email Inbox Monitoring for News Alerts
+**Status:** Pending
+**Effort:** Medium
+**Description:** Monitor dedicated email inbox for news alerts, subscriptions, and notifications from websites that don't offer RSS feeds or APIs.
+
+**Use Cases:**
+- **News Alert Subscriptions** - Google Alerts, industry newsletters, company notifications
+- **Press Release Services** - PR Newswire, Business Wire email alerts
+- **Industry Publications** - Trade publications that only offer email delivery
+- **Government Alerts** - Regulatory agencies, government procurement notices
+- **Competitor Updates** - Newsletter subscriptions from competitor websites
+- **Event Notifications** - Conference announcements, webinar invitations
+
+**Implementation:**
+
+**Email Access Options:**
+- **IMAP** - Connect to any standard email inbox (Gmail, Outlook, etc.)
+- **Gmail API** - Better integration for Gmail accounts
+- **Microsoft Graph API** - Better integration for Outlook/Exchange
+- **Dedicated Inbox** - Recommend creating hermes@company.com for collection
+
+**Processing Flow:**
+1. Connect to email inbox via IMAP/API
+2. Fetch unread emails from configured folders
+3. Parse email content (HTML + plain text)
+4. Extract article links and content
+5. Follow links to fetch full articles when possible
+6. Process as intelligence items
+7. Mark emails as read or move to processed folder
+8. Handle attachments (PDFs, newsletters)
+
+**Email Parsing:**
+- **Link Extraction** - Identify article URLs in email body
+- **Content Extraction** - Extract text from HTML emails
+- **Newsletter Unwrapping** - Parse newsletter formats (Substack, Mailchimp, etc.)
+- **PDF Attachments** - Extract text from PDF attachments
+- **Signature Removal** - Clean marketing footers and signatures
+- **Sender Detection** - Identify source from sender/subject
+
+**Configuration (per customer):**
+```yaml
+email_monitoring:
+  enabled: true
+  connection_type: "imap"  # imap, gmail_api, graph_api
+  server: "imap.gmail.com"
+  port: 993
+  username: "hermes@company.com"
+  password_env: "EMAIL_PASSWORD"  # Environment variable
+  folders: ["INBOX", "News Alerts"]
+  mark_as_read: true
+  move_to_folder: "Processed"
+  check_interval_hours: 1
+  process_attachments: true
+  attachment_types: ["pdf"]
+  sender_whitelist:
+    - "alerts-noreply@google.com"
+    - "news@businesswire.com"
+    - "alerts@company-competitor.com"
+```
+
+**Intelligence Item Metadata:**
+- Source type: "email"
+- Source tier: Varies (tier 2 for press releases, tier 3 for newsletters)
+- Email sender and subject stored
+- Link to original article when available
+- Flag if extracted from attachment
+
+**Security Considerations:**
+- Store credentials in environment variables
+- Support OAuth2 for Gmail/Outlook (no password storage)
+- Encrypted connection (IMAP over SSL)
+- Optional: dedicated email account reduces risk
+- Email credentials not exposed in UI (masked)
+
+**Technical Details:**
+- **Libraries:**
+  - Python `imaplib` for IMAP
+  - `google-api-python-client` for Gmail API
+  - `msal` for Microsoft Graph API
+  - `beautifulsoup4` for HTML parsing
+  - `PyPDF2` or `pdfplumber` for PDF extraction
+- **Rate Limiting:** Email provider limits (Gmail: 2500/day)
+- **Collection Interval:** Default 1 hour (configurable)
+- **Deduplication:** URL-based dedup with existing items
+
+**UI Configuration:**
+- Email settings in Customer Edit Modal or Platform Settings
+- Test connection button
+- Show last check time and email count
+- Display parsing errors (malformed emails)
+
+**Advantages:**
+- ✅ Access to sources without APIs or RSS
+- ✅ Captures newsletter-exclusive content
+- ✅ Works with Google Alerts and other alert services
+- ✅ Complements existing collectors
+- ✅ Simple setup (just need email credentials)
+
+**Limitations:**
+- Requires dedicated email account or folder
+- Email format parsing can be complex
+- May capture marketing content (needs filtering)
+- Some emails are HTML-heavy with little text
+
+**Phased Approach:**
+1. **Phase 1** - Basic IMAP connection, link extraction
+2. **Phase 2** - HTML email content extraction
+3. **Phase 3** - PDF attachment processing
+4. **Phase 4** - Gmail/Outlook API for better integration
+5. **Phase 5** - Smart newsletter parsing (Substack, etc.)
+
+**Example Workflow:**
+1. User subscribes to Google Alerts for "Company Name"
+2. Configures Hermes to monitor alerts@company.com
+3. Google Alert arrives hourly with 5 new articles
+4. Hermes extracts article links
+5. Fetches full article content from each link
+6. Processes as intelligence items with proper source attribution
+7. Marks email as read, moves to "Processed" folder
+8. Articles appear in Hermes feed alongside other sources
+
+---
+
 ### Completed Quick Improvements (November 2025)
 
 **✅ Session 2025-11-06:**
@@ -1340,6 +1695,382 @@ opportunities:
 
 ---
 
+#### Knowledge Graph Integration
+**Status:** Future Enhancement (Research Phase)
+**Effort:** Very Large (12-18 months phased)
+**Description:** Add a knowledge graph layer to Hermes to map relationships between entities (people, companies, technologies) and unlock advanced intelligence capabilities including relationship mapping, temporal pattern discovery, and predictive insights.
+
+**Business Value:**
+- Visualize networks of people, companies, and technologies across your customer landscape
+- Discover hidden relationships and warm introduction paths
+- Identify patterns in technology adoption and partnership formation
+- Predict opportunities based on multi-hop reasoning (e.g., "Companies that partner with X typically adopt Technology Y")
+- Detect competitive threats through relationship mapping
+- Surface contextual intelligence automatically
+
+**Current Foundation:**
+Hermes already extracts entities from intelligence items:
+```json
+{
+  "people": ["Satya Nadella", "Andy Jassy"],
+  "companies": ["Microsoft", "AWS", "OpenAI"],
+  "technologies": ["Claude AI", "Azure OpenAI", "Kubernetes"]
+}
+```
+
+**What's Missing for Graph:**
+1. Explicit relationship extraction (currently unstructured entities)
+2. Relationship types and temporal tracking
+3. Confidence scoring for relationships
+4. Graph storage and query infrastructure
+
+**Use Cases:**
+
+**1. Relationship Mapping**
+- People Networks: Track executives, engineers, decision-makers across companies
+  - "Who moved from Company A to Company B?"
+  - "Which customer executives have connections to our competitors?"
+- Company Relationships: Map partnerships, acquisitions, suppliers, competitors
+  - Auto-detect when customer partners with competitor
+  - Identify warm introduction paths through the network
+- Technology Ecosystems: Connect technologies to companies and people
+  - "Which customers use similar tech stacks?"
+  - "What technologies do successful customers have in common?"
+
+**2. Temporal Pattern Discovery**
+- Career Trajectories: Track people movements creating opportunities
+  - "Former Company X engineer joins Customer Y → potential technology migration signal"
+- Partnership Evolution: Visualize how relationships change over time
+  - Early signals of partnerships before official announcements
+- Technology Adoption Curves: See what customers adopt before/after competitors
+
+**3. Enhanced Intelligence Context**
+When LinkedIn shows "Executive X joins Company Y", automatically surface:
+- Their previous companies (from historical data)
+- Technologies they've worked with
+- People they're connected to at your customers
+- Multi-hop reasoning: "Show technologies used by companies that partner with my customer's competitors"
+
+**4. Opportunity Identification**
+- Gap Analysis: "Customer uses Tech A and B, competitors all use Tech C → sales opportunity"
+- Warm Introductions: "Your contact at Company X worked with their CTO at Company Z"
+- Trigger Events: Chain events together (funding → hiring → technology adoption)
+
+**5. Competitive Intelligence Network**
+- Influence Mapping: Which companies/people are central to your market?
+- Threat Detection: Track competitor movements in customer's ecosystem
+- Market Clustering: Discover hidden segments in your customer base
+
+**6. Predictive Insights**
+- Pattern Matching: "Companies that hired AI engineers and partnered with Cloud Provider X typically adopt Solution Y within 6 months"
+- Risk Signals: Detect weakening relationships (fewer mentions, sentiment shifts)
+- Expansion Opportunities: Customers with similar profiles to successful accounts
+
+**Implementation Phases:**
+
+**Phase 1: Enhanced Entity Extraction (3-4 months)**
+- Update AI processor to extract explicit relationships:
+  ```json
+  {
+    "entities": [...],
+    "relationships": [
+      {
+        "source": "Microsoft",
+        "type": "PARTNERS_WITH",
+        "target": "OpenAI",
+        "context": "Strategic partnership announced for AI integration",
+        "confidence": 0.92,
+        "temporal": "2023-01-23"
+      }
+    ]
+  }
+  ```
+- Relationship types: EMPLOYED_BY, CEO_OF, PARTNERS_WITH, ACQUIRED, COMPETES_WITH, USES_TECHNOLOGY, INVESTED_IN, etc.
+- Temporal tracking: when relationships started/ended
+- Confidence scoring: how certain are we about each relationship
+- Store relationships in database alongside entities
+
+**Phase 2: Graph Database Infrastructure (2-3 months)**
+
+**Option A: Neo4j (Recommended)**
+- Purpose-built graph database
+- Cypher query language for graph traversals
+- Excellent visualization capabilities
+- Docker container alongside existing stack
+
+**Option B: PostgreSQL + Apache AGE**
+- Graph queries on relational data
+- Unified storage (requires PostgreSQL migration)
+- Good for hybrid relational+graph workloads
+
+**Option C: NetworkX (Python Library)**
+- Lightweight, Python-native
+- Good for analysis and algorithms
+- In-memory (need persistence strategy)
+
+**Recommendation:** Neo4j for dedicated graph capabilities, runs in Docker alongside SQLite.
+
+**Phase 3: Graph Population & Sync (1-2 months)**
+- Backfill graph from existing processed intelligence entities
+- Real-time sync: new intelligence → entity extraction → graph update
+- Graph schema design:
+  - Person nodes (name, roles, LinkedIn, historical employers)
+  - Company nodes (name, domain, industry, size)
+  - Technology nodes (name, category, vendor)
+  - Relationship edges with properties (type, confidence, temporal range, source items)
+- Deduplication and entity resolution (John Smith A vs John Smith B)
+
+**Phase 4: Graph Query API (1-2 months)**
+- REST endpoints for graph queries:
+  - `/api/graph/relationships/{entity_id}` - Get all relationships for entity
+  - `/api/graph/path/{entity_a}/{entity_b}` - Find connection paths
+  - `/api/graph/network/{customer_id}` - Get customer's ecosystem graph
+  - `/api/graph/similar/{entity_id}` - Find similar entities
+  - `/api/graph/influence` - Calculate centrality/influence scores
+- Cypher query wrapper for complex traversals
+- Graph statistics and analytics
+
+**Phase 5: Graph Visualization UI (2-3 months)**
+- Interactive network visualization (D3.js, vis.js, or Cytoscape.js)
+- Node types with icons and colors (people, companies, technologies)
+- Edge types with different line styles
+- Zoom, pan, filter, search in graph
+- Click nodes to see entity details and intelligence items
+- Time slider to see graph evolution
+- Layouts: force-directed, hierarchical, circular
+
+**Phase 6: Graph-Powered Intelligence Features (3-4 months)**
+- **Contextual Intelligence:** When viewing an item, show related entities and their connections
+- **Network Analysis Tab:** New section on customer page with ecosystem visualization
+- **Relationship Alerts:** Notify when new significant relationships detected
+- **Path Finding:** "How is Customer A connected to Company B?"
+- **Influence Rankings:** Who are the most connected people/companies in your market?
+- **Community Detection:** Auto-discover market segments and clusters
+- **Predictive Patterns:** "Companies with this profile typically..."
+
+**Phase 7: Advanced Analytics (2-3 months)**
+- Pattern detection algorithms:
+  - Common technology adoption sequences
+  - Partnership formation patterns
+  - Career trajectory patterns (which companies lead to which)
+- Anomaly detection: unusual relationships or changes
+- Opportunity scoring based on graph patterns
+- Risk assessment from relationship changes
+- Recommendation engine: "You should track these entities based on your network"
+
+**Data Model (Graph Schema):**
+
+```cypher
+// Nodes
+(person:Person {
+  id: "p_001",
+  name: "Jane Smith",
+  linkedin_url: "...",
+  current_role: "CFO",
+  current_company_id: "c_001"
+})
+
+(company:Company {
+  id: "c_001",
+  name: "Acme Corp",
+  domain: "acme.com",
+  industry: "Technology",
+  size: "1000-5000"
+})
+
+(technology:Technology {
+  id: "t_001",
+  name: "Kubernetes",
+  category: "Container Orchestration",
+  vendor: "CNCF"
+})
+
+// Relationships
+(person)-[:EMPLOYED_BY {
+  start_date: "2023-01-15",
+  end_date: null,
+  role: "CFO",
+  confidence: 0.95,
+  source_items: [123, 456]
+}]->(company)
+
+(company)-[:PARTNERS_WITH {
+  announced_date: "2023-06-01",
+  partnership_type: "Technology Integration",
+  confidence: 0.88,
+  source_items: [789]
+}]->(company2)
+
+(company)-[:USES {
+  adopted_date: "2022-03-15",
+  use_case: "Production Infrastructure",
+  confidence: 0.92,
+  source_items: [234, 567]
+}]->(technology)
+
+(person)-[:KNOWS {
+  confidence: 0.75,
+  context: "Both worked at Microsoft",
+  source: "inferred"
+}]->(person2)
+```
+
+**Example Graph Queries:**
+
+```cypher
+// Find all executives who moved from competitors to customers
+MATCH (competitor:Company)-[:COMPETES_WITH]->(customer:Customer)
+MATCH (person:Person)-[r1:EMPLOYED_BY]->(competitor)
+MATCH (person)-[r2:EMPLOYED_BY]->(customer)
+WHERE r1.end_date < r2.start_date
+RETURN person, competitor, customer, r1, r2
+
+// Find shared technologies between customer and competitor
+MATCH (customer:Company {id: "cust_123"})-[:USES]->(tech:Technology)<-[:USES]-(competitor:Company)
+RETURN tech, competitor
+ORDER BY tech.category
+
+// Find warm introduction paths
+MATCH path = (myContact:Person)-[:KNOWS*1..3]-(targetExec:Person)
+WHERE myContact.id = "p_my_contact"
+  AND targetExec.current_company_id = "target_company"
+RETURN path, length(path) as degrees
+ORDER BY degrees ASC
+
+// Predict technology adoption
+MATCH (similar:Company)-[:USES]->(tech:Technology)
+WHERE similar.industry = "Finance"
+  AND similar.size = "1000-5000"
+WITH tech, count(similar) as adopters
+WHERE adopters > 5
+RETURN tech.name, adopters
+ORDER BY adopters DESC
+```
+
+**UI Mockups:**
+
+```
+┌─ Network Analysis ────────────────────────────────────────┐
+│ [🔍 Search] [🎯 Filter] [⏱️ Timeline: All Time ▾]          │
+│                                                            │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │         [Interactive Network Graph]                │   │
+│  │                                                     │   │
+│  │        (Person) ───EMPLOYED_BY───> (Company)       │   │
+│  │           │                           │             │   │
+│  │           │                           │             │   │
+│  │        KNOWS                     PARTNERS_WITH      │   │
+│  │           │                           │             │   │
+│  │           ▼                           ▼             │   │
+│  │        (Person) <───USES───── (Technology)         │   │
+│  │                                                     │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                            │
+│  Selected: Jane Smith (CFO @ Acme Corp)                   │
+│  ├─ Relationships: 15 connections                         │
+│  ├─ Current: CFO at Acme Corp (2023-present)              │
+│  ├─ Previous: VP Finance at TechCo (2020-2023)            │
+│  ├─ Connected to: 3 of your tracked executives            │
+│  └─ Technologies: Kubernetes, AWS, Snowflake              │
+│                                                            │
+│  [View Intelligence Items (23)] [LinkedIn Profile]        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Technical Stack:**
+- **Graph DB:** Neo4j (Community Edition, Docker container)
+- **Graph Driver:** neo4j-python-driver
+- **Visualization:** D3.js or vis.js (frontend)
+- **Query Layer:** Cypher queries wrapped in Python API
+- **Sync Strategy:** Event-driven updates from intelligence processing
+
+**Performance Considerations:**
+- Index frequently queried nodes (people, companies)
+- Cache common graph queries (customer ecosystems)
+- Incremental updates (don't rebuild entire graph)
+- Pagination for large result sets
+- Background processing for expensive analytics
+
+**Configuration:**
+```yaml
+knowledge_graph:
+  enabled: true
+  neo4j_uri: "bolt://localhost:7687"
+  neo4j_user: "neo4j"
+  neo4j_password_env: "NEO4J_PASSWORD"
+  auto_sync: true  # Sync new intelligence to graph
+  relationship_confidence_threshold: 0.5  # Only add high-confidence relationships
+  entity_deduplication: true
+  inference_enabled: true  # Infer relationships (e.g., person A knows person B if worked at same company)
+```
+
+**Success Metrics:**
+- Relationships extracted per intelligence item
+- Graph size (nodes, edges)
+- Query response times
+- User engagement with graph features
+- Opportunities identified through graph patterns
+- Accuracy of inferred relationships
+
+**Challenges:**
+- Entity disambiguation (same name, different people)
+- Relationship confidence and verification
+- Graph size and query performance at scale
+- Maintaining graph accuracy as data changes
+- Privacy considerations (tracking individuals)
+- Temporal complexity (relationships change over time)
+
+**Integration Points:**
+- **AI Processor:** Extract relationships during intelligence processing
+- **Feed UI:** Show entity connections in item cards
+- **Search:** Graph-powered semantic search
+- **Opportunities (#Product Opportunity Detection):** Use graph for opportunity matching
+- **Deep Research (#10):** Include relationship analysis in research reports
+- **Entity Discovery (#30):** Discover entities through graph traversal
+
+**Privacy & Ethics:**
+- Only track publicly mentioned information
+- Respect LinkedIn privacy settings
+- Clear documentation on what data is collected
+- Ability to exclude specific entities from tracking
+- Comply with data protection regulations (GDPR, CCPA)
+
+**Future Enhancements:**
+- **Temporal Graph Queries:** "Who worked together in 2020?"
+- **Graph ML:** Node embeddings, link prediction
+- **Cross-Customer Insights:** Industry-wide relationship graphs
+- **External Graph Integration:** Crunchbase, LinkedIn API, Knowledge graphs
+- **Relationship Sentiment:** Track how relationships are portrayed (positive/negative)
+- **Automated Relationship Verification:** Cross-reference multiple sources
+- **Graph Export:** GraphML, GEXF formats for external analysis
+- **Real-time Graph Updates:** WebSocket-based live graph visualization
+
+**Example Workflow:**
+1. Intelligence collected: "Microsoft announces partnership with OpenAI for Azure AI services"
+2. AI extracts entities: Microsoft (Company), OpenAI (Company), Azure (Technology)
+3. AI extracts relationship: Microsoft --[PARTNERS_WITH]--> OpenAI (confidence: 0.95)
+4. Graph updated with new relationship and timestamp
+5. User viewing Microsoft's network sees new OpenAI connection
+6. System detects pattern: "3 of your customers use Azure, may be interested in OpenAI integration"
+7. Opportunity alert created based on graph pattern
+8. Account manager explores graph to find warm introduction path to OpenAI
+
+**Why Build This:**
+- Transforms isolated intelligence items into connected knowledge
+- Unlocks insights impossible to see from individual items
+- Provides competitive advantage through relationship intelligence
+- Enables predictive capabilities (pattern-based forecasting)
+- Creates network effects (more data → better graph → better insights)
+- Unique differentiator for Hermes platform
+
+**Dependencies:**
+- Requires stable entity extraction (#current)
+- Benefits from Entity Discovery feature (#30)
+- Integrates with Deep Research (#10)
+- Powers Product Opportunity Detection (Product Wiki feature)
+
+---
+
 ### Additional Features to Consider
 
 - **Microsoft Teams Integration** - Similar to Slack integration
@@ -1384,11 +2115,13 @@ opportunities:
 - Add YouTube channel monitoring - transcript-based ✅ (#6)
 - Add Podcast episode monitoring - transcript-based (#7)
 - Fix Reddit integration ✅ (#8)
+- Add email inbox monitoring for news alerts (#29)
 
 ### Phase 2 (1-2 months) - Intelligence & UX
 - Make daily briefing prompts configurable ✅ (#9)
 - Deep research mode (#10)
 - Design and implement relevance feedback loop (#11)
+- Automatic entity & keyword discovery (#30)
 - Improve AI filtering based on feedback
 - Add customer-specific learning
 - Fix mobile browser layout ✅ (#12)
@@ -1434,7 +2167,7 @@ opportunities:
 
 ---
 
-**Last Updated:** 2025-11-07
+**Last Updated:** 2025-11-14
 **Version:** Beta → 1.0
 
 ---
@@ -1476,3 +2209,7 @@ opportunities:
 - Global rate limiter coordination across all sources
 - Incremental LinkedIn processing (items visible immediately)
 - 3x performance improvement (45 min → 5-6 min for 3 customers)
+
+### Session 2025-11-14 ✅
+- **Email Inbox Monitoring (#29)** - Added roadmap item for monitoring email inboxes (Google Alerts, newsletters, press release alerts) via IMAP/Gmail API/Graph API
+- **Automatic Entity & Keyword Discovery (#30)** - Added roadmap item for AI-powered discovery of new people, companies, keywords, and products from intelligence to automatically suggest additions to monitoring configuration

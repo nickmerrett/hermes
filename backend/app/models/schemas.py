@@ -115,6 +115,7 @@ class ProcessedIntelligenceResponse(BaseModelWithTimezone):
     priority_score: float = 0.5
     entities: Optional[Dict[str, List[str]]] = None
     tags: Optional[List[str]] = None
+    pain_points_opportunities: Optional[Dict[str, List[str]]] = None
     processed_date: Optional[datetime] = None
 
     # AI processing status tracking

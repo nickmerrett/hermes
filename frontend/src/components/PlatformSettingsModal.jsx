@@ -105,7 +105,15 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
 
   // AI Configuration Settings
   const [aiModel, setAiModel] = useState('claude-3-5-sonnet-20241022');
+  const [aiModelCheap, setAiModelCheap] = useState('claude-3-5-haiku-20241022');
   const [embeddingModel, setEmbeddingModel] = useState('sentence-transformers/all-MiniLM-L6-v2');
+  const [modelOverrideEnabled, setModelOverrideEnabled] = useState(false);
+  const [envValues, setEnvValues] = useState({
+    ai_model: '',
+    ai_model_cheap: '',
+    ai_provider: '',
+    ai_provider_cheap: ''
+  });
 
   // Collection & Retention Settings
   const [hourlyCollectionEnabled, setHourlyCollectionEnabled] = useState(true);
@@ -225,6 +233,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const loadSettings = async () => {
     setLoading(true);
     try {
+      // Load AI config status (override enabled, env values)
+      const aiConfigStatusResponse = await axios.get(`${API_URL}/settings/ai-config-status`);
+      const aiConfigStatus = aiConfigStatusResponse.data;
+      setModelOverrideEnabled(aiConfigStatus.model_override_enabled);
+      setEnvValues(aiConfigStatus.env_values);
+
       const response = await axios.get(`${API_URL}/settings/platform`);
       const settings = response.data;
 
@@ -265,6 +279,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
       // AI Configuration
       if (settings.ai_config) {
         setAiModel(settings.ai_config.model || 'claude-3-5-sonnet-20241022');
+        setAiModelCheap(settings.ai_config.model_cheap || 'claude-3-5-haiku-20241022');
         setEmbeddingModel(settings.ai_config.embedding_model || 'sentence-transformers/all-MiniLM-L6-v2');
       }
 
@@ -402,6 +417,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         },
         ai_config: {
           model: aiModel,
+          model_cheap: aiModelCheap,
           embedding_model: embeddingModel
         },
         collection_config: {
@@ -769,22 +785,59 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                 <div className="settings-section">
                   <h3>AI Configuration</h3>
                   <p className="settings-description">
-                    Configure AI models used for intelligence processing
+                    Configure AI models for intelligence processing
                   </p>
 
+                  {!modelOverrideEnabled && (
+                    <div className="settings-info" style={{ marginBottom: '20px' }}>
+                      <strong>Environment Variable Mode:</strong> AI model configuration is controlled by environment variables.
+                      Model settings below are read-only and reflect values from docker-compose.yml or .env file.
+                      To enable UI override, set <code style={{ background: '#f3f4f6', padding: '2px 6px', borderRadius: '4px' }}>MODEL_OVERRIDE_IN_UI=true</code> in your environment configuration.
+                    </div>
+                  )}
+
+                  {/* Premium Model Configuration */}
                   <div className="form-section">
-                    <label className="section-label">Claude Model</label>
-                    <p className="section-help">Model used for content analysis and summarization</p>
-                    <select
-                      value={aiModel}
+                    <label className="section-label">Premium Model (Daily Summaries)</label>
+                    <p className="section-help">Higher quality model used for daily briefings and complex analysis</p>
+                    <input
+                      type="text"
+                      value={modelOverrideEnabled ? aiModel : envValues.ai_model}
                       onChange={(e) => setAiModel(e.target.value)}
-                      className="settings-select"
-                    >
-                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Latest)</option>
-                      <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet (June 2024)</option>
-                      <option value="claude-3-opus-20240229">Claude 3 Opus</option>
-                      <option value="claude-3-haiku-20240307">Claude 3 Haiku (Faster)</option>
-                    </select>
+                      placeholder="claude-sonnet-4-5-20250929, gpt-4, or custom model name"
+                      className="settings-input"
+                      disabled={!modelOverrideEnabled}
+                      style={!modelOverrideEnabled ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed', color: '#6b7280' } : {}}
+                    />
+                    <p className="option-help">
+                      {modelOverrideEnabled ? (
+                        "Model name for premium tasks. Examples: claude-sonnet-4-5-20250929, gpt-4, gpt-4-turbo"
+                      ) : (
+                        `Current value from AI_MODEL environment variable. Provider: ${envValues.ai_provider}`
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Economy Model Configuration */}
+                  <div className="form-section">
+                    <label className="section-label">Economy Model (Article Processing)</label>
+                    <p className="section-help">Faster, cheaper model for entity extraction, filtering, and article summaries</p>
+                    <input
+                      type="text"
+                      value={modelOverrideEnabled ? aiModelCheap : envValues.ai_model_cheap}
+                      onChange={(e) => setAiModelCheap(e.target.value)}
+                      placeholder="claude-haiku-4-5-20250929, gpt-3.5-turbo, or custom model name"
+                      className="settings-input"
+                      disabled={!modelOverrideEnabled}
+                      style={!modelOverrideEnabled ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed', color: '#6b7280' } : {}}
+                    />
+                    <p className="option-help">
+                      {modelOverrideEnabled ? (
+                        "Model name for high-volume tasks. Examples: claude-haiku-4-5-20250929, gpt-3.5-turbo, gpt-4o-mini"
+                      ) : (
+                        `Current value from AI_MODEL_CHEAP environment variable. Provider: ${envValues.ai_provider_cheap}`
+                      )}
+                    </p>
                   </div>
 
                   <div className="form-section">
@@ -802,8 +855,26 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                   </div>
 
                   <div className="settings-warning">
-                    <strong>Note:</strong> Changing AI models may affect the quality and cost of intelligence processing.
-                    Changing the embedding model will require rebuilding the vector store.
+                    <strong>Cost Optimization:</strong> The economy model handles high-volume tasks (article processing, entity extraction, filtering)
+                    while the premium model is reserved for daily summaries. This reduces costs by 80-90% without sacrificing quality on important briefings.
+                  </div>
+                  <div className="settings-info">
+                    <strong>Provider Configuration:</strong> AI providers and API credentials are configured via environment variables:
+                    <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
+                      <li><strong>AI_PROVIDER</strong>: anthropic or openai (for premium model) - Current: {envValues.ai_provider}</li>
+                      <li><strong>AI_PROVIDER_CHEAP</strong>: anthropic or openai (for economy model) - Current: {envValues.ai_provider_cheap}</li>
+                      <li><strong>MODEL_OVERRIDE_IN_UI</strong>: {modelOverrideEnabled ? 'true (UI can override)' : 'false (env vars control models)'}</li>
+                      <li><strong>ANTHROPIC_API_KEY</strong>: Your Anthropic API key</li>
+                      <li><strong>OPENAI_API_KEY</strong>: Your OpenAI API key</li>
+                      <li><strong>OPENAI_BASE_URL</strong>: API endpoint (default: https://api.openai.com/v1)</li>
+                    </ul>
+                    <p style={{ marginTop: '8px' }}>
+                      OpenAI base URL supports: OpenAI, Azure OpenAI, LM Studio (http://localhost:1234/v1),
+                      Ollama (http://localhost:11434/v1), Together AI, Groq, and any OpenAI-compatible API.
+                    </p>
+                  </div>
+                  <div className="settings-info" style={{ marginTop: '12px' }}>
+                    <strong>Note:</strong> Changing the embedding model will require rebuilding the vector store. Model changes take effect immediately.
                   </div>
                 </div>
               )}
