@@ -22,7 +22,7 @@ from app.config.settings import settings
 from app.core.database import init_db, get_db
 from app.core.vector_store import get_vector_store
 from app.models import schemas
-from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api
+from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing
 from app import __version__
 
 # Configure logging
@@ -116,6 +116,7 @@ app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(customer_research.router, prefix="/api/customer-research", tags=["customer-research"])
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
+app.include_router(testing.router, prefix="/api/testing", tags=["testing"])
 
 
 @app.get("/")

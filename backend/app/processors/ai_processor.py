@@ -1,6 +1,6 @@
 """AI processor for summarization and classification using Claude or OpenAI API"""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import json
 import logging
 from anthropic import Anthropic
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.models.schemas import CategoryType, SentimentType
 from app.models.database import PlatformSettings
+from app.core.prompt_loader import load_prompt_template, PromptTemplate, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,33 @@ class AIProcessor:
     """
 
     def __init__(self, db: Optional[Session] = None):
+        """
+        Initialize AIProcessor with either template system or legacy configuration
+
+        If AI_PROMPT_TEMPLATE is set, load the template which defines all prompts
+        and their individual model configurations. Otherwise, use legacy
+        individual model settings from environment variables.
+        """
+        # Try to load prompt template if configured
+        self.template: Optional[PromptTemplate] = None
+        if settings.ai_prompt_template:
+            # Load template - raise error if it fails
+            self.template = load_prompt_template(settings.ai_prompt_template)
+            logger.info(f"Using prompt template: {settings.ai_prompt_template}")
+            # Template mode - clients will be created dynamically per-prompt
+            self.client = None
+            self.client_type = None
+            self.model = None
+            self.model_tier = None
+            self.provider = None
+            self.max_tokens = None
+            return  # Early return - template mode configured
+
+        # Legacy mode - individual model configuration
         # Get model name from platform settings (for article processing = cheap model)
         # Provider config comes from environment variables
         self.model = settings.ai_model_cheap  # default from env
+        self.model_tier = settings.ai_model_tier_cheap  # default from env
 
         if db:
             ai_config_row = db.query(PlatformSettings).filter(
@@ -73,6 +98,42 @@ class AIProcessor:
 
         self.max_tokens = settings.max_tokens_summary
 
+    def _create_client(self, model_config: ModelConfig) -> Tuple[Any, str]:
+        """
+        Create an AI client dynamically based on model configuration
+
+        Args:
+            model_config: ModelConfig from prompt template
+
+        Returns:
+            Tuple of (client, client_type)
+        """
+        if model_config.provider == 'anthropic':
+            if not model_config.api_key:
+                raise ValueError(f"{model_config.api_key_env} not configured")
+            client = Anthropic(
+                api_key=model_config.api_key,
+                base_url=model_config.api_base
+            )
+            return client, 'anthropic'
+
+        elif model_config.provider == 'openai' or model_config.provider == 'lmstudio':
+            # Both OpenAI and LM Studio use OpenAI-compatible API
+            if not OPENAI_AVAILABLE:
+                raise ValueError("OpenAI package not installed. Run: pip install openai")
+
+            # LM Studio doesn't need an API key
+            api_key = model_config.api_key if model_config.api_key else "lm-studio"
+
+            client = OpenAI(
+                api_key=api_key,
+                base_url=model_config.api_base
+            )
+            return client, 'openai'
+
+        else:
+            raise ValueError(f"Unknown provider: {model_config.provider}")
+
     async def process_item(
         self,
         title: str,
@@ -101,42 +162,84 @@ class AIProcessor:
             Dict with summary, category, sentiment, entities, tags, priority_score
         """
         try:
-            # Build the analysis prompt
-            prompt = self._build_prompt(
-                title,
-                content,
-                customer_name,
-                source_type,
-                keywords or [],
-                competitors or [],
-                priority_keywords or [],
-                is_trusted_source
-            )
+            # MODE 1: Template system - get prompt and model from template
+            if self.template:
+                # Prepare template variables
+                keywords_text = f"Keywords: {', '.join(keywords or [])}" if keywords else ""
+                competitors_text = f"Competitors: {', '.join(competitors or [])}" if competitors else ""
 
-            # Call AI API based on provider
-            if self.client_type == 'anthropic':
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=self.max_tokens,
+                # Get formatted prompt and model config from template
+                prompt, model_config = self.template.format_prompt(
+                    'intelligence_analysis',
+                    customer_name=customer_name,
+                    title=title,
+                    content=content[:3500],
+                    source_type=source_type,
+                    keywords_text=keywords_text,
+                    competitors_text=competitors_text
+                )
+
+                # Create AI client dynamically based on model config
+                client, client_type = self._create_client(model_config)
+                model_name = model_config.model_name
+                max_tokens = model_config.max_tokens
+
+                logger.debug(
+                    f"Using template prompt 'intelligence_analysis' with model {model_name} "
+                    f"({model_config.provider})"
+                )
+
+            # MODE 2: Legacy configuration - use hardcoded prompts and pre-initialized client
+            else:
+                prompt = self._build_prompt(
+                    title,
+                    content,
+                    customer_name,
+                    source_type,
+                    keywords or [],
+                    competitors or [],
+                    priority_keywords or [],
+                    is_trusted_source
+                )
+                client = self.client
+                client_type = self.client_type
+                model_name = self.model
+                max_tokens = self.max_tokens
+
+            # Call AI API based on client type
+            if client_type == 'anthropic':
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
                     messages=[
                         {"role": "user", "content": prompt}
                     ]
                 )
                 response_text = response.content[0].text
-            elif self.client_type == 'openai':
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=self.max_tokens,
+            elif client_type == 'openai':
+                response = client.chat.completions.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
                     messages=[
                         {"role": "user", "content": prompt}
                     ]
                 )
                 response_text = response.choices[0].message.content
             else:
-                raise ValueError(f"Unknown client type: {self.client_type}")
+                raise ValueError(f"Unknown client type: {client_type}")
 
             # Parse response
             result = self._parse_response(response_text)
+
+            # Validate relevance claim against actual content
+            if result['is_relevant']:
+                result = self._validate_relevance_claim(
+                    result,
+                    title,
+                    content,
+                    customer_name,
+                    keywords
+                )
 
             logger.debug(f"Processed item: {title[:50]}...")
             return result
@@ -173,6 +276,30 @@ class AIProcessor:
         Returns:
             Prompt string
         """
+        # Route to appropriate prompt based on model tier
+        if self.model_tier == "small":
+            return self._build_prompt_small(
+                title, content, customer_name, source_type,
+                keywords, competitors, priority_keywords, is_trusted_source
+            )
+        else:
+            return self._build_prompt_frontier(
+                title, content, customer_name, source_type,
+                keywords, competitors, priority_keywords, is_trusted_source
+            )
+
+    def _build_prompt_frontier(
+        self,
+        title: str,
+        content: str,
+        customer_name: str,
+        source_type: str,
+        keywords: List[str],
+        competitors: List[str],
+        priority_keywords: List[str],
+        is_trusted_source: bool = False
+    ) -> str:
+        """Build detailed prompt for frontier models (Sonnet, GPT-4, Opus)"""
         # Build source-specific guidance
         source_guidance = self._get_source_specific_guidance(source_type)
 
@@ -346,6 +473,73 @@ Format response as JSON:
   "priority_score": 0.0
 }}"""
 
+    def _build_prompt_small(
+        self,
+        title: str,
+        content: str,
+        customer_name: str,
+        source_type: str,
+        keywords: List[str],
+        competitors: List[str],
+        priority_keywords: List[str],
+        is_trusted_source: bool = False
+    ) -> str:
+        """Build simplified prompt for small models (Haiku, GPT-3.5, local models)"""
+
+        # Build simple context
+        keywords_text = f"Keywords: {', '.join(keywords[:5])}" if keywords else ""
+        competitors_text = f"Competitors: {', '.join(competitors[:5])}" if competitors else ""
+
+        return f"""Analyze this article about {customer_name}.
+
+CONTENT:
+Title: {title}
+Text: {content[:2500]}
+
+{keywords_text}
+{competitors_text}
+
+TASK: Output JSON ONLY with these fields:
+
+1. "is_relevant": true or false
+   - FIRST: Check if "{customer_name}" appears in the title or content
+   - If NOT mentioned → MUST be false
+   - If mentioned → true only if it's real company news (not ads/deals)
+
+2. "summary": 2-3 sentences explaining what happened and why it matters
+
+3. "category": ONE of these:
+   product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
+
+4. "sentiment": positive, negative, neutral, or mixed
+
+5. "entities": Extract these:
+   {{"companies": ["list all companies"], "technologies": ["list tech/products"], "people": ["list people"]}}
+
+6. "tags": List 3-5 relevant tags
+
+7. "pain_points_opportunities":
+   {{"pain_points": ["2-3 words", "2-3 words"], "opportunities": ["2-3 words", "2-3 words"]}}
+
+   CRITICAL: Each item must be 2-3 words MAXIMUM. Examples:
+   GOOD: "Network outage", "Budget cuts", "Market expansion"
+   BAD: "Customers experiencing service issues" (too long!)
+
+   If none found, use empty arrays: {{"pain_points": [], "opportunities": []}}
+
+8. "priority_score": Number from 0.0 to 1.0
+   - 0.8-1.0: Major news (leadership changes, big launches, competitive threats)
+   - 0.4-0.7: Normal news (product updates, partnerships)
+   - 0.1-0.3: Minor news
+   - 0.0: Not relevant or ads
+
+IMPORTANT:
+- Output ONLY valid JSON, no other text
+- If {customer_name} not mentioned → is_relevant MUST be false
+- Pain points/opportunities: 2-3 words each, NO sentences
+
+JSON:"""
+
     def _get_source_specific_guidance(self, source_type: str) -> str:
         """Get source-specific analysis guidance"""
         guidance_map = {
@@ -423,7 +617,7 @@ Focus on:
                     'sentiment': self._validate_sentiment(data.get('sentiment', 'neutral')),
                     'entities': data.get('entities', {}),
                     'tags': data.get('tags', []),
-                    'pain_points_opportunities': data.get('pain_points_opportunities', {'pain_points': [], 'opportunities': []}),
+                    'pain_points_opportunities': self._validate_pain_points_opportunities(data.get('pain_points_opportunities', {'pain_points': [], 'opportunities': []})),
                     'priority_score': self._validate_priority(data.get('priority_score', 0.5))
                 }
             else:
@@ -458,6 +652,80 @@ Focus on:
             return max(0.0, min(1.0, score))
         except (TypeError, ValueError):
             return 0.5
+
+    def _validate_relevance_claim(
+        self,
+        result: dict,
+        title: str,
+        content: str,
+        customer_name: str,
+        keywords: List[str]
+    ) -> dict:
+        """
+        Validate that the AI's relevance claim is supported by actual mentions
+        in the content. This prevents models from hallucinating relevance.
+        """
+        # Combine title and content for searching
+        full_text = f"{title}\n{content or ''}".lower()
+
+        # Check if customer name appears in content
+        customer_name_lower = customer_name.lower()
+        customer_mentioned = customer_name_lower in full_text
+
+        # Check if any keywords appear in content
+        keyword_mentioned = False
+        if keywords:
+            keyword_mentioned = any(keyword.lower() in full_text for keyword in keywords)
+
+        # If neither customer name nor keywords appear, this is a hallucination
+        if not customer_mentioned and not keyword_mentioned:
+            logger.warning(
+                f"Model claimed relevance but '{customer_name}' and keywords not found in content. "
+                f"Title: {title[:100]}... - Marking as irrelevant."
+            )
+            result['is_relevant'] = False
+            result['priority_score'] = 0.0
+            result['category'] = 'unrelated'
+            result['summary'] = f"Content does not actually mention {customer_name} or related keywords."
+
+        return result
+
+    def _validate_pain_points_opportunities(self, data) -> dict:
+        """Validate pain_points_opportunities structure"""
+        # If None, return empty structure
+        if data is None:
+            return {'pain_points': [], 'opportunities': []}
+
+        # If it's a list (wrong format from model), log warning and return empty structure
+        if isinstance(data, list):
+            logger.warning(f"Model returned pain_points_opportunities as list instead of dict: {data}")
+            return {'pain_points': [], 'opportunities': []}
+
+        # If it's a dict, validate structure
+        if isinstance(data, dict):
+            pain_points = data.get('pain_points', [])
+            opportunities = data.get('opportunities', [])
+
+            # Ensure both are lists
+            if not isinstance(pain_points, list):
+                logger.warning(f"pain_points is not a list: {type(pain_points)}")
+                pain_points = []
+            if not isinstance(opportunities, list):
+                logger.warning(f"opportunities is not a list: {type(opportunities)}")
+                opportunities = []
+
+            # Ensure all items are strings
+            pain_points = [str(p) for p in pain_points if p]
+            opportunities = [str(o) for o in opportunities if o]
+
+            return {
+                'pain_points': pain_points,
+                'opportunities': opportunities
+            }
+
+        # Unknown format, log warning and return empty
+        logger.warning(f"Unknown pain_points_opportunities format: {type(data)}")
+        return {'pain_points': [], 'opportunities': []}
 
     def _default_result(self, title: str, content: str) -> Dict[str, Any]:
         """

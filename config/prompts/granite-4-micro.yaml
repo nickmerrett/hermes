@@ -1,0 +1,76 @@
+# Prompt template for IBM Granite 4.0 H Micro (small model via LM Studio)
+model:
+  name: "ibm/granite-4.0-h-micro"
+  provider: "lmstudio"
+  api_base: "http://localhost:1234/v1"
+  api_key_env: ""
+  tier: "small"
+  max_tokens: 1500
+
+prompts:
+  intelligence_analysis: |
+    Analyze this article about {customer_name}.
+
+    CONTENT:
+    Title: {title}
+    Text: {content}
+
+    {keywords_text}
+    {competitors_text}
+
+    TASK: Output JSON ONLY with these fields:
+
+    1. "is_relevant": true or false
+       - FIRST: Check if "{customer_name}" appears in the title or content
+       - If NOT mentioned → MUST be false
+       - If mentioned → true only if it's real company news (not ads/deals)
+
+    2. "summary": 2-3 sentences explaining what happened and why it matters
+
+    3. "category": ONE of these:
+       product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
+
+    4. "sentiment": positive, negative, neutral, or mixed
+
+    5. "entities": Extract these:
+       {{"companies": ["list all companies"], "technologies": ["list tech/products"], "people": ["list people"]}}
+
+    6. "tags": List 3-5 relevant tags
+
+    7. "pain_points_opportunities":
+       {{"pain_points": ["2-3 words", "2-3 words"], "opportunities": ["2-3 words", "2-3 words"]}}
+
+       CRITICAL: Each item must be 2-3 words MAXIMUM. Examples:
+       GOOD: "Network outage", "Budget cuts", "Market expansion"
+       BAD: "Customers experiencing service issues" (too long!)
+
+       If none found, use empty arrays: {{"pain_points": [], "opportunities": []}}
+
+    8. "priority_score": Number from 0.0 to 1.0
+       - 0.8-1.0: Major news (leadership changes, big launches, competitive threats)
+       - 0.4-0.7: Normal news (product updates, partnerships)
+       - 0.1-0.3: Minor news
+       - 0.0: Not relevant or ads
+
+    IMPORTANT:
+    - Output ONLY valid JSON, no other text
+    - If {customer_name} not mentioned → is_relevant MUST be false
+    - Pain points/opportunities: 2-3 words each, NO sentences
+
+    JSON:
+
+  daily_summary: |
+    Generate a daily briefing for {customer_name}.
+
+    Items collected today: {total_items}
+    High priority: {high_priority_count}
+
+    Top items:
+    {items}
+
+    Write a brief summary (200 words) covering:
+    - Key developments
+    - Important trends
+    - Sales opportunities
+
+    Summary:

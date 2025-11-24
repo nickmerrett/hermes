@@ -16,8 +16,17 @@ from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
 from app.config.settings import settings
+from app.core.prompt_loader import load_prompt_template, PromptTemplate
 
 logger = logging.getLogger(__name__)
+
+# Import OpenAI (optional)
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger.warning("OpenAI package not installed. OpenAI models will not be available for research.")
 
 
 class CustomerResearchService:
@@ -28,7 +37,18 @@ class CustomerResearchService:
     """
 
     def __init__(self):
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
+        """Initialize research service with template support"""
+        # Load prompt template if configured
+        self.template: Optional[PromptTemplate] = None
+        if settings.ai_prompt_template:
+            # Load template - raise error if it fails
+            self.template = load_prompt_template(settings.ai_prompt_template)
+            logger.info(f"Using prompt template for research: {settings.ai_prompt_template}")
+            self.client = None  # Will be created dynamically
+        else:
+            # Legacy mode - pre-initialize Anthropic client
+            self.client = Anthropic(api_key=settings.anthropic_api_key)
+
         self.http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),  # 10s total, 5s to connect
             follow_redirects=True,
@@ -36,6 +56,78 @@ class CustomerResearchService:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         )
+
+    def _create_client(self, model_config):
+        """Create AI client dynamically based on model config"""
+        if model_config.provider == 'anthropic':
+            if not model_config.api_key:
+                raise ValueError(f"{model_config.api_key_env} not configured")
+            return Anthropic(api_key=model_config.api_key, base_url=model_config.api_base), 'anthropic'
+        elif model_config.provider in ['openai', 'lmstudio']:
+            if not OPENAI_AVAILABLE:
+                raise ValueError("OpenAI package not installed")
+            api_key = model_config.api_key if model_config.api_key else "lm-studio"
+            return OpenAI(api_key=api_key, base_url=model_config.api_base), 'openai'
+        else:
+            raise ValueError(f"Unknown provider: {model_config.provider}")
+
+    async def _call_ai(self, prompt_name: str, **kwargs) -> str:
+        """
+        Make AI call using either template or legacy mode
+
+        Args:
+            prompt_name: Name of the prompt template to use
+            **kwargs: Variables to pass to template (ignored in legacy mode, prompt passed directly)
+
+        Returns:
+            AI response text
+        """
+        # MODE 1: Template system
+        if self.template:
+            # Check if a legacy prompt was passed (for backward compat during migration)
+            if 'legacy_prompt' in kwargs:
+                prompt = kwargs['legacy_prompt']
+                # Use default model from template (first model defined)
+                model_names = self.template.list_models()
+                if not model_names:
+                    raise ValueError("Template has no models defined")
+                model_config = self.template.get_model(model_names[0])
+            else:
+                # Get formatted prompt and model from template
+                prompt, model_config = self.template.format_prompt(prompt_name, **kwargs)
+
+            # Create client dynamically
+            client, client_type = self._create_client(model_config)
+            model_name = model_config.model_name
+            max_tokens = model_config.max_tokens
+
+        # MODE 2: Legacy - prompt passed as 'legacy_prompt'
+        else:
+            if 'legacy_prompt' not in kwargs:
+                raise ValueError("Legacy mode requires 'legacy_prompt' parameter")
+            prompt = kwargs['legacy_prompt']
+            client = self.client
+            client_type = 'anthropic'  # Legacy only supports Anthropic
+            model_name = settings.ai_model
+            max_tokens = 1000
+
+        # Make AI call
+        if client_type == 'anthropic':
+            response = client.messages.create(
+                model=model_name,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        elif client_type == 'openai':
+            response = client.chat.completions.create(
+                model=model_name,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        else:
+            raise ValueError(f"Unknown client type: {client_type}")
 
     async def research_company(self, company_name: str) -> Dict[str, Any]:
         """
@@ -114,7 +206,13 @@ class CustomerResearchService:
     async def _research_basic_info(self, company_name: str) -> Dict[str, Any]:
         """Research basic company information"""
 
-        prompt = f"""Research the company "{company_name}" and provide the following information.
+        try:
+            # Template mode: use prompt name and variables
+            if self.template:
+                text_response = await self._call_ai('research_basic_info', customer_name=company_name)
+            # Legacy mode: build prompt manually
+            else:
+                prompt = f"""Research the company "{company_name}" and provide the following information.
 
 Return ONLY a JSON object (no explanatory text, no markdown formatting):
 
@@ -133,20 +231,10 @@ Rules:
 - Stock symbol should include exchange if not US (e.g., "TLS.AX" for Australian stocks)
 - LinkedIn URL should be the full company page URL
 - Return ONLY the JSON object, nothing else"""
-
-        try:
-            response = self.client.messages.create(
-                model=settings.ai_model,
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
+                text_response = await self._call_ai('research_basic_info', legacy_prompt=prompt)
 
             # Parse JSON response
             import json
-            text_response = response.content[0].text
             json_text = self._extract_json_from_text(text_response)
             result = json.loads(json_text)
 

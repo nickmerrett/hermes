@@ -50,12 +50,20 @@ class Settings(BaseSettings):
     daily_collection_enabled: bool = True
     daily_collection_hour: int = 10  # Hour (0-23) to run daily comprehensive collection
 
-    # AI Processing
+    # AI Processing - Legacy individual model configuration (backward compatible)
     ai_provider: str = "anthropic"  # Provider for premium model: anthropic or openai
     ai_model: str = "claude-sonnet-4-5-20250929"  # Model for daily summaries and complex tasks
+    ai_model_tier: str = "frontier"  # Prompt complexity tier: "frontier" (Sonnet, GPT-4, Opus) or "small" (Haiku, GPT-3.5, local models)
     ai_provider_cheap: str = "anthropic"  # Provider for economy model: anthropic or openai
     ai_model_cheap: str = "claude-haiku-4-5-20250929"  # Cheaper model for entity extraction, filtering, article summaries
+    ai_model_tier_cheap: str = "small"  # Prompt complexity tier for cheap model: "frontier" or "small"
     model_override_in_ui: bool = False  # Allow UI to override model settings from environment variables
+
+    # Prompt Template System (RECOMMENDED - per-prompt model assignment)
+    # If set, this overrides all individual model settings above
+    # The YAML template defines all 7 prompts with their individual model assignments
+    # Can be either a template name (e.g., "qwen3-4b") or absolute path (e.g., "/path/to/template.yaml")
+    ai_prompt_template: str = ""  # Template name OR absolute path. Empty = use individual settings above
 
     # API Base URLs
     anthropic_api_base_url: str = "https://api.anthropic.com"  # Anthropic API base URL (can override for proxies)
@@ -98,6 +106,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        protected_namespaces = ()  # Allow field names starting with "model_"
 
 
 # Global settings instance

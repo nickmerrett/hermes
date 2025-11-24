@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation"""
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_serializer
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_serializer, field_validator
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -125,6 +125,24 @@ class ProcessedIntelligenceResponse(BaseModelWithTimezone):
     last_processing_attempt: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('pain_points_opportunities', mode='before')
+    @classmethod
+    def validate_pain_points_opportunities(cls, v):
+        """Convert old list format to new dict format for backward compatibility"""
+        if v is None:
+            return None
+
+        # If it's already a dict with the correct structure, return it
+        if isinstance(v, dict):
+            return v
+
+        # If it's a list (old format), convert to empty dict
+        # (these items should be reprocessed to get proper pain points)
+        if isinstance(v, list):
+            return {'pain_points': [], 'opportunities': []}
+
+        return v
 
 
 class IntelligenceItemResponse(IntelligenceItemBase, BaseModelWithTimezone):

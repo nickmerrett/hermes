@@ -1,0 +1,225 @@
+# Comprehensive prompt template for Qwen 3 VL 4B (small model via LM Studio)
+# Each prompt can specify its own model configuration
+
+# Define reusable model configurations
+models:
+  qwen3-4b:
+    name: "qwen/qwen3-vl-4b"
+    provider: "lmstudio"
+    api_base: "http://localhost:1234/v1"
+    api_key_env: ""  # No API key needed for local LM Studio
+    tier: "small"
+    max_tokens: 1500
+
+
+# Each prompt references a model and provides its template
+# ALL 7 REQUIRED PROMPTS MUST BE DEFINED
+prompts:
+  # ========================================
+  # 1. INTELLIGENCE ANALYSIS (Article Processing)
+  # ========================================
+  intelligence_analysis:
+    model: qwen3-4b
+    template: |
+      Analyze this article about {customer_name}.
+
+      CONTENT:
+      Title: {title}
+      Text: {content}
+
+      {keywords_text}
+      {competitors_text}
+
+      TASK: Output JSON ONLY with these fields:
+
+      1. "is_relevant": true or false
+         - FIRST: Check if "{customer_name}" appears in the title or content
+         - If NOT mentioned → MUST be false
+         - If mentioned → true only if it's real company news (not ads/deals)
+
+      2. "summary": 2-3 sentences explaining what happened and why it matters
+
+      3. "category": ONE of these:
+         product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
+
+      4. "sentiment": positive, negative, neutral, or mixed
+
+      5. "entities": Extract these:
+         {{"companies": ["list all companies"], "technologies": ["list tech/products"], "people": ["list people"]}}
+
+      6. "tags": List 3-5 relevant tags
+
+      7. "pain_points_opportunities":
+         {{"pain_points": ["2-3 words", "2-3 words"], "opportunities": ["2-3 words", "2-3 words"]}}
+
+         CRITICAL: Each item must be 2-3 words MAXIMUM. Examples:
+         GOOD: "Network outage", "Budget cuts", "Market expansion"
+         BAD: "Customers experiencing service issues" (too long!)
+
+         If none found, use empty arrays: {{"pain_points": [], "opportunities": []}}
+
+      8. "priority_score": Number from 0.0 to 1.0
+         - 0.8-1.0: Major news (leadership changes, big launches, competitive threats)
+         - 0.4-0.7: Normal news (product updates, partnerships)
+         - 0.1-0.3: Minor news
+         - 0.0: Not relevant or ads
+
+      IMPORTANT:
+      - Output ONLY valid JSON, no other text
+      - If {customer_name} not mentioned → is_relevant MUST be false
+      - Pain points/opportunities: 2-3 words each, NO sentences
+
+      JSON:
+
+  # ========================================
+  # 2. DAILY SUMMARY (Executive Briefing)
+  # ========================================
+  daily_summary:
+    model: qwen3-4b
+    template: |
+      You are an executive intelligence briefing assistant. Generate a daily briefing for {customer_name} based on the intelligence collected in the last 24 hours.
+
+      **Intelligence Overview:**
+      - Total items collected: {total_items}
+      - High priority items: {high_priority_count}
+      - Categories: {categories}
+
+      **Top Intelligence Items:**
+      {items}
+
+      **Your Task:**
+      Generate a concise daily briefing summarizing the key intelligence collected today. Focus on:
+      - Most important developments
+      - Emerging trends and patterns
+      - Notable competitor activities
+      - Strategic opportunities and risks
+
+      Keep the summary professional, actionable, and under 300 words.
+
+      Write the briefing now:
+
+  # ========================================
+  # 3. RESEARCH: BASIC COMPANY INFO
+  # ========================================
+  research_basic_info:
+    model: qwen3-4b
+    template: |
+      Research the company "{customer_name}" and provide the following information.
+
+      Return ONLY a JSON object (no explanatory text, no markdown formatting):
+
+      {{
+        "domain": "example.com",
+        "description": "Brief one-sentence description",
+        "stock_symbol": "SYMB",
+        "industry": "Industry name",
+        "linkedin_company_url": "https://linkedin.com/company/name",
+        "twitter_handle": "@company"
+      }}
+
+      Rules:
+      - Use null for any field where you're uncertain
+      - Domain should be just the domain name (e.g., "telstra.com.au")
+      - Stock symbol should include exchange if not US (e.g., "TLS.AX" for Australian stocks)
+      - LinkedIn URL should be the full company page URL
+      - Return ONLY the JSON object, nothing else
+
+  # ========================================
+  # 4. RESEARCH: EXECUTIVES
+  # ========================================
+  research_executives:
+    model: qwen3-4b
+    template: |
+      Find the top 4-6 C-level executives for {customer_name}.
+      {web_context}
+
+      Return ONLY a JSON array (no explanatory text, no markdown):
+
+      [
+        {{
+          "name": "Full Name",
+          "role": "CEO",
+          "linkedin_url": "https://linkedin.com/in/profile",
+          "notes": "Current as of [source]"
+        }}
+      ]
+
+      Company LinkedIn: {linkedin_url}
+
+      IMPORTANT RULES:
+      - If leadership page content is provided above, prioritize executives from that CURRENT source
+      - Only include C-level executives (CEO, CTO, CFO, COO, CMO, etc.)
+      - Limit to 4-6 executives (quality over quantity)
+      - For LinkedIn URLs, construct best-guess URLs based on name and company
+      - Indicate source in notes (e.g., "From company website" or "From knowledge base - verify")
+      - Return ONLY the JSON array, nothing else
+
+  # ========================================
+  # 5. RESEARCH: COMPETITORS
+  # ========================================
+  research_competitors:
+    model: qwen3-4b
+    template: |
+      List the top 5-8 competitors for {customer_name}{industry_context}.
+
+      Focus on:
+      - Direct competitors (same market/products)
+      - Major players in the industry
+      - Companies that sales teams would compete against
+
+      Return ONLY the company names, one per line.
+      Be concise - just the company name, no explanations.
+
+      Example format:
+      Competitor One
+      Competitor Two
+      Competitor Three
+
+  # ========================================
+  # 6. RESEARCH: KEYWORDS
+  # ========================================
+  research_keywords:
+    model: qwen3-4b
+    template: |
+      Generate monitoring keywords for {customer_name}.
+
+      Domain: {domain}
+      Description: {description}
+      Industry: {industry}
+
+      Return ONLY a JSON object (no explanatory text, no markdown):
+
+      {{
+        "keywords": ["keyword1", "keyword2", "...10-15 total"],
+        "priority_keywords": ["priority1", "priority2", "...5-8 total"]
+      }}
+
+      Include:
+      - General keywords: Company name variations, products, industry terms, acronyms
+      - Priority keywords: High-impact terms (CEO, earnings, crisis terms, regulatory)
+
+      Return ONLY the JSON object, nothing else.
+
+  # ========================================
+  # 7. RESEARCH: DATA SOURCES
+  # ========================================
+  research_sources:
+    model: qwen3-4b
+    template: |
+      Suggest data sources to monitor for {customer_name}{domain_hint}.
+
+      Return ONLY a JSON object (no explanatory text, no markdown):
+
+      {{
+        "rss_feeds": [
+          {{"url": "https://example.com/feed", "name": "Official Blog"}},
+          {{"url": "https://example.com/news/rss", "name": "Newsroom"}}
+        ],
+        "subreddits": ["subreddit1", "subreddit2"]
+      }}
+
+      Include:
+      1. RSS feeds - Newsroom, blog, or press release feeds (only if confident they exist)
+      2. Subreddits - 3-5 relevant subreddits where this company/industry is discussed
+
+      Use empty arrays if unsure. Return ONLY the JSON object, nothing else.
