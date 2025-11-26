@@ -6,7 +6,7 @@ models:
   granite-micro:
     name: "granite-4.0-h-micro"
     provider: "lmstudio"
-    api_base: "http://10.10.20.169:1234/v1"
+    api_base: "http://127.0.0.1:1234/v1"
     api_key_env: ""  # No API key needed for local LM Studio
     tier: "small"
     max_tokens: 1500
