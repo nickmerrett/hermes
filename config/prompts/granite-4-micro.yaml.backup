@@ -1,12 +1,12 @@
-# Comprehensive prompt template for IBM Granite 4.0 H Tiny (small model via LM Studio)
+# Comprehensive prompt template for Qwen 3 VL 4B (small model via LM Studio)
 # Each prompt can specify its own model configuration
 
 # Define reusable model configurations
 models:
-  granite-micro:
-    name: "granite-4.0-h-micro"
+  qwen3-4b:
+    name: "qwen/qwen3-vl-4b"
     provider: "lmstudio"
-    api_base: "http://10.10.20.169:1234/v1"
+    api_base: "http://localhost:1234/v1"
     api_key_env: ""  # No API key needed for local LM Studio
     tier: "small"
     max_tokens: 1500
@@ -61,41 +61,15 @@ prompts:
   # 1. STAGE 1: RELEVANCE CHECK (Fast Filter)
   # ========================================
   relevance_check:
-    model: granite-micro
+    model: qwen3-4b
     template: |
-      CRITICAL TASK: Check if this article is SPECIFICALLY about "{customer_name}" the company.
+      FIRST: Check if this article is about {customer_name} the company/organization.
 
       Title: {title}
       Content: {content}
 
-      STEP 1: Look for EXACT company name "{customer_name}" in title or content.
-      - If NOT found → is_relevant = false
-      - If found → continue to STEP 2
-
-      STEP 2: Verify it's the CORRECT company, not:
-      - A different company with similar name
-      - A competitor ({competitors_text})
-      - A customer/user of {customer_name}
-      - A nickname that could mean something else
-
-      STEP 3: Check if it's REAL company news:
-      ✓ YES (is_relevant = true):
-      - Executive announcements from {customer_name}
-      - Product launches by {customer_name}
-      - Financial results of {customer_name}
-      - Partnerships involving {customer_name}
-      - Regulatory actions against {customer_name}
-
-      ✗ NO (is_relevant = false):
-      - Retail ads ("Get {customer_name} for $50")
-      - How-to guides ("Use {customer_name} to...")
-      - Articles about competitors ONLY
-      - Customer complaints about {customer_name}
-      - Articles where {customer_name} is mentioned once in passing
-
-      IMPORTANT:
-      - Competitor news is usually NOT relevant unless it directly impacts {customer_name}
-      - Be STRICT: when in doubt, mark false
+      Keywords to look for: {keywords_text}
+      Known competitors: {competitors_text}
 
       Return ONLY JSON:
       {{
@@ -103,11 +77,25 @@ prompts:
         "reason": "one sentence why"
       }}
 
+      Mark FALSE if:
+      - Retail advertisements or deals (e.g., "Best {customer_name} plans for $59")
+      - Consumer promotions, discounts, price comparisons
+      - General how-to articles or consumer advice
+      - About a different company/entity with similar name
+      - Spam or completely unrelated
+
+      Mark TRUE if:
+      - Genuine news ABOUT {customer_name} as a company
+      - Executive announcements or company initiatives
+      - Industry analysis mentioning {customer_name}
+      - Competitor news directly impacting {customer_name}
+      - Regulatory/government actions affecting {customer_name}
+
   # ========================================
   # 2. STAGE 2: CORE ANALYSIS (Main Processing)
   # ========================================
   core_analysis:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Analyze this article about {customer_name} for a technical sales team.
 
@@ -158,7 +146,7 @@ prompts:
   # 3. STAGE 3: BUSINESS INSIGHTS (High-Value Only)
   # ========================================
   business_insights:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Extract business insights from this intelligence about {customer_name}:
 
@@ -194,7 +182,7 @@ prompts:
   # 4. DAILY SUMMARY (Executive Briefing)
   # ========================================
   daily_summary:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       You are an executive intelligence briefing assistant. Generate a daily briefing for {customer_name} based on the intelligence collected in the last 24 hours.
 
@@ -223,7 +211,7 @@ prompts:
   # 5. RESEARCH: BASIC COMPANY INFO
   # ========================================
   research_basic_info:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Research the company "{customer_name}" and provide the following information.
 
@@ -249,7 +237,7 @@ prompts:
   # 6. RESEARCH: EXECUTIVES
   # ========================================
   research_executives:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Find the top 4-6 C-level executives for {customer_name}.
       {web_context}
@@ -279,7 +267,7 @@ prompts:
   # 7. RESEARCH: COMPETITORS
   # ========================================
   research_competitors:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       List the top 5-8 competitors for {customer_name}{industry_context}.
 
@@ -300,7 +288,7 @@ prompts:
   # 8. RESEARCH: KEYWORDS
   # ========================================
   research_keywords:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Generate monitoring keywords for {customer_name}.
 
@@ -325,7 +313,7 @@ prompts:
   # 9. RESEARCH: DATA SOURCES
   # ========================================
   research_sources:
-    model: granite-micro
+    model: qwen3-4b
     template: |
       Suggest data sources to monitor for {customer_name}{domain_hint}.
 

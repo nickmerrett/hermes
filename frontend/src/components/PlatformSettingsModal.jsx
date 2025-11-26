@@ -4,71 +4,24 @@ import './PlatformSettingsModal.css';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Default prompt templates
-const PROMPT_TEMPLATES = {
-  standard: {
-    name: 'Standard Briefing',
-    description: 'Balanced overview of all intelligence',
-    prompt: `Generate a concise daily briefing summarizing the key intelligence collected today. Focus on:
-- Most important developments
-- Emerging trends and patterns
-- Notable competitor activities
-- Strategic opportunities and risks
+// Persona name mappings for display (fallback if API doesn't provide names)
+const PERSONA_DISPLAY_NAMES = {
+  executive: 'Executive Summary',
+  technical: 'Technical Analysis',
+  sales: 'Sales Intelligence',
+  analyst: 'Analytical Report',
+  brief: 'Brief Bullets',
+  custom: 'Custom Template'
+};
 
-Keep the summary professional, actionable, and under 300 words.`
-  },
-  executive: {
-    name: 'Executive Summary',
-    description: 'High-level, strategic overview',
-    prompt: `Create an executive-level daily briefing focused on strategic implications. Emphasize:
-- Critical business impacts
-- Strategic opportunities
-- Major competitive movements
-- Key risks and threats
-
-Use concise, executive language. Maximum 200 words.`
-  },
-  sales: {
-    name: 'Sales-Focused',
-    description: 'Opportunities, leads, market signals',
-    prompt: `Generate a sales-focused daily briefing highlighting:
-- New business opportunities
-- Potential leads and prospects
-- Market signals and buying intent
-- Competitor weaknesses to exploit
-- Customer needs and pain points
-
-Frame insights for sales action. Under 300 words.`
-  },
-  risk: {
-    name: 'Risk & Threats',
-    description: 'Competitive threats, regulatory issues',
-    prompt: `Create a risk-focused daily briefing covering:
-- Competitive threats and aggressive moves
-- Regulatory changes and compliance issues
-- Market disruptions
-- Reputational risks
-- Strategic vulnerabilities
-
-Prioritize actionable risk mitigation. Maximum 300 words.`
-  },
-  technical: {
-    name: 'Technical/Product',
-    description: 'Technology trends, product updates',
-    prompt: `Generate a technical daily briefing focusing on:
-- Technology trends and innovations
-- Product launches and updates
-- Technical capabilities of competitors
-- Engineering insights
-- Technology stack changes
-
-Use technical language appropriate for engineering teams. Under 300 words.`
-  },
-  custom: {
-    name: 'Custom Template',
-    description: 'Define your own prompt',
-    prompt: ''
-  }
+// Persona description mappings for display (fallback if API doesn't provide descriptions)
+const PERSONA_DESCRIPTIONS = {
+  executive: 'High-level, strategic overview',
+  technical: 'Technology trends, product updates',
+  sales: 'Opportunities, leads, market signals',
+  analyst: 'Data-driven insights and analysis',
+  brief: 'Concise bullet-point briefing',
+  custom: 'Define your own prompt'
 };
 
 export default function PlatformSettingsModal({ onClose, onSave }) {
@@ -77,19 +30,14 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  // Personas from template system
+  const [personas, setPersonas] = useState({});
+  const [personaList, setPersonaList] = useState([]);
+  const [templateBased, setTemplateBased] = useState(false);
+
   // Daily Briefing Settings
-  const [selectedTemplate, setSelectedTemplate] = useState('standard');
+  const [selectedTemplate, setSelectedTemplate] = useState('executive');
   const [customPrompt, setCustomPrompt] = useState('');
-  const [briefingLength, setBriefingLength] = useState('standard'); // brief, standard, detailed
-  const [briefingTone, setBriefingTone] = useState('professional'); // casual, professional, technical
-  const [focusAreas, setFocusAreas] = useState({
-    competitive_intel: true,
-    opportunities: true,
-    risks: true,
-    trends: true,
-    product_updates: true,
-    market_changes: true
-  });
   const [summaryScheduleEnabled, setSummaryScheduleEnabled] = useState(false);
   const [summaryScheduleHour, setSummaryScheduleHour] = useState(8);
   const [summaryScheduleMinute, setSummaryScheduleMinute] = useState(0);
@@ -233,6 +181,20 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
   const loadSettings = async () => {
     setLoading(true);
     try {
+      // Load personas from template system
+      try {
+        const personasResponse = await axios.get(`${API_URL}/settings/daily-summary-personas`);
+        const personasData = personasResponse.data;
+        if (personasData.template_based) {
+          setPersonas(personasData.personas);
+          setPersonaList(personasData.persona_list);
+          setTemplateBased(true);
+        }
+      } catch (err) {
+        console.warn('Failed to load personas from template:', err);
+        // Continue with defaults
+      }
+
       // Load AI config status (override enabled, env values)
       const aiConfigStatusResponse = await axios.get(`${API_URL}/settings/ai-config-status`);
       const aiConfigStatus = aiConfigStatusResponse.data;
@@ -271,9 +233,6 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
           }
         }
         setCustomPrompt(settings.daily_briefing.custom_prompt || '');
-        setBriefingLength(settings.daily_briefing.length || 'standard');
-        setBriefingTone(settings.daily_briefing.tone || 'professional');
-        setFocusAreas(settings.daily_briefing.focus_areas || focusAreas);
       }
 
       // AI Configuration
@@ -404,10 +363,6 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         daily_briefing: {
           template: selectedTemplate,
           custom_prompt: selectedTemplate === 'custom' ? customPrompt : '',
-          length: briefingLength,
-          tone: briefingTone,
-          focus_areas: focusAreas,
-          prompt: selectedTemplate === 'custom' ? customPrompt : PROMPT_TEMPLATES[selectedTemplate].prompt,
           schedule: {
             enabled: summaryScheduleEnabled,
             hour: summaryScheduleHour,
@@ -496,14 +451,11 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     if (selectedTemplate === 'custom') {
       return customPrompt;
     }
-    return PROMPT_TEMPLATES[selectedTemplate]?.prompt || '';
-  };
-
-  const toggleFocusArea = (area) => {
-    setFocusAreas({
-      ...focusAreas,
-      [area]: !focusAreas[area]
-    });
+    // Use personas from template system if available
+    if (templateBased && personas[selectedTemplate]) {
+      return personas[selectedTemplate];
+    }
+    return '';
   };
 
   const toggleCategoryPreference = (category) => {
@@ -604,16 +556,48 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                   <div className="form-section">
                     <label className="section-label">Prompt Template</label>
                     <div className="template-grid">
-                      {Object.entries(PROMPT_TEMPLATES).map(([key, template]) => (
-                        <button
-                          key={key}
-                          className={`template-card ${selectedTemplate === key ? 'selected' : ''}`}
-                          onClick={() => setSelectedTemplate(key)}
-                        >
-                          <div className="template-name">{template.name}</div>
-                          <div className="template-description">{template.description}</div>
-                        </button>
-                      ))}
+                      {/* Render personas from template system if available */}
+                      {templateBased && personaList.length > 0 ? (
+                        <>
+                          {personaList.map((key) => (
+                            <button
+                              key={key}
+                              className={`template-card ${selectedTemplate === key ? 'selected' : ''}`}
+                              onClick={() => setSelectedTemplate(key)}
+                            >
+                              <div className="template-name">
+                                {PERSONA_DISPLAY_NAMES[key] || key.charAt(0).toUpperCase() + key.slice(1)}
+                              </div>
+                              <div className="template-description">
+                                {PERSONA_DESCRIPTIONS[key] || 'Template-based persona'}
+                              </div>
+                            </button>
+                          ))}
+                          {/* Always include Custom option */}
+                          <button
+                            key="custom"
+                            className={`template-card ${selectedTemplate === 'custom' ? 'selected' : ''}`}
+                            onClick={() => setSelectedTemplate('custom')}
+                          >
+                            <div className="template-name">{PERSONA_DISPLAY_NAMES.custom}</div>
+                            <div className="template-description">{PERSONA_DESCRIPTIONS.custom}</div>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Fallback: Show default personas if API not available */}
+                          {Object.entries(PERSONA_DISPLAY_NAMES).map(([key, name]) => (
+                            <button
+                              key={key}
+                              className={`template-card ${selectedTemplate === key ? 'selected' : ''}`}
+                              onClick={() => setSelectedTemplate(key)}
+                            >
+                              <div className="template-name">{name}</div>
+                              <div className="template-description">{PERSONA_DESCRIPTIONS[key]}</div>
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -636,55 +620,6 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     <label className="section-label">Current Prompt</label>
                     <div className="prompt-preview">
                       {getCurrentPrompt() || 'No prompt defined'}
-                    </div>
-                  </div>
-
-                  {/* Briefing Options */}
-                  <div className="form-section">
-                    <label className="section-label">Briefing Style</label>
-                    <div className="option-row">
-                      <div className="option-group">
-                        <label>Length</label>
-                        <select
-                          value={briefingLength}
-                          onChange={(e) => setBriefingLength(e.target.value)}
-                          className="settings-select"
-                        >
-                          <option value="brief">Brief (~150 words)</option>
-                          <option value="standard">Standard (~300 words)</option>
-                          <option value="detailed">Detailed (~500 words)</option>
-                        </select>
-                      </div>
-                      <div className="option-group">
-                        <label>Tone</label>
-                        <select
-                          value={briefingTone}
-                          onChange={(e) => setBriefingTone(e.target.value)}
-                          className="settings-select"
-                        >
-                          <option value="casual">Casual</option>
-                          <option value="professional">Professional</option>
-                          <option value="technical">Technical</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Focus Areas */}
-                  <div className="form-section">
-                    <label className="section-label">Focus Areas</label>
-                    <p className="section-help">Select which aspects to emphasize in daily briefings</p>
-                    <div className="focus-areas-grid">
-                      {Object.entries(focusAreas).map(([key, enabled]) => (
-                        <label key={key} className="focus-area-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            onChange={() => toggleFocusArea(key)}
-                          />
-                          <span>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-                        </label>
-                      ))}
                     </div>
                   </div>
 

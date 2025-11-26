@@ -424,3 +424,44 @@ def get_ai_config_status():
             "ai_provider_cheap": settings.ai_provider_cheap
         }
     }
+
+
+@router.get("/settings/daily-summary-personas")
+def get_daily_summary_personas():
+    """
+    Get available personas for daily summaries from the prompt template
+
+    Returns:
+        - template_based: bool - whether personas are from template or legacy mode
+        - personas: dict - persona keys mapped to their instructions
+        - persona_list: list - list of persona keys for UI dropdown
+    """
+    from app.config.settings import settings
+    from app.core.prompt_loader import load_prompt_template
+
+    # If template is configured, load personas from it
+    if settings.ai_prompt_template:
+        try:
+            template = load_prompt_template(settings.ai_prompt_template)
+            personas = template.personas
+
+            return {
+                "template_based": True,
+                "personas": personas,
+                "persona_list": list(personas.keys()),
+                "count": len(personas)
+            }
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to load personas from template: {str(e)}"
+            )
+
+    # Legacy mode - no template configured
+    return {
+        "template_based": False,
+        "personas": {},
+        "persona_list": [],
+        "count": 0,
+        "message": "No prompt template configured. Set AI_PROMPT_TEMPLATE environment variable to enable personas."
+    }

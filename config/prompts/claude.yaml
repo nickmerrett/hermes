@@ -19,99 +19,171 @@ models:
     tier: "frontier"
     max_tokens: 1200
 
+# Define personas for daily summaries (used with {persona_instructions} placeholder)
+# Personas provide formatting instructions to customize summary style
+personas:
+  executive: |
+    Format this as an executive briefing for C-suite leaders:
+    - Focus on strategic implications and business impact
+    - Lead with bottom line: what matters most and why
+    - Highlight risks, opportunities, and recommended actions
+    - Use clear, decisive language
+    - Keep technical details minimal unless business-critical
+
+  technical: |
+    Format this as a technical deep-dive for engineering and product teams:
+    - Emphasize technical details, architectures, and methodologies
+    - Include specific technologies, frameworks, and tools mentioned
+    - Highlight technical challenges, innovations, and solutions
+    - Provide context for technical decisions and trade-offs
+    - Use precise technical terminology
+
+  sales: |
+    Format this as actionable sales intelligence for customer-facing teams:
+    - Focus on customer pain points, needs, and buying signals
+    - Highlight competitive movements and market positioning
+    - Identify conversation starters and engagement opportunities
+    - Emphasize what prospects care about right now
+    - Include specific examples and talking points
+
+  analyst: |
+    Format this as a comprehensive analytical report:
+    - Provide data-driven insights with supporting evidence
+    - Include trend analysis and pattern recognition
+    - Present multiple perspectives and interpretations
+    - Quantify impact where possible
+    - Structure with clear sections and logical flow
+
+  brief: |
+    Format this as a concise bullet-point briefing:
+    - Use short, scannable bullet points only
+    - Lead each section with the key takeaway
+    - Eliminate all unnecessary words
+    - Maximum 3-5 bullets per section
+    - Focus on what's actionable or decision-worthy
+
 # Each prompt references a model and provides its template
-# ALL 7 REQUIRED PROMPTS MUST BE DEFINED
+# ALL 9 REQUIRED PROMPTS MUST BE DEFINED
 prompts:
   # ========================================
-  # 1. INTELLIGENCE ANALYSIS (Article Processing)
+  # 1. STAGE 1: RELEVANCE CHECK (Fast Filter)
   # ========================================
-  intelligence_analysis:
+  relevance_check:
     model: claude-haiku
     template: |
-      You are an AI analyst helping a technical sales team monitor intelligence about {customer_name}.
+      FIRST: Check if this article is about {customer_name} the company/organization.
 
-      Your goal is to provide ACTIONABLE insights that help sales professionals:
-      - Identify sales opportunities
-      - Stay ahead of competitive threats
-      - Understand customer challenges and needs
-      - Prepare for conversations with relevant context
+      Title: {title}
+      Content: {content}
 
-      ===== CONTEXT =====
-      Customer Being Monitored: {customer_name}
+      Keywords to look for: {keywords_text}
+      Known competitors: {competitors_text}
+
+      Return ONLY JSON:
+      {{
+        "is_relevant": true/false,
+        "reason": "one sentence why"
+      }}
+
+      Mark FALSE if:
+      - Retail advertisements or deals (e.g., "Best {customer_name} plans for $59")
+      - Consumer promotions, discounts, price comparisons
+      - General how-to articles or consumer advice
+      - About a different company/entity with similar name
+      - Spam or completely unrelated
+
+      Mark TRUE if:
+      - Genuine news ABOUT {customer_name} as a company
+      - Executive announcements or company initiatives
+      - Industry analysis mentioning {customer_name}
+      - Competitor news directly impacting {customer_name}
+      - Regulatory/government actions affecting {customer_name}
+
+  # ========================================
+  # 2. STAGE 2: CORE ANALYSIS (Main Processing)
+  # ========================================
+  core_analysis:
+    model: claude-haiku
+    template: |
+      Analyze this article about {customer_name} for a technical sales team.
+
+      Source Type: {source_type}
+      Title: {title}
+      Content: {content}
+
+      Context:
       {keywords_text}
       {competitors_text}
 
-      ===== CONTENT TO ANALYZE =====
-      Source Type: {source_type}
-      Title: {title}
-      Content:
-      {content}
+      Return JSON with:
 
-      ===== ANALYSIS REQUIRED =====
-
-      1. IS_RELEVANT (true/false): Is this actually about {customer_name} the company/organization?
-         - FALSE if:
-           * Retail advertisements or deals selling {customer_name}'s products/services
-           * Consumer promotions, discounts, or offers from resellers/retailers
-           * Price comparison articles or "best deal" listicles
-           * General consumer advice articles
-           * Sponsored content or affiliate marketing
-           * About a different company/entity entirely
-           * Spam or completely unrelated content
-         - TRUE if:
-           * Genuine news ABOUT {customer_name} as a company
-           * Executive announcements, company initiatives, or policy changes
-           * Industry analysis with substantive mention of {customer_name}
-           * Competitor moves that directly impact {customer_name}
-           * Regulatory/government actions affecting {customer_name}
-
-      2. SUMMARY (2-4 sentences): Create an ACTION-ORIENTED summary that answers:
+      1. SUMMARY (2-4 sentences): What happened and why it matters to sales
          - WHAT happened?
          - WHY does this matter to a sales professional?
-         - WHAT are the implications (opportunities, risks, talking points)?
+         - WHAT are the implications?
 
-      3. CATEGORY: Choose ONE from:
+      2. CATEGORY (pick ONE):
          product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
 
-      4. SENTIMENT: positive, negative, neutral, or mixed
+      3. SENTIMENT: positive, negative, neutral, or mixed
 
-      5. ENTITIES: Extract mentioned entities (be thorough):
-         - companies: ALL companies mentioned (including {customer_name} and competitors)
-         - technologies: Specific technologies, products, platforms mentioned
-         - people: Executives, leaders, key personnel mentioned
+      4. ENTITIES:
+         - companies: ALL companies mentioned
+         - technologies: Specific technologies/products mentioned
+         - people: Executives and key personnel mentioned
 
-      6. TAGS: 3-6 highly relevant tags for filtering/search
+      5. TAGS: 3-6 relevant tags for filtering/search
 
-      7. PAIN_POINTS_OPPORTUNITIES: Identify business pain points and sales opportunities:
-         - pain_points: List 0-3 specific business challenges (3 WORDS MAXIMUM!!!)
-           GOOD (2-3 words): "FTTN reliability issues", "Enterprise churn risk"
-           BAD (too long): "Enterprise customers with strong ESG procurement criteria"
-         - opportunities: List 0-3 specific sales opportunities (3 WORDS MAXIMUM!!!)
-           GOOD (2-3 words): "FTTP upgrade campaign", "Bundle migration offers"
-           BAD (too long): "Opportunity to align sales messaging with initiatives"
+      6. PRIORITY_SCORE (0.0-1.0):
+         - 0.8-1.0: Major threats, leadership changes, significant launches
+         - 0.4-0.7: Product updates, industry news, partnerships
+         - 0.1-0.3: Routine announcements
+         - 0.0: Not relevant or spam
 
-         ULTRA CRITICAL REQUIREMENTS:
-         - Each entry MUST be 3 words or less - NO EXCEPTIONS!
-         - Use ONLY keywords/noun phrases, NEVER full sentences
-         - DO NOT combine multiple points into one entry - split them up!
-         - Empty arrays are better than long entries
-
-      8. PRIORITY_SCORE (0.0-1.0): How URGENT is this for the sales team?
-         - 0.8-1.0: Major competitive threats, leadership changes, significant launches
-         - 0.4-0.7: General product updates, industry news, minor partnerships
-         - 0.1-0.3: Routine announcements with minimal impact
-         - 0.0: Not relevant, advertisement, or spam
-
-      Format response as JSON:
+      Format as JSON:
       {{
-        "is_relevant": true,
         "summary": "...",
         "category": "...",
         "sentiment": "...",
         "entities": {{"companies": [], "technologies": [], "people": []}},
         "tags": [],
-        "pain_points_opportunities": {{"pain_points": [], "opportunities": []}},
         "priority_score": 0.0
+      }}
+
+  # ========================================
+  # 3. STAGE 3: BUSINESS INSIGHTS (High-Value Only)
+  # ========================================
+  business_insights:
+    model: claude-sonnet
+    template: |
+      Extract business insights from this intelligence about {customer_name}:
+
+      Summary: {summary}
+      Category: {category}
+      Article Title: {title}
+
+      Identify 0-3 of each (CRITICAL: 2-3 words MAXIMUM per item):
+
+      PAIN_POINTS: Business problems or challenges
+      Examples:
+      ✓ GOOD: "Network outages", "Budget constraints", "Churn risk"
+      ✗ BAD: "Customers experiencing service degradation" (TOO LONG!)
+
+      OPPORTUNITIES: Sales or engagement opportunities
+      Examples:
+      ✓ GOOD: "Upsell opportunity", "Partnership potential", "Expansion plans"
+      ✗ BAD: "Opportunity to position our superior reliability" (TOO LONG!)
+
+      RULES:
+      - Each item MUST be 2-3 words MAX
+      - Use keywords/phrases, NOT sentences
+      - Empty arrays if none found
+      - DO NOT write long descriptions
+
+      Return JSON:
+      {{
+        "pain_points": ["2-3 words", "2-3 words"],
+        "opportunities": ["2-3 words", "2-3 words"]
       }}
 
   # ========================================
@@ -136,6 +208,8 @@ prompts:
       - Emerging trends and patterns
       - Notable competitor activities
       - Strategic opportunities and risks
+
+      {persona_instructions}
 
       Keep the summary professional, actionable, and under 300 words.
 

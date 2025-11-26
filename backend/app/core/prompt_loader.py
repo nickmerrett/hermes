@@ -10,8 +10,13 @@ logger = logging.getLogger(__name__)
 
 # Required prompts that must be defined in every template
 REQUIRED_PROMPTS = [
-    'intelligence_analysis',
+    # 3-stage article processing pipeline
+    'relevance_check',
+    'core_analysis',
+    'business_insights',
+    # Daily summary
     'daily_summary',
+    # Customer research prompts
     'research_basic_info',
     'research_executives',
     'research_competitors',
@@ -68,6 +73,9 @@ class PromptTemplate:
         for model_name, model_config in self.config['models'].items():
             self.models[model_name] = ModelConfig(model_name, model_config)
 
+        # Load personas (optional)
+        self.personas: Dict[str, str] = self.config.get('personas', {})
+
         # Load prompts with their model assignments
         self.prompts: Dict[str, PromptConfig] = {}
         for prompt_name, prompt_data in self.config['prompts'].items():
@@ -90,24 +98,13 @@ class PromptTemplate:
 
         logger.info(
             f"Loaded prompt template: {config_path} "
-            f"({len(self.prompts)} prompts, {len(self.models)} models)"
+            f"({len(self.prompts)} prompts, {len(self.models)} models, {len(self.personas)} personas)"
         )
 
     def _load_config(self) -> Dict[str, Any]:
         """Load YAML configuration file"""
-        # Support both absolute paths and relative paths from config/prompts/
-        if os.path.isabs(self.config_path):
-            config_file = Path(self.config_path)
-        else:
-            # Go up 3 levels from app/core/prompt_loader.py to reach /app (Docker) or project root
-            # Docker: /app/app/core/prompt_loader.py -> /app/config/prompts/
-            # Local: /path/to/hermes/backend/app/core/prompt_loader.py -> /path/to/hermes/config/prompts/
-            config_file = Path(__file__).parent.parent.parent / 'config' / 'prompts' / self.config_path
-
-        if not config_file.exists():
-            raise FileNotFoundError(f"Prompt template not found: {config_file}")
-
-        with open(config_file, 'r') as f:
+        # Use path exactly as provided - no manipulation
+        with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
 
     def _validate_required_prompts(self):
@@ -166,6 +163,19 @@ class PromptTemplate:
     def list_models(self) -> List[str]:
         """Get list of all available model names"""
         return list(self.models.keys())
+
+    def list_personas(self) -> List[str]:
+        """Get list of all available persona names"""
+        return list(self.personas.keys())
+
+    def get_persona(self, persona_name: str) -> str:
+        """Get persona instructions by name"""
+        if persona_name not in self.personas:
+            raise ValueError(
+                f"Persona '{persona_name}' not found in template {self.config_path}. "
+                f"Available personas: {list(self.personas.keys())}"
+            )
+        return self.personas[persona_name]
 
     def __repr__(self):
         return (

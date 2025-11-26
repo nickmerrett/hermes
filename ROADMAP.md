@@ -358,7 +358,153 @@ transcript_sources:
 
 ---
 
-#### 8. Fix and Test Reddit Data Source
+#### 8. Add Bluesky as a Social Media Source
+**Status:** Pending
+**Effort:** Medium
+**Description:** Integrate Bluesky social network as an intelligence source for company mentions, executive posts, and industry discussions.
+
+**Use Cases:**
+- Monitor company official accounts on Bluesky
+- Track executive posts and announcements
+- Follow industry discussions and trends
+- Capture real-time customer sentiment
+- Monitor competitor activity
+
+**Implementation:**
+- **Bluesky AT Protocol API** - Uses atproto (Authenticated Transfer Protocol)
+- **Firehose Integration** - Real-time stream of posts
+- **Search API** - Keyword-based post search
+- **Profile Monitoring** - Track specific user profiles
+- **Thread Collection** - Capture full conversation threads
+
+**Technical Details:**
+- **API:** AT Protocol (open, decentralized)
+- **Authentication:** API key or OAuth
+- **Rate Limits:** TBD (more generous than Twitter)
+- **Search:** Full-text search with keyword filtering
+- **Collection Strategy:** Similar to Reddit (search + profile monitoring)
+
+**Configuration (per customer):**
+```yaml
+bluesky_enabled: true
+bluesky_handles:
+  - "@company.bsky.social"
+  - "@ceo.bsky.social"
+bluesky_search_terms:
+  - "company name"
+  - "product name"
+bluesky_min_likes: 5  # Engagement filter
+bluesky_min_reposts: 2
+```
+
+**Advantages:**
+- ✅ Open protocol (no API restrictions like Twitter)
+- ✅ Growing user base of tech-savvy professionals
+- ✅ Better API access than Twitter/X
+- ✅ Decentralized (more stable than centralized platforms)
+- ✅ Strong tech industry presence
+
+**Collection Flow:**
+1. Search Bluesky for keywords related to customer
+2. Monitor configured handles (company, executives)
+3. Filter by engagement (likes, reposts, replies)
+4. Capture thread context (replies, quotes)
+5. AI processes posts like other social media
+6. Display in feed with Bluesky branding
+
+**Source Tier:** 5 (Community/Social Media)
+
+**Comparison to Twitter:**
+- More open API
+- Better developer access
+- Growing platform (early adopter advantage)
+- Tech-heavy user base (ideal for B2B tech intelligence)
+
+---
+
+#### 9. Add Mastodon as a Social Media Source
+**Status:** Pending
+**Effort:** Medium
+**Description:** Integrate Mastodon (Fediverse) as an intelligence source for company mentions, executive posts, and industry discussions across decentralized instances.
+
+**Use Cases:**
+- Monitor company and executive accounts on Mastodon
+- Track industry discussions across Fediverse instances
+- Follow tech community conversations
+- Capture sentiment from privacy-conscious audiences
+- Monitor open-source and developer communities
+
+**Implementation:**
+- **Mastodon API** - RESTful API available on all instances
+- **Timeline Monitoring** - Public, local, and federated timelines
+- **Search API** - Keyword-based toot search (instance-dependent)
+- **Account Monitoring** - Track specific user accounts
+- **Thread Collection** - Capture full conversation threads with replies
+
+**Technical Details:**
+- **API:** Mastodon REST API v1/v2 (standardized across instances)
+- **Authentication:** OAuth 2.0 or API token (per instance)
+- **Rate Limits:** Instance-specific (typically generous, ~300 requests/5min)
+- **Search:** Full-text search (availability varies by instance)
+- **Multi-Instance:** Can monitor multiple instances simultaneously
+- **Collection Strategy:** Similar to Twitter (account monitoring + hashtag search)
+
+**Configuration (per customer):**
+```yaml
+mastodon_enabled: true
+mastodon_instances:
+  - instance: "mastodon.social"
+    accounts:
+      - "@company@mastodon.social"
+      - "@ceo@mastodon.social"
+  - instance: "fosstodon.org"
+    accounts:
+      - "@techteam@fosstodon.org"
+mastodon_hashtags:
+  - "#companyname"
+  - "#productname"
+  - "#industryterm"
+mastodon_min_favorites: 5  # Engagement filter
+mastodon_min_boosts: 2
+mastodon_include_replies: false  # Include reply threads
+```
+
+**Advantages:**
+- ✅ Open source and decentralized (no single point of failure)
+- ✅ Well-documented, standardized API across instances
+- ✅ No API restrictions or paywalls
+- ✅ Strong tech and open-source community presence
+- ✅ Privacy-focused user base (quality discussions)
+- ✅ Growing platform, especially among developers
+- ✅ Free API access with generous rate limits
+
+**Collection Flow:**
+1. Connect to configured Mastodon instances
+2. Monitor account timelines for configured handles
+3. Search hashtags and keywords (if instance supports it)
+4. Filter by engagement (favorites, boosts, replies)
+5. Capture thread context (replies, boosts, mentions)
+6. AI processes toots like other social media
+7. Display in feed with Mastodon branding and instance info
+
+**Source Tier:** 5 (Community/Social Media)
+
+**Multi-Instance Strategy:**
+- Each instance is independent with its own API
+- Monitor multiple instances to capture broader Fediverse conversations
+- Some large instances: mastodon.social, fosstodon.org, techhub.social, hachyderm.io
+- Instance-specific rate limits and features
+
+**Comparison to Twitter/Bluesky:**
+- More decentralized than Bluesky (multiple instances vs single protocol)
+- Better API access than Twitter (no fees, no restrictions)
+- Smaller but highly engaged audience
+- Strong developer and open-source community
+- Better privacy controls for users
+
+---
+
+#### 10. Fix and Test Reddit Data Source
 **Status:** ✅ Complete
 **Effort:** Medium
 **Description:** Get Reddit integration working reliably for community discussions and sentiment.
@@ -390,7 +536,7 @@ transcript_sources:
 
 ### Priority 2: Intelligence & Learning
 
-#### 9. Platform Settings Configuration (Expanded from Daily Briefing Prompts)
+#### 11. Platform Settings Configuration (Expanded from Daily Briefing Prompts)
 **Status:** ✅ Complete
 **Effort:** Medium → Large (expanded scope)
 **Description:** Comprehensive platform settings UI allowing configuration of daily briefings, AI models, collection schedules, clustering, and collector-specific settings.
@@ -441,7 +587,7 @@ transcript_sources:
 
 ---
 
-#### 10. Deep Research Mode
+#### 12. Deep Research Mode
 **Status:** Pending
 **Effort:** Large
 **Description:** AI-powered deep research tool to comprehensively analyze new customers or significant changes in customer circumstances. Generates detailed research reports in the UI.
@@ -620,7 +766,7 @@ research_config:
 
 ---
 
-#### 11. Design Relevance Feedback Loop
+#### 13. Design Relevance Feedback Loop
 **Status:** Pending
 **Effort:** Large
 **Description:** Use collected data about user actions (ignore/keep) to continuously improve AI filtering and relevance scoring.
@@ -889,7 +1035,7 @@ entity_discovery:
 
 ### Priority 3: User Experience
 
-#### 12. Fix Mobile Browser Layout
+#### 14. Fix Mobile Browser Layout
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Fix responsive layout issues where mobile browsers only show the executive summary panel instead of the main feed.
@@ -916,7 +1062,7 @@ entity_discovery:
 
 ---
 
-#### 13. Implement Story Clustering & Intelligent Deduplication
+#### 15. Implement Story Clustering & Intelligent Deduplication
 **Status:** ✅ Complete
 **Effort:** Medium
 **Description:** Reduce feed clutter by intelligently grouping similar stories from multiple sources into clusters, surfacing only the most relevant and authoritative content.
@@ -1007,7 +1153,7 @@ entity_discovery:
 
 ---
 
-#### 14. Collection Error Monitoring & Alert System
+#### 16. Collection Error Monitoring & Alert System
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Real-time monitoring and UI alerts for data collection failures and authentication issues.
@@ -1046,7 +1192,7 @@ entity_discovery:
 
 ---
 
-#### 15. Customer Management in UI
+#### 17. Customer Management in UI
 **Status:** ✅ Complete
 **Effort:** Medium
 **Description:** Full customer management interface with database-first approach and YAML import/export.
@@ -1101,7 +1247,7 @@ entity_discovery:
 
 ### Priority 4: Distribution & Notifications
 
-#### 16. Add Email Digest Output
+#### 18. Add Email Digest Output
 **Status:** Pending
 **Effort:** Medium
 **Description:** Send automated email digests with daily/weekly summaries of intelligence.
@@ -1129,7 +1275,7 @@ entity_discovery:
 
 ---
 
-#### 17. Add Slack Notification Integration
+#### 19. Add Slack Notification Integration
 **Status:** Pending
 **Effort:** Medium
 **Description:** Send real-time notifications to Slack channels for high-priority intelligence.
@@ -1161,7 +1307,7 @@ entity_discovery:
 
 ---
 
-#### 18. Move Australian News Sources Configuration into Platform Settings
+#### 20. Move Australian News Sources Configuration into Platform Settings
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Move Australian news configuration from hardcoded/YAML settings into the Platform Settings Modal for better management.
@@ -1186,7 +1332,7 @@ entity_discovery:
 
 ### Priority 5: UX Polish & Optimization
 
-#### 19. Add Tooltips to UI Buttons
+#### 21. Add Tooltips to UI Buttons
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Add helpful tooltips to all interactive buttons and controls to improve user experience and discoverability.
@@ -1207,7 +1353,7 @@ entity_discovery:
 
 ---
 
-#### 20. Improve Alert Clearing/Dismissing Behavior
+#### 22. Improve Alert Clearing/Dismissing Behavior
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Better error banner dismissal with "dismiss all" option and persistent dismissals.
@@ -1220,7 +1366,7 @@ entity_discovery:
 
 ---
 
-#### 21. Fix Items Being Marked as Irrelevant
+#### 23. Fix Items Being Marked as Irrelevant
 **Status:** ✅ Monitoring (Working Well)
 **Effort:** Medium
 **Description:** Improve AI categorization accuracy to reduce false positives (relevant items marked as unrelated/advertisement).
@@ -1253,7 +1399,7 @@ Monitor for patterns over time and revisit if user feedback indicates issues.
 
 ---
 
-#### 22. Configure Per-Source Collection Intervals
+#### 24. Configure Per-Source Collection Intervals
 **Status:** ✅ Complete
 **Effort:** Medium
 **Description:** Allow configuration of collection schedule per source type with flexible hour-based intervals.
@@ -1289,7 +1435,7 @@ Monitor for patterns over time and revisit if user feedback indicates issues.
 
 ---
 
-#### 23. Country Focus Configuration (Per Customer)
+#### 25. Country Focus Configuration (Per Customer)
 **Status:** Pending
 **Effort:** Medium
 **Description:** Filter news by region/country to reduce noise from irrelevant geographic markets.
@@ -1315,7 +1461,7 @@ country_focus:
 
 ---
 
-#### 24. Daily Summary Schedule Configuration
+#### 26. Daily Summary Schedule Configuration
 **Status:** ✅ Complete
 **Effort:** Small-Medium
 **Description:** Allow users to configure when daily summaries are generated automatically.
@@ -1346,7 +1492,7 @@ country_focus:
 
 ---
 
-#### 25. User-Configurable Customer Tab Colors
+#### 27. User-Configurable Customer Tab Colors
 **Status:** ✅ Complete
 **Effort:** Small
 **Description:** Allow users to assign colors to customer tabs for visual differentiation and workspace theming.
@@ -1377,7 +1523,7 @@ country_focus:
 
 ---
 
-#### 26. Further Smart Feed Tuning
+#### 28. Further Smart Feed Tuning
 **Status:** Ongoing
 **Effort:** Large (ongoing)
 **Description:** Continuous optimization of smart feed filtering, priority scoring, and category weighting.
@@ -1398,7 +1544,7 @@ country_focus:
 
 ---
 
-#### 27. YouTube URL to Channel ID Auto-Resolution
+#### 29. YouTube URL to Channel ID Auto-Resolution
 **Status:** Pending
 **Effort:** Small
 **Description:** Allow users to paste full YouTube channel URLs instead of requiring manual channel ID extraction.

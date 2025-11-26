@@ -16,12 +16,19 @@ import argparse
 from openai import OpenAI
 import sys
 import os
+import random
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.prompt_loader import load_prompt_template, PromptTemplate
-from anthropic import Anthropic
+
+# Import Anthropic only if available
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 # Color codes for terminal output
 class Colors:
@@ -108,7 +115,7 @@ JSON:"""
 async def test_with_model(item: Dict, model_url: str = None, model_name: str = None,
                          prompt_type: str = "small", template: Optional[PromptTemplate] = None) -> Dict[str, Any]:
     """
-    Test with a model
+    Test with a model using 3-stage pipeline
 
     Args:
         item: Test item with baseline data
@@ -117,42 +124,178 @@ async def test_with_model(item: Dict, model_url: str = None, model_name: str = N
         prompt_type: Prompt type for legacy mode
         template: PromptTemplate instance (if using template system)
     """
-    # MODE 1: Template system
+    # MODE 1: Template system (3-stage pipeline)
     if template:
         # Prepare template variables
         keywords_text = f"Keywords: {', '.join(item['customer']['keywords'][:5])}" if item['customer']['keywords'] else ""
         competitors_text = f"Competitors: {', '.join(item['customer']['competitors'][:5])}" if item['customer']['competitors'] else ""
 
-        # Get formatted prompt and model config from template
-        prompt, model_config = template.format_prompt(
-            'intelligence_analysis',
+        # STAGE 1: Relevance Check
+        relevance_prompt, relevance_model = template.format_prompt(
+            'relevance_check',
             customer_name=item['customer']['name'],
             title=item['title'],
             content=(item['content'] or "")[:3500],
-            source_type=item.get('source_type', 'unknown'),
             keywords_text=keywords_text,
             competitors_text=competitors_text
         )
 
         # Create AI client based on template's model config
-        if model_config.provider == 'anthropic':
+        if relevance_model.provider == 'anthropic':
+            if not ANTHROPIC_AVAILABLE:
+                raise ValueError("Anthropic library not available. Install with: pip install anthropic")
             client = Anthropic(
-                api_key=model_config.api_key,
-                base_url=model_config.api_base
+                api_key=relevance_model.api_key,
+                base_url=relevance_model.api_base
             )
             client_type = 'anthropic'
-        elif model_config.provider in ['openai', 'lmstudio']:
-            api_key = model_config.api_key if model_config.api_key else "lm-studio"
+        elif relevance_model.provider in ['openai', 'lmstudio']:
+            api_key = relevance_model.api_key if relevance_model.api_key else "lm-studio"
             client = OpenAI(
                 api_key=api_key,
-                base_url=model_config.api_base
+                base_url=relevance_model.api_base
             )
             client_type = 'openai'
         else:
-            raise ValueError(f"Unknown provider: {model_config.provider}")
+            raise ValueError(f"Unknown provider: {relevance_model.provider}")
 
-        model_name = model_config.model_name
-        max_tokens = model_config.max_tokens
+        model_name = relevance_model.model_name
+        max_tokens = relevance_model.max_tokens
+
+        # Call relevance check
+        try:
+            if client_type == 'anthropic':
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": relevance_prompt}]
+                )
+                relevance_text = response.content[0].text
+            else:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": relevance_prompt}],
+                    temperature=0.3,
+                    max_tokens=max_tokens
+                )
+                relevance_text = response.choices[0].message.content
+
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', relevance_text)
+            if not json_match:
+                return {'success': False, 'error': 'No JSON in relevance check', 'raw_response': relevance_text}
+            relevance_data = json.loads(json_match.group(0))
+
+            # If not relevant, return early
+            if not relevance_data.get('is_relevant', False):
+                return {
+                    'success': True,
+                    'data': {
+                        'is_relevant': False,
+                        'summary': relevance_data.get('reason', 'Not relevant'),
+                        'category': 'unrelated',
+                        'sentiment': 'neutral',
+                        'entities': {'companies': [], 'technologies': [], 'people': []},
+                        'tags': [],
+                        'priority_score': 0.0,
+                        'pain_points_opportunities': {'pain_points': [], 'opportunities': []}
+                    },
+                    'raw_response': f"Stage 1: {relevance_text}"
+                }
+
+            # STAGE 2: Core Analysis
+            core_prompt, core_model = template.format_prompt(
+                'core_analysis',
+                customer_name=item['customer']['name'],
+                title=item['title'],
+                content=(item['content'] or "")[:3500],
+                source_type=item.get('source_type', 'unknown'),
+                keywords_text=keywords_text,
+                competitors_text=competitors_text
+            )
+
+            if client_type == 'anthropic':
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": core_prompt}]
+                )
+                core_text = response.content[0].text
+            else:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": core_prompt}],
+                    temperature=0.3,
+                    max_tokens=max_tokens
+                )
+                core_text = response.choices[0].message.content
+
+            json_match = re.search(r'\{[\s\S]*\}', core_text)
+            if not json_match:
+                return {'success': False, 'error': 'No JSON in core analysis', 'raw_response': core_text}
+            core_data = json.loads(json_match.group(0))
+
+            # STAGE 3: Business Insights (only for medium+ priority)
+            priority_score = core_data.get('priority_score', 0.0)
+            if priority_score >= 0.4:
+                insights_prompt, insights_model = template.format_prompt(
+                    'business_insights',
+                    customer_name=item['customer']['name'],
+                    title=item['title'],
+                    summary=core_data.get('summary', ''),
+                    category=core_data.get('category', '')
+                )
+
+                if client_type == 'anthropic':
+                    response = client.messages.create(
+                        model=model_name,
+                        max_tokens=max_tokens,
+                        messages=[{"role": "user", "content": insights_prompt}]
+                    )
+                    insights_text = response.content[0].text
+                else:
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=[{"role": "user", "content": insights_prompt}],
+                        temperature=0.3,
+                        max_tokens=max_tokens
+                    )
+                    insights_text = response.choices[0].message.content
+
+                json_match = re.search(r'\{[\s\S]*\}', insights_text)
+                if json_match:
+                    insights_data = json.loads(json_match.group(0))
+                    pain_points_opportunities = insights_data
+                else:
+                    pain_points_opportunities = {'pain_points': [], 'opportunities': []}
+            else:
+                pain_points_opportunities = {'pain_points': [], 'opportunities': []}
+                insights_text = "Skipped (low priority)"
+
+            # Combine results
+            combined_data = {
+                'is_relevant': True,
+                'summary': core_data.get('summary', ''),
+                'category': core_data.get('category', ''),
+                'sentiment': core_data.get('sentiment', ''),
+                'entities': core_data.get('entities', {'companies': [], 'technologies': [], 'people': []}),
+                'tags': core_data.get('tags', []),
+                'priority_score': priority_score,
+                'pain_points_opportunities': pain_points_opportunities
+            }
+
+            return {
+                'success': True,
+                'data': combined_data,
+                'raw_response': f"Stage 1: {relevance_text}\n\nStage 2: {core_text}\n\nStage 3: {insights_text if priority_score >= 0.4 else 'Skipped'}"
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'raw_response': None
+            }
 
     # MODE 2: Legacy mode (manual model/prompt specification)
     else:
@@ -416,7 +559,8 @@ Examples:
     parser.add_argument('--model', default='ibm/granite-4.0-h-micro', help='Model name (legacy mode)')
     parser.add_argument('--prompt-type', choices=['small', 'frontier'], default='small', help='Prompt type (legacy mode)')
 
-    parser.add_argument('--limit', type=int, default=10, help='Number of items')
+    parser.add_argument('--limit', type=int, default=10, help='Number of items to test')
+    parser.add_argument('--pool-size', type=int, default=50, help='Size of item pool to randomly select from')
     parser.add_argument('--verbose', '-v', action='store_true', help='Show detailed side-by-side comparison')
 
     args = parser.parse_args()
@@ -432,9 +576,9 @@ Examples:
             template = load_prompt_template(args.template)
             print(f"✓ Template loaded: {len(template.prompts)} prompts, {len(template.models)} models")
 
-            # Show what model will be used for intelligence_analysis
-            prompt_config = template.get_prompt('intelligence_analysis')
-            print(f"  Model for intelligence_analysis: {prompt_config.model.model_name}")
+            # Show what model will be used for relevance_check (first stage)
+            prompt_config = template.get_prompt('relevance_check')
+            print(f"  Model for relevance_check: {prompt_config.model.model_name}")
             print(f"  Provider: {prompt_config.model.provider}")
             print(f"  API Base: {prompt_config.model.api_base}\n")
         except Exception as e:
@@ -445,15 +589,23 @@ Examples:
         print(f"Model: {args.model}")
         print(f"Prompt: {args.prompt_type}\n")
 
-    print(f"Test items: {args.limit}\n")
+    print(f"Test setup: {args.limit} items randomly selected from pool of {args.pool_size}\n")
 
-    # Fetch test data
-    print("Fetching test items...")
-    items = get_test_items(args.api_url, args.limit)
-    print(f"Loaded {len(items)} items\n")
+    # Fetch test data pool
+    print(f"Fetching pool of {args.pool_size} items...")
+    all_items = get_test_items(args.api_url, args.pool_size)
 
-    if not items:
+    if not all_items:
+        print(f"{Colors.RED}No items fetched{Colors.RESET}")
         return
+
+    # Randomly select items from pool
+    if len(all_items) > args.limit:
+        items = random.sample(all_items, args.limit)
+        print(f"✓ Randomly selected {args.limit} items from pool of {len(all_items)}\n")
+    else:
+        items = all_items
+        print(f"✓ Using all {len(items)} available items\n")
 
     # Test each item
     results = []

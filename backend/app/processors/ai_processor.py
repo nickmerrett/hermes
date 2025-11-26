@@ -134,6 +134,58 @@ class AIProcessor:
         else:
             raise ValueError(f"Unknown provider: {model_config.provider}")
 
+    def _call_ai(self, client: Any, client_type: str, model_name: str, prompt: str, max_tokens: int) -> str:
+        """
+        Make an AI API call
+
+        Args:
+            client: AI client (Anthropic or OpenAI)
+            client_type: 'anthropic' or 'openai'
+            model_name: Model name to use
+            prompt: Prompt text
+            max_tokens: Max tokens in response
+
+        Returns:
+            Response text from AI
+        """
+        if client_type == 'anthropic':
+            response = client.messages.create(
+                model=model_name,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        elif client_type == 'openai':
+            response = client.chat.completions.create(
+                model=model_name,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        else:
+            raise ValueError(f"Unknown client type: {client_type}")
+
+    def _extract_json_from_text(self, text: str) -> str:
+        """
+        Extract JSON from AI response text
+
+        Handles responses that may have markdown code blocks or extra text
+        """
+        import re
+
+        # Try to find JSON in markdown code block
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if json_match:
+            return json_match.group(1)
+
+        # Try to find raw JSON object
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            return json_match.group(0)
+
+        # If nothing found, return the text as-is and let JSON parser fail
+        return text.strip()
+
     async def process_item(
         self,
         title: str,
@@ -162,32 +214,124 @@ class AIProcessor:
             Dict with summary, category, sentiment, entities, tags, priority_score
         """
         try:
-            # MODE 1: Template system - get prompt and model from template
+            # MODE 1: Template system - 3-stage pipeline
             if self.template:
                 # Prepare template variables
                 keywords_text = f"Keywords: {', '.join(keywords or [])}" if keywords else ""
                 competitors_text = f"Competitors: {', '.join(competitors or [])}" if competitors else ""
+                content_truncated = content[:3500] if content else ""
 
-                # Get formatted prompt and model config from template
-                prompt, model_config = self.template.format_prompt(
-                    'intelligence_analysis',
+                # ===== STAGE 1: RELEVANCE CHECK (Fast Filter) =====
+                logger.debug(f"Stage 1: Relevance check for '{title[:50]}...'")
+
+                relevance_prompt, relevance_model = self.template.format_prompt(
+                    'relevance_check',
                     customer_name=customer_name,
                     title=title,
-                    content=content[:3500],
+                    content=content_truncated,
+                    keywords_text=keywords_text,
+                    competitors_text=competitors_text
+                )
+
+                relevance_client, relevance_client_type = self._create_client(relevance_model)
+                relevance_response = self._call_ai(
+                    relevance_client,
+                    relevance_client_type,
+                    relevance_model.model_name,
+                    relevance_prompt,
+                    relevance_model.max_tokens
+                )
+                relevance_data = json.loads(self._extract_json_from_text(relevance_response))
+
+                # If not relevant, return immediately (save API costs)
+                if not relevance_data.get('is_relevant', False):
+                    logger.debug(f"Stage 1: Not relevant - {relevance_data.get('reason', 'N/A')}")
+                    return {
+                        'is_relevant': False,
+                        'summary': relevance_data.get('reason', 'Not relevant to company'),
+                        'category': 'unrelated',
+                        'sentiment': 'neutral',
+                        'entities': {'companies': [], 'technologies': [], 'people': []},
+                        'tags': [],
+                        'pain_points_opportunities': {'pain_points': [], 'opportunities': []},
+                        'priority_score': 0.0
+                    }
+
+                logger.debug(f"Stage 1: Relevant - {relevance_data.get('reason', 'N/A')}")
+
+                # ===== STAGE 2: CORE ANALYSIS =====
+                logger.debug("Stage 2: Core analysis")
+
+                core_prompt, core_model = self.template.format_prompt(
+                    'core_analysis',
+                    customer_name=customer_name,
+                    title=title,
+                    content=content_truncated,
                     source_type=source_type,
                     keywords_text=keywords_text,
                     competitors_text=competitors_text
                 )
 
-                # Create AI client dynamically based on model config
-                client, client_type = self._create_client(model_config)
-                model_name = model_config.model_name
-                max_tokens = model_config.max_tokens
-
-                logger.debug(
-                    f"Using template prompt 'intelligence_analysis' with model {model_name} "
-                    f"({model_config.provider})"
+                core_client, core_client_type = self._create_client(core_model)
+                core_response = self._call_ai(
+                    core_client,
+                    core_client_type,
+                    core_model.model_name,
+                    core_prompt,
+                    core_model.max_tokens
                 )
+                core_data = json.loads(self._extract_json_from_text(core_response))
+
+                # Build result from core analysis
+                result = {
+                    'is_relevant': True,
+                    'summary': core_data.get('summary', ''),
+                    'category': core_data.get('category', 'other'),
+                    'sentiment': core_data.get('sentiment', 'neutral'),
+                    'entities': core_data.get('entities', {'companies': [], 'technologies': [], 'people': []}),
+                    'tags': core_data.get('tags', []),
+                    'priority_score': core_data.get('priority_score', 0.5),
+                    'pain_points_opportunities': {'pain_points': [], 'opportunities': []}
+                }
+
+                # ===== STAGE 3: BUSINESS INSIGHTS (High-Value Only) =====
+                # Only run for high-priority items to save API costs
+                if result['priority_score'] >= 0.6:
+                    logger.debug(f"Stage 3: Business insights (priority={result['priority_score']:.2f})")
+
+                    try:
+                        insights_prompt, insights_model = self.template.format_prompt(
+                            'business_insights',
+                            customer_name=customer_name,
+                            title=title,
+                            summary=result['summary'],
+                            category=result['category']
+                        )
+
+                        insights_client, insights_client_type = self._create_client(insights_model)
+                        insights_response = self._call_ai(
+                            insights_client,
+                            insights_client_type,
+                            insights_model.model_name,
+                            insights_prompt,
+                            insights_model.max_tokens
+                        )
+                        insights_data = json.loads(self._extract_json_from_text(insights_response))
+
+                        result['pain_points_opportunities'] = {
+                            'pain_points': insights_data.get('pain_points', []),
+                            'opportunities': insights_data.get('opportunities', [])
+                        }
+                        logger.debug(f"Stage 3: Extracted {len(result['pain_points_opportunities']['pain_points'])} pain points, "
+                                   f"{len(result['pain_points_opportunities']['opportunities'])} opportunities")
+                    except Exception as e:
+                        logger.warning(f"Stage 3 failed, continuing without insights: {e}")
+                        # Continue with empty insights on error
+                else:
+                    logger.debug(f"Stage 3: Skipped (priority={result['priority_score']:.2f} < 0.6)")
+
+                logger.debug(f"3-stage pipeline completed for '{title[:50]}...'")
+                return result
 
             # MODE 2: Legacy configuration - use hardcoded prompts and pre-initialized client
             else:

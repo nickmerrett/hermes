@@ -6,73 +6,192 @@ models:
   qwen3-4b:
     name: "qwen/qwen3-vl-4b"
     provider: "lmstudio"
-    api_base: "http://localhost:1234/v1"
+    api_base: "http://10.10.20.169:1234/v1"
     api_key_env: ""  # No API key needed for local LM Studio
     tier: "small"
     max_tokens: 1500
 
+# Define personas for daily summaries (used with {persona_instructions} placeholder)
+# Personas provide formatting instructions to customize summary style
+personas:
+  executive: |
+    Format this as an executive briefing for C-suite leaders:
+    - Focus on strategic implications and business impact
+    - Lead with bottom line: what matters most and why
+    - Highlight risks, opportunities, and recommended actions
+    - Use clear, decisive language
+    - Keep technical details minimal unless business-critical
+
+  technical: |
+    Format this as a technical deep-dive for engineering and product teams:
+    - Emphasize technical details, architectures, and methodologies
+    - Include specific technologies, frameworks, and tools mentioned
+    - Highlight technical challenges, innovations, and solutions
+    - Provide context for technical decisions and trade-offs
+    - Use precise technical terminology
+
+  sales: |
+    Format this as actionable sales intelligence for customer-facing teams:
+    - Focus on customer pain points, needs, and buying signals
+    - Highlight competitive movements and market positioning
+    - Identify conversation starters and engagement opportunities
+    - Emphasize what prospects care about right now
+    - Include specific examples and talking points
+
+  analyst: |
+    Format this as a comprehensive analytical report:
+    - Provide data-driven insights with supporting evidence
+    - Include trend analysis and pattern recognition
+    - Present multiple perspectives and interpretations
+    - Quantify impact where possible
+    - Structure with clear sections and logical flow
+
+  brief: |
+    Format this as a concise bullet-point briefing:
+    - Use short, scannable bullet points only
+    - Lead each section with the key takeaway
+    - Eliminate all unnecessary words
+    - Maximum 3-5 bullets per section
+    - Focus on what's actionable or decision-worthy
 
 # Each prompt references a model and provides its template
-# ALL 7 REQUIRED PROMPTS MUST BE DEFINED
+# ALL 9 REQUIRED PROMPTS MUST BE DEFINED
 prompts:
   # ========================================
-  # 1. INTELLIGENCE ANALYSIS (Article Processing)
+  # 1. STAGE 1: RELEVANCE CHECK (Fast Filter)
   # ========================================
-  intelligence_analysis:
+  relevance_check:
     model: qwen3-4b
     template: |
-      Analyze this article about {customer_name}.
+      CRITICAL TASK: Check if this article is SPECIFICALLY about "{customer_name}" the company.
 
-      CONTENT:
       Title: {title}
-      Text: {content}
+      Content: {content}
 
+      STEP 1: Look for EXACT company name "{customer_name}" in title or content.
+      - If NOT found → is_relevant = false
+      - If found → continue to STEP 2
+
+      STEP 2: Verify it's the CORRECT company, not:
+      - A different company with similar name
+      - A competitor ({competitors_text})
+      - A customer/user of {customer_name}
+      - A nickname that could mean something else
+
+      STEP 3: Check if it's REAL company news:
+      ✓ YES (is_relevant = true):
+      - Executive announcements from {customer_name}
+      - Product launches by {customer_name}
+      - Financial results of {customer_name}
+      - Partnerships involving {customer_name}
+      - Regulatory actions against {customer_name}
+
+      ✗ NO (is_relevant = false):
+      - Retail ads ("Get {customer_name} for $50")
+      - How-to guides ("Use {customer_name} to...")
+      - Articles about competitors ONLY
+      - Customer complaints about {customer_name}
+      - Articles where {customer_name} is mentioned once in passing
+
+      IMPORTANT:
+      - Competitor news is usually NOT relevant unless it directly impacts {customer_name}
+      - Be STRICT: when in doubt, mark false
+
+      Return ONLY JSON:
+      {{
+        "is_relevant": true/false,
+        "reason": "one sentence why"
+      }}
+
+  # ========================================
+  # 2. STAGE 2: CORE ANALYSIS (Main Processing)
+  # ========================================
+  core_analysis:
+    model: qwen3-4b
+    template: |
+      Analyze this article about {customer_name} for a technical sales team.
+
+      Source Type: {source_type}
+      Title: {title}
+      Content: {content}
+
+      Context:
       {keywords_text}
       {competitors_text}
 
-      TASK: Output JSON ONLY with these fields:
+      Return JSON with:
 
-      1. "is_relevant": true or false
-         - FIRST: Check if "{customer_name}" appears in the title or content
-         - If NOT mentioned → MUST be false
-         - If mentioned → true only if it's real company news (not ads/deals)
+      1. SUMMARY (2-4 sentences): What happened and why it matters to sales
+         - WHAT happened?
+         - WHY does this matter to a sales professional?
+         - WHAT are the implications?
 
-      2. "summary": 2-3 sentences explaining what happened and why it matters
-
-      3. "category": ONE of these:
+      2. CATEGORY (pick ONE):
          product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
 
-      4. "sentiment": positive, negative, neutral, or mixed
+      3. SENTIMENT: positive, negative, neutral, or mixed
 
-      5. "entities": Extract these:
-         {{"companies": ["list all companies"], "technologies": ["list tech/products"], "people": ["list people"]}}
+      4. ENTITIES:
+         - companies: ALL companies mentioned
+         - technologies: Specific technologies/products mentioned
+         - people: Executives and key personnel mentioned
 
-      6. "tags": List 3-5 relevant tags
+      5. TAGS: 3-6 relevant tags for filtering/search
 
-      7. "pain_points_opportunities":
-         {{"pain_points": ["2-3 words", "2-3 words"], "opportunities": ["2-3 words", "2-3 words"]}}
+      6. PRIORITY_SCORE (0.0-1.0):
+         - 0.8-1.0: Major threats, leadership changes, significant launches
+         - 0.4-0.7: Product updates, industry news, partnerships
+         - 0.1-0.3: Routine announcements
+         - 0.0: Not relevant or spam
 
-         CRITICAL: Each item must be 2-3 words MAXIMUM. Examples:
-         GOOD: "Network outage", "Budget cuts", "Market expansion"
-         BAD: "Customers experiencing service issues" (too long!)
-
-         If none found, use empty arrays: {{"pain_points": [], "opportunities": []}}
-
-      8. "priority_score": Number from 0.0 to 1.0
-         - 0.8-1.0: Major news (leadership changes, big launches, competitive threats)
-         - 0.4-0.7: Normal news (product updates, partnerships)
-         - 0.1-0.3: Minor news
-         - 0.0: Not relevant or ads
-
-      IMPORTANT:
-      - Output ONLY valid JSON, no other text
-      - If {customer_name} not mentioned → is_relevant MUST be false
-      - Pain points/opportunities: 2-3 words each, NO sentences
-
-      JSON:
+      Format as JSON:
+      {{
+        "summary": "...",
+        "category": "...",
+        "sentiment": "...",
+        "entities": {{"companies": [], "technologies": [], "people": []}},
+        "tags": [],
+        "priority_score": 0.0
+      }}
 
   # ========================================
-  # 2. DAILY SUMMARY (Executive Briefing)
+  # 3. STAGE 3: BUSINESS INSIGHTS (High-Value Only)
+  # ========================================
+  business_insights:
+    model: qwen3-4b
+    template: |
+      Extract business insights from this intelligence about {customer_name}:
+
+      Summary: {summary}
+      Category: {category}
+      Article Title: {title}
+
+      Identify 0-3 of each (CRITICAL: 2-3 words MAXIMUM per item):
+
+      PAIN_POINTS: Business problems or challenges
+      Examples:
+      ✓ GOOD: "Network outages", "Budget constraints", "Churn risk"
+      ✗ BAD: "Customers experiencing service degradation" (TOO LONG!)
+
+      OPPORTUNITIES: Sales or engagement opportunities
+      Examples:
+      ✓ GOOD: "Upsell opportunity", "Partnership potential", "Expansion plans"
+      ✗ BAD: "Opportunity to position our superior reliability" (TOO LONG!)
+
+      RULES:
+      - Each item MUST be 2-3 words MAX
+      - Use keywords/phrases, NOT sentences
+      - Empty arrays if none found
+      - DO NOT write long descriptions
+
+      Return JSON:
+      {{
+        "pain_points": ["2-3 words", "2-3 words"],
+        "opportunities": ["2-3 words", "2-3 words"]
+      }}
+
+  # ========================================
+  # 4. DAILY SUMMARY (Executive Briefing)
   # ========================================
   daily_summary:
     model: qwen3-4b
@@ -94,12 +213,14 @@ prompts:
       - Notable competitor activities
       - Strategic opportunities and risks
 
+      {persona_instructions}
+
       Keep the summary professional, actionable, and under 300 words.
 
       Write the briefing now:
 
   # ========================================
-  # 3. RESEARCH: BASIC COMPANY INFO
+  # 5. RESEARCH: BASIC COMPANY INFO
   # ========================================
   research_basic_info:
     model: qwen3-4b
@@ -125,7 +246,7 @@ prompts:
       - Return ONLY the JSON object, nothing else
 
   # ========================================
-  # 4. RESEARCH: EXECUTIVES
+  # 6. RESEARCH: EXECUTIVES
   # ========================================
   research_executives:
     model: qwen3-4b
@@ -155,7 +276,7 @@ prompts:
       - Return ONLY the JSON array, nothing else
 
   # ========================================
-  # 5. RESEARCH: COMPETITORS
+  # 7. RESEARCH: COMPETITORS
   # ========================================
   research_competitors:
     model: qwen3-4b
@@ -176,7 +297,7 @@ prompts:
       Competitor Three
 
   # ========================================
-  # 6. RESEARCH: KEYWORDS
+  # 8. RESEARCH: KEYWORDS
   # ========================================
   research_keywords:
     model: qwen3-4b
@@ -201,7 +322,7 @@ prompts:
       Return ONLY the JSON object, nothing else.
 
   # ========================================
-  # 7. RESEARCH: DATA SOURCES
+  # 9. RESEARCH: DATA SOURCES
   # ========================================
   research_sources:
     model: qwen3-4b

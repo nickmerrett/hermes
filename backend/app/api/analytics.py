@@ -163,6 +163,8 @@ async def get_daily_summary(customer_id: int, db: Session = Depends(get_db)):
 async def get_daily_summary_ai(
     customer_id: int,
     force_refresh: bool = False,
+    persona: str = None,
+    custom_persona_text: str = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -171,6 +173,8 @@ async def get_daily_summary_ai(
     Args:
         customer_id: Customer ID
         force_refresh: If True, bypass cache and regenerate summary
+        persona: Persona key to use from template (e.g., 'executive', 'technical', 'sales')
+        custom_persona_text: Custom persona instructions (overrides persona key)
         db: Database session
     """
 
@@ -296,6 +300,22 @@ async def get_daily_summary_ai(
                 categories_formatted = ', '.join([f"{cat} ({count})" for cat, count in category_counts.items()])
                 high_priority = sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7)
 
+                # Determine persona instructions
+                persona_instructions = ""
+                if custom_persona_text:
+                    # Custom persona text provided - use it directly
+                    persona_instructions = custom_persona_text
+                    logger.info(f"Using custom persona text for daily summary")
+                elif persona:
+                    # Persona key provided - lookup from template
+                    try:
+                        persona_instructions = template.get_persona(persona)
+                        logger.info(f"Using persona '{persona}' from template for daily summary")
+                    except ValueError as e:
+                        logger.warning(f"Persona '{persona}' not found in template, using default: {e}")
+                        # Fall back to no persona instructions
+                        persona_instructions = ""
+
                 # Get prompt and model from template
                 prompt, model_config = template.format_prompt(
                     'daily_summary',
@@ -303,7 +323,8 @@ async def get_daily_summary_ai(
                     total_items=len(recent_items),
                     high_priority_count=high_priority,
                     categories=categories_formatted,
-                    items=items_formatted
+                    items=items_formatted,
+                    persona_instructions=persona_instructions
                 )
 
                 # Create client from model config

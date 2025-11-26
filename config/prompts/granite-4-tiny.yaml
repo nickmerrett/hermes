@@ -4,7 +4,7 @@
 # Define reusable model configurations
 models:
   granite-micro:
-    name: "granite-4.0-h-micro"
+    name: "ibm/granite-4.0-h-tiny"
     provider: "lmstudio"
     api_base: "http://10.10.20.169:1234/v1"
     api_key_env: ""  # No API key needed for local LM Studio

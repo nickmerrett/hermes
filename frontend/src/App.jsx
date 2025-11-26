@@ -119,8 +119,35 @@ function App() {
     }
 
     try {
+      // Load platform settings to get selected persona
+      let persona = null;
+      let customPersonaText = null;
+      try {
+        const settingsResponse = await axios.get(`${API_URL}/settings/platform`);
+        const settings = settingsResponse.data;
+        if (settings.daily_briefing) {
+          const template = settings.daily_briefing.template;
+          if (template === 'custom' && settings.daily_briefing.custom_prompt) {
+            customPersonaText = settings.daily_briefing.custom_prompt;
+          } else if (template) {
+            persona = template;
+          }
+        }
+      } catch (settingsErr) {
+        console.warn('Failed to load persona settings:', settingsErr);
+        // Continue without persona
+      }
+
+      const params = { force_refresh: forceRefresh };
+      if (persona) {
+        params.persona = persona;
+      }
+      if (customPersonaText) {
+        params.custom_persona_text = customPersonaText;
+      }
+
       const response = await axios.get(`${API_URL}/analytics/daily-summary-ai/${selectedCustomer}`, {
-        params: { force_refresh: forceRefresh }
+        params: params
       })
       // If response is null/empty, keep dailySummary as null to show placeholder
       setDailySummary(response.data || null)
