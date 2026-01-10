@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: kubevirt-hostpath-provisioner 
+  resources:
+    requests:
+      storage: 5Gi # adjust size as needed
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-config
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: kubevirt-hostpath-provisioner 
+  resources:
+    requests:
+      storage: 5Gi # adjust size as needed

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hermes-backend
+  template:
+    metadata:
+      labels:
+        app: hermes-backend
+    spec:
+      containers:
+        - name: hermes-backend
+          image: 10.10.20.6:5000/nmerrett/hermes-backend:latest
+          envFrom:
+          - secretRef:
+              name: hermes 
+          ports:
+            - containerPort: 8000 
+          volumeMounts:
+            - name: hermes-data
+              mountPath: /app/data
+            - name: hermes-config
+              mountPath: /app/config
+      volumes:
+        - name: hermes-data
+          persistentVolumeClaim:
+            claimName: hermes-data
+        - name: hermes-config
+          persistentVolumeClaim:
+            claimName: hermes-config
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hermes-frontend
+  template:
+    metadata:
+      labels:
+        app: hermes-frontend
+    spec:
+      containers:
+        - name: hermes-frontend
+          image: 10.10.20.6:5000/nmerrett/hermes-frontend:latest
+          ports:
+            - containerPort: 80 
+          envFrom:
+          - secretRef:
+              name: hermes 

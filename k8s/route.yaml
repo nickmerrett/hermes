@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+  labels:
+    app: hermes 
+  name: hermes
+  namespace: default
+spec:
+  host: hermes.apps.homeserv.merrett.lan
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: hermes-frontend
+    weight: 100
+  wildcardPolicy: None
+
