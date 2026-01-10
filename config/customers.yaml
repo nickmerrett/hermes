@@ -96,6 +96,7 @@ customers:
       github_enabled: false
       twitter_enabled: false
       linkedin_enabled: true
+      linkedin_company_posts_enabled: true  # Monitor LinkedIn company posts - ENABLED (Playwright-based)
       linkedin_user_enabled: true  # Monitor individual LinkedIn user profiles - ENABLED (Playwright-based)
       pressrelease_enabled: false
 
@@ -138,12 +139,38 @@ customers:
     # Keywords to search for in news and social media
     keywords:
       - "ANZ"
-      - "Big4 Bank"
       - "ANZ Bank"
       - "Australia and New Zealand Banking Group"
       - "ANZ Australia"
       - "ANZ Group"
+      - "ANZ Banking Group"
+
+      # Leadership keywords
       - "Nuno Matos"
+      - "ANZ CEO"
+      - "Tim Hogarth"
+      - "Farhan Faruqui"
+
+      # Industry/comparative terms (catches multi-bank articles)
+      - "Big Four banks"
+      - "Big 4 banks"
+      - "Big Four banks Australia"
+      - "major Australian banks"
+      - "Big4 Bank"
+
+      # Combined competitor terms (catches comparative articles)
+      - "ANZ Westpac"
+      - "ANZ Commonwealth"
+      - "ANZ CBA"
+      - "ANZ NAB"
+      - "CBA ANZ NAB Westpac"
+
+      # Common article patterns
+      - "ANZ shares"
+      - "ANZ profit"
+      - "ANZ earnings"
+      - "ANZ dividend"
+      - "ANZ customers"
 
     # Competitor companies to monitor
     competitors:
@@ -218,6 +245,7 @@ customers:
       github_enabled: false
       twitter_enabled: false
       linkedin_enabled: true
+      linkedin_company_posts_enabled: true  # Monitor LinkedIn company posts - ENABLED (Playwright-based)
       linkedin_user_enabled: true  # Monitor individual LinkedIn user profiles - ENABLED (Playwright-based)
       pressrelease_enabled: true
 

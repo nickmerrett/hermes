@@ -398,9 +398,12 @@ function App() {
           <button onClick={triggerCollection} className="btn-primary" title="Trigger collection for ALL customers">
             Full Collection
           </button>
-          <button onClick={() => setShowSettingsModal(true)} className="btn-secondary">
+          <button onClick={() => setShowSettingsModal(true)} className="btn-secondary" title="Platform Settings">
           ⚙
           </button>
+          <Link to="/executive/jane-smith" className="btn-secondary" title="Test Executive Dashboard">
+          👤 Test Exec Dashboard
+          </Link>
           
         </div>
       </header>

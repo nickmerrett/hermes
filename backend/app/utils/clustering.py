@@ -41,15 +41,20 @@ def get_clustering_settings(db: Session) -> Dict:
 SOURCE_TIERS = {
     # Tier 1: Official sources (highest priority)
     'press_release': 1,
-    'linkedin': 1,  # Executive LinkedIn posts
+    'pressrelease': 1,
+    'linkedin': 1,  # Legacy - Executive LinkedIn posts
+    'linkedin_company': 1,  # Official company posts
+    'linkedin_user': 1,  # Executive posts
     'web_scrape': 1,  # Company newsrooms
 
     # Tier 2: Primary news sources (original reporting)
     'news_api': 2,  # Depends on source, but generally good
     'rss': 2,
+    'australian_news': 2,
 
     # Tier 3: Secondary sources
     'stock': 3,  # Yahoo Finance news (often aggregated)
+    'yahoo_finance_news': 3,
 
     # Tier 4: Aggregators
     'google_news': 4,
@@ -57,6 +62,7 @@ SOURCE_TIERS = {
     # Tier 5: Community/Social
     'reddit': 5,
     'twitter': 5,
+    'youtube': 5,
 }
 
 

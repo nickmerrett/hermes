@@ -582,6 +582,7 @@ Use empty arrays if unsure. Return ONLY the JSON object, nothing else."""
     competitors:{self._list_to_yaml(research_data.get('competitors', []), 6)}
 
     stock_symbol: {"null" if not stock_symbol else f'"{stock_symbol}"'}
+    tab_color: "#ffffff"
 
     rss_feeds: {rss_feeds_yaml}
 

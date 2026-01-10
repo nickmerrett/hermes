@@ -62,7 +62,7 @@ services:
       dockerfile: Dockerfile
     container_name: intel-frontend
     ports:
-      - "3000:80"
+      - "3001:80"
     environment:
       - TZ=Australia/Sydney
     depends_on:

@@ -87,6 +87,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
             )
 
         self.user_profiles = customer_config.get('config', {}).get('linkedin_user_profiles', [])
+        self.company_url = customer_config.get('config', {}).get('linkedin_company_url')
 
         # Load configurable scraping strategy settings from database
         linkedin_settings = get_linkedin_settings(db)
@@ -151,6 +152,34 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                 # Check if we need to login
                 if self.linkedin_email and self.linkedin_password:
                     await self._ensure_logged_in(page)
+
+                # Collect company posts if configured
+                if self.company_url:
+                    if not self._check_rate_limit():
+                        self.logger.warning("Rate limit reached")
+                        await self._save_session(context)
+                        return items
+
+                    try:
+                        self.logger.info(f"Collecting company posts for: {self.customer_name}")
+                        company_items = await self._collect_company_posts(page, self.company_url, self.customer_name)
+
+                        # Process immediately if callback provided
+                        if company_items and process_items_callback:
+                            self.logger.info(f"📤 Processing {len(company_items)} company items")
+                            await process_items_callback(company_items)
+
+                        items.extend(company_items)
+
+                        # Delay before user profiles (if any)
+                        if self.user_profiles:
+                            delay = random.uniform(self.delay_between_profiles_min, self.delay_between_profiles_max)
+                            self.logger.info(f"⏰ Waiting {delay:.1f}s before user profiles")
+                            await asyncio.sleep(delay)
+
+                    except Exception as e:
+                        self.logger.error(f"Error collecting company posts: {e}")
+                        # Continue to user profiles even if company fails
 
                 # Collect data for each profile
                 for profile_config in self.user_profiles:
@@ -606,5 +635,182 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
 
         except Exception as e:
             self.logger.error(f"Error collecting posts: {e}")
+
+        return items
+
+    async def _collect_company_posts(
+        self,
+        page: Page,
+        company_url: str,
+        company_name: str
+    ) -> List[IntelligenceItemCreate]:
+        """
+        Collect recent posts from LinkedIn company page
+
+        Mirrors _collect_profile_posts() but for company pages.
+        Uses same selectors and patterns.
+
+        Args:
+            page: Playwright page object
+            company_url: Company URL (e.g., https://www.linkedin.com/company/nbn-co-limited)
+            company_name: Company name for display
+
+        Returns:
+            List of IntelligenceItemCreate with source_type="linkedin_company"
+        """
+        items = []
+
+        try:
+            # Navigate to company posts page
+            posts_url = company_url.rstrip('/') + '/posts/'
+            self.logger.info(f"Navigating to company posts: {posts_url}")
+            await page.goto(posts_url, wait_until='domcontentloaded')
+
+            # Conservative wait for posts to load (2-5 seconds)
+            await asyncio.sleep(random.uniform(2.0, 5.0))
+
+            # Check if blocked
+            if 'authwall' in page.url or 'uas/login' in page.url:
+                self.logger.warning(f"Company posts require login: {posts_url}")
+                return items
+
+            # Find post containers (same selectors as user profiles)
+            post_selectors = [
+                'div.feed-shared-update-v2',
+                'div.profile-creator-shared-feed-update__container',
+                'li.profile-creator-shared-feed-update__container'
+            ]
+
+            posts = []
+            for selector in post_selectors:
+                try:
+                    posts = await page.query_selector_all(selector)
+                    if posts:
+                        self.logger.info(f"Found posts using selector: {selector}")
+                        break
+                except:
+                    continue
+
+            if not posts:
+                self.logger.info(f"No posts found for {company_name}")
+                return items
+
+            # Extract data from first 5 posts
+            self.logger.info(f"Extracting up to 5 posts from {len(posts)} found")
+            for idx, post in enumerate(posts[:5]):
+                try:
+                    # Extract post text
+                    text_elem = await post.query_selector('span.break-words')
+                    if not text_elem:
+                        text_elem = await post.query_selector('div.feed-shared-text')
+
+                    if text_elem:
+                        post_text = await text_elem.text_content()
+                        post_text = post_text.strip() if post_text else None
+
+                        if post_text and len(post_text) > 20:
+                            # Try to get post URL
+                            post_url = None
+
+                            # Look for the timestamp/date link which is the permalink to the post
+                            link_selectors = [
+                                'a.app-aware-link[href*="/posts/"]',  # Main post permalink (most reliable)
+                                'a[href*="/posts/"]',  # Direct post links
+                                'span.update-components-actor__sub-description a',  # Date link
+                                'a.feed-shared-actor__sub-description-link',  # Actor description link
+                            ]
+
+                            for selector in link_selectors:
+                                try:
+                                    link_elem = await post.query_selector(selector)
+                                    if link_elem:
+                                        href = await link_elem.get_attribute('href')
+                                        if href and '/posts/' in href:
+                                            # Convert relative URLs to absolute
+                                            if href.startswith('/'):
+                                                post_url = f"https://www.linkedin.com{href}"
+                                            elif href.startswith('http'):
+                                                post_url = href
+                                            else:
+                                                post_url = f"https://www.linkedin.com/{href}"
+
+                                            # Clean up URL (remove query params, tracking)
+                                            if '?' in post_url:
+                                                post_url = post_url.split('?')[0]
+
+                                            self.logger.info(f"✓ Found post URL via '{selector}': {post_url}")
+                                            break
+                                except Exception as e:
+                                    self.logger.debug(f"Selector '{selector}' failed: {e}")
+                                    continue
+
+                            # If still no URL, use company URL with content hash as fallback
+                            if not post_url:
+                                self.logger.warning(f"Could not find post URL for {company_name}")
+                                content_hash = hashlib.md5(post_text.encode()).hexdigest()[:12]
+                                post_url = f"{company_url}#post-{content_hash}"
+                                self.logger.warning(f"Using fallback URL: {post_url}")
+
+                            # Try to extract post date
+                            post_date = datetime.now()  # Default fallback
+                            date_found = False
+
+                            # More specific date selectors for LinkedIn
+                            date_selectors = [
+                                'span.feed-shared-actor__sub-description span.visually-hidden',
+                                'span.update-components-actor__sub-description span.visually-hidden',
+                                'span.feed-shared-actor__sub-description',
+                                'span.update-components-actor__sub-description',
+                                '.feed-shared-actor__sub-description time',
+                                'time',
+                                'span[aria-hidden="true"]',
+                            ]
+
+                            for selector in date_selectors:
+                                try:
+                                    date_elem = await post.query_selector(selector)
+                                    if date_elem:
+                                        date_text = await date_elem.text_content()
+                                        date_text = date_text.strip() if date_text else ""
+
+                                        # Look for patterns like "1mo", "2w", "3d", "4h"
+                                        if date_text and re.search(r'\d+\s*(mo|w|d|h|y)', date_text.lower()):
+                                            post_date = self._parse_linkedin_date(date_text)
+                                            self.logger.info(f"✓ Parsed post date from '{selector}': '{date_text}' -> {post_date.strftime('%Y-%m-%d %H:%M')}")
+                                            date_found = True
+                                            break
+                                except Exception as e:
+                                    continue
+
+                            if not date_found:
+                                self.logger.warning(f"Could not extract date for post, using current time")
+
+                            # Create post item with linkedin_company source type
+                            item = self._create_item(
+                                title=f"[LinkedIn Company] {company_name}: {post_text[:100]}...",
+                                content=post_text,
+                                url=post_url,
+                                published_date=post_date,
+                                raw_data={
+                                    'company_name': company_name,
+                                    'company_url': company_url,
+                                    'source': 'playwright',
+                                    'collection_method': 'browser_automation',
+                                    'post_type': 'company_post',
+                                    'post_index': idx
+                                }
+                            )
+                            # Override source_type to linkedin_company
+                            item.source_type = "linkedin_company"
+                            items.append(item)
+
+                except Exception as e:
+                    self.logger.debug(f"Error extracting post: {e}")
+                    continue
+
+            self.logger.info(f"Collected {len(items)} company posts for {company_name}")
+
+        except Exception as e:
+            self.logger.error(f"Error collecting company posts: {e}")
 
         return items

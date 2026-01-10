@@ -25,6 +25,7 @@ Usage:
     ./hermes-diag config import -f FILE      # Import from custom YAML file
     ./hermes-diag config export              # Export from Database → config/customers.yaml
     ./hermes-diag config export -f FILE      # Export to custom YAML file
+    ./hermes-diag config export -c "NBN Co"  # Export specific customer
     ./hermes-diag config export --force      # Skip confirmation prompt
 
     # Maintenance & Repair
@@ -576,16 +577,30 @@ def cmd_export_config(args):
             from app.config.settings import settings
             output_path = settings.customers_config_path
 
-        customers = db.query(Customer).all()
+        # Get customer name filter if provided
+        customer_name = getattr(args, 'customer', None)
 
-        if not customers:
-            print_warning("No customers in database to export")
-            return
-
-        print(f"📊 Found {len(customers)} customers in database")
-
-        for customer in customers:
-            print(f"   - {customer.name}")
+        # Query customers based on filter
+        if customer_name:
+            customers = db.query(Customer).filter(Customer.name.ilike(f"%{customer_name}%")).all()
+            if not customers:
+                print_error(f"Customer '{customer_name}' not found in database")
+                return
+            if len(customers) > 1:
+                print_error(f"Multiple customers match '{customer_name}':")
+                for customer in customers:
+                    print(f"   - {customer.name}")
+                print("\nPlease be more specific.")
+                return
+            print(f"📊 Found customer: {customers[0].name}")
+        else:
+            customers = db.query(Customer).all()
+            if not customers:
+                print_warning("No customers in database to export")
+                return
+            print(f"📊 Found {len(customers)} customers in database")
+            for customer in customers:
+                print(f"   - {customer.name}")
 
         # Check if file exists
         import os
@@ -602,11 +617,17 @@ def cmd_export_config(args):
                 print_error("Export cancelled")
                 return
 
-        print(f"\n🔄 Exporting customers to {output_path}...\n")
+        if customer_name:
+            print(f"\n🔄 Exporting customer '{customers[0].name}' to {output_path}...\n")
+        else:
+            print(f"\n🔄 Exporting {len(customers)} customers to {output_path}...\n")
 
-        export_path = export_customers_to_yaml(db, output_path)
+        export_path = export_customers_to_yaml(db, output_path, customer_name)
 
-        print_success(f"Export complete! Wrote to {export_path}")
+        if customer_name:
+            print_success(f"Export complete! Wrote customer '{customers[0].name}' to {export_path}")
+        else:
+            print_success(f"Export complete! Wrote {len(customers)} customers to {export_path}")
 
         # Show summary
         print(f"\n📝 Exported configuration:")
@@ -1255,7 +1276,8 @@ Examples:
 
   # Configuration
   ./hermes-diag config import              # Import from YAML to DB
-  ./hermes-diag config export              # Export from DB to YAML
+  ./hermes-diag config export              # Export all customers from DB to YAML
+  ./hermes-diag config export -c "NBN Co"  # Export specific customer
 
   # Maintenance
   ./hermes-diag maintenance cluster        # Cluster unclustered items
@@ -1312,6 +1334,7 @@ Examples:
     config_import.add_argument('--file', '-f', type=str, help='Path to YAML file')
     config_export = config_subs.add_parser('export', help='Export from database to YAML')
     config_export.add_argument('--file', '-f', type=str, help='Path to output YAML file')
+    config_export.add_argument('--customer', '-c', type=str, help='Export specific customer by name')
     config_export.add_argument('--force', action='store_true', help='Skip confirmation')
 
     # ========== MAINTENANCE GROUP ==========
@@ -1340,6 +1363,7 @@ Examples:
     legacy_import.add_argument('--file', '-f', type=str, help='YAML file path')
     legacy_export = subparsers.add_parser('export-config', help='[Legacy] Export config')
     legacy_export.add_argument('--file', '-f', type=str, help='YAML file path')
+    legacy_export.add_argument('--customer', '-c', type=str, help='Export specific customer by name')
     legacy_export.add_argument('--force', action='store_true', help='Skip confirmation')
     legacy_cluster = subparsers.add_parser('backfill-clustering', help='[Legacy] Cluster items')
     legacy_cluster.add_argument('--force', action='store_true', help='Skip confirmation')

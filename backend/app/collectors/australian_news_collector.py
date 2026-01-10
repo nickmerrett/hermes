@@ -36,6 +36,11 @@ class AustralianNewsCollector(BaseCollector):
             'User-Agent': 'CustomerIntelligenceTool/1.0 (News Aggregator)',
         }
 
+        # Log configuration for debugging
+        self.logger.info(f"Initialized for customer: {self.customer_name}")
+        self.logger.info(f"Loaded {len(self.news_feeds)} news sources: {list(self.news_feeds.keys())}")
+        self.logger.info(f"Filtering with {len(self.keywords)} keywords: {self.keywords[:5]}{'...' if len(self.keywords) > 5 else ''}")
+
     def _load_sources_from_settings(self, db: Session = None) -> Dict[str, Dict[str, str]]:
         """Load Australian news sources from platform settings"""
 
@@ -65,10 +70,12 @@ class AustralianNewsCollector(BaseCollector):
                             # Convert feeds list to dict format
                             feed_dict = {'name': source_name}
                             for i, feed_url in enumerate(feeds):
+                                # Clean URL (strip whitespace)
+                                clean_url = feed_url.strip() if isinstance(feed_url, str) else feed_url
                                 if i == 0:
-                                    feed_dict['rss'] = feed_url
+                                    feed_dict['rss'] = clean_url
                                 else:
-                                    feed_dict[f'rss_{i}'] = feed_url
+                                    feed_dict[f'rss_{i}'] = clean_url
 
                             news_feeds[source_key] = feed_dict
 
@@ -83,11 +90,29 @@ class AustralianNewsCollector(BaseCollector):
 
     def _get_default_sources(self) -> Dict[str, Dict[str, str]]:
         """Return default Australian news sources as fallback"""
-        self.logger.info("Using default Australian news sources fallback")
+        self.logger.warning("⚠️  Using default Australian news sources fallback (database not configured)")
+        self.logger.warning("⚠️  Configure via Platform Settings UI or API for better coverage")
+
+        # Improved defaults with business/tech focused feeds
         return {
-            'abc_news': {
-                'name': 'ABC News',
-                'rss': 'https://www.abc.net.au/news/feed/51120/rss.xml'
+            'abc_news_business': {
+                'name': 'ABC News Business',
+                'rss': 'https://www.abc.net.au/news/feed/45924/rss.xml',  # Business feed
+                'rss_2': 'https://www.abc.net.au/news/feed/51120/rss.xml'  # General (backup)
+            },
+            'guardian_au_business': {
+                'name': 'The Guardian Australia Business',
+                'rss': 'https://www.theguardian.com/australia-news/business/rss',
+                'rss_2': 'https://www.theguardian.com/technology/rss'
+            },
+            'smh_business': {
+                'name': 'Sydney Morning Herald Business',
+                'rss': 'https://www.smh.com.au/rss/business.xml',
+                'rss_2': 'https://www.smh.com.au/rss/technology.xml'
+            },
+            'itnews': {
+                'name': 'ITNews Australia',
+                'rss': 'https://www.itnews.com.au/rss.xml'
             }
         }
 
@@ -103,21 +128,29 @@ class AustralianNewsCollector(BaseCollector):
         """
         items = []
 
+        self.logger.info("=" * 60)
+        self.logger.info(f"Starting Australian news collection for {self.customer_name}")
+        self.logger.info("=" * 60)
+
         try:
             async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
                 # Collect from each news source
                 for source_key, source_config in self.news_feeds.items():
+                    self.logger.info(f"Processing source: {source_config.get('name', source_key)}")
                     source_items = await self._collect_from_source(
                         client,
                         source_key,
                         source_config
                     )
                     items.extend(source_items)
+                    self.logger.info(f"  → Collected {len(source_items)} items from {source_config.get('name', source_key)}")
 
-            self.logger.info(f"Collected {len(items)} items from Australian news sources")
+            self.logger.info("=" * 60)
+            self.logger.info(f"✅ Collection complete: {len(items)} total items collected")
+            self.logger.info("=" * 60)
 
         except Exception as e:
-            self.logger.error(f"Error collecting from Australian news: {e}")
+            self.logger.error(f"❌ Error collecting from Australian news: {e}")
             raise
 
         return items
@@ -178,28 +211,52 @@ class AustralianNewsCollector(BaseCollector):
         items = []
 
         try:
+            # Clean URL (strip whitespace, common issues)
+            feed_url = feed_url.strip()
+
+            self.logger.info(f"  📰 Fetching feed: {feed_url}")
             response = await client.get(feed_url)
             response.raise_for_status()
 
             # Parse RSS feed
             feed = feedparser.parse(response.text)
+            total_entries = len(feed.entries)
+            entries_to_check = feed.entries[:30]
 
-            for entry in feed.entries[:30]:  # Check last 30 entries
+            self.logger.info(f"  📊 Feed has {total_entries} entries, checking most recent {len(entries_to_check)}")
+
+            checked_count = 0
+            filtered_count = 0
+            matched_count = 0
+
+            for entry in entries_to_check:
+                checked_count += 1
+
                 # Check if entry is relevant to customer
                 title = entry.get('title', '')
                 summary = entry.get('summary', '') or entry.get('description', '')
 
-                if not self._should_collect_item(title, summary):
+                # Track which keyword matched (if any)
+                matched_keyword = self._get_matching_keyword(title, summary)
+
+                if not matched_keyword:
+                    filtered_count += 1
+                    self.logger.debug(f"  ⊘ Filtered (no keyword match): {title[:80]}...")
                     continue
+
+                matched_count += 1
+                self.logger.info(f"  ✓ Matched on '{matched_keyword}': {title[:80]}...")
 
                 item = self._process_entry(entry, source_name)
                 if item:
                     items.append(item)
 
+            self.logger.info(f"  📈 Stats: {checked_count} checked, {matched_count} matched ({matched_count/checked_count*100:.1f}%), {filtered_count} filtered")
+
         except httpx.HTTPError as e:
-            self.logger.warning(f"Error fetching {source_name} RSS: {e}")
+            self.logger.warning(f"  ⚠️  HTTP error fetching {source_name} RSS from {feed_url}: {e}")
         except Exception as e:
-            self.logger.error(f"Error processing {source_name} RSS: {e}")
+            self.logger.error(f"  ❌ Error processing {source_name} RSS from {feed_url}: {e}")
 
         return items
 
@@ -253,3 +310,27 @@ class AustralianNewsCollector(BaseCollector):
         except Exception as e:
             self.logger.error(f"Error processing entry from {source_name}: {e}")
             return None
+
+    def _get_matching_keyword(self, title: str, content: str = "") -> str | None:
+        """
+        Check if an item matches any keywords and return the matching keyword
+
+        Args:
+            title: Item title
+            content: Item content
+
+        Returns:
+            The first matching keyword, or None if no match
+        """
+        if not self.keywords:
+            return "no_keywords_configured"
+
+        # Combine title and content for searching
+        text = f"{title} {content}".lower()
+
+        # Check if any keyword appears in the text
+        for keyword in self.keywords:
+            if keyword.lower() in text:
+                return keyword
+
+        return None

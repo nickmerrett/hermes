@@ -127,13 +127,14 @@ def load_customers_from_config() -> List[dict]:
         return []
 
 
-def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
+def export_customers_to_yaml(db: Session, output_path: Optional[str] = None, customer_name: Optional[str] = None):
     """
-    Export all customers from database to YAML file
+    Export customers from database to YAML file
 
     Args:
         db: Database session
         output_path: Optional path to write YAML (defaults to customers_config_path)
+        customer_name: Optional customer name to export (if None, exports all customers)
 
     Returns:
         str: Path where YAML was written
@@ -141,8 +142,19 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
     if output_path is None:
         output_path = settings.customers_config_path
 
-    # Get all customers from database
-    customers = db.query(Customer).all()
+    # Get customers from database
+    if customer_name:
+        # Export specific customer
+        customers = db.query(Customer).filter(Customer.name.ilike(f"%{customer_name}%")).all()
+        if not customers:
+            raise ValueError(f"Customer '{customer_name}' not found in database")
+        if len(customers) > 1:
+            # Multiple matches - show them
+            matches = [c.name for c in customers]
+            raise ValueError(f"Multiple customers match '{customer_name}': {', '.join(matches)}. Please be more specific.")
+    else:
+        # Export all customers
+        customers = db.query(Customer).all()
 
     yaml_customers = []
 
@@ -157,6 +169,7 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
             'keywords': customer.keywords or [],
             'competitors': customer.competitors or [],
             'stock_symbol': customer.stock_symbol,
+            'tab_color': customer.tab_color,
             'rss_feeds': config.get('rss_feeds', []),
             'twitter_handle': config.get('twitter_handle'),
             'linkedin_company_id': config.get('linkedin_company_id'),
@@ -193,7 +206,10 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None):
     with open(output_path, 'w') as f:
         yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    logger.info(f"Exported {len(yaml_customers)} customers to {output_path}")
+    if customer_name:
+        logger.info(f"Exported customer '{customers[0].name}' to {output_path}")
+    else:
+        logger.info(f"Exported {len(yaml_customers)} customers to {output_path}")
     return output_path
 
 
@@ -246,6 +262,7 @@ def sync_customers_to_db(db: Session):
             customer.keywords = cust_config.get('keywords', [])
             customer.competitors = cust_config.get('competitors', [])
             customer.stock_symbol = cust_config.get('stock_symbol')
+            customer.tab_color = cust_config.get('tab_color', '#ffffff')
             customer.config = full_config
             logger.info(f"Updated customer from config: {customer.name}")
         else:
@@ -256,6 +273,7 @@ def sync_customers_to_db(db: Session):
                 keywords=cust_config.get('keywords', []),
                 competitors=cust_config.get('competitors', []),
                 stock_symbol=cust_config.get('stock_symbol'),
+                tab_color=cust_config.get('tab_color', '#ffffff'),
                 config=full_config
             )
             db.add(customer)
@@ -681,91 +699,112 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
     elif collection_config.get('linkedin_enabled', False):
         logger.debug(f"Skipping LinkedIn company pages - not due for collection yet")
 
-    # Collect from LinkedIn (individual user profiles)
-    if collection_config.get('linkedin_user_enabled', False) and should_collect_source('linkedin_user'):
+    # Collect from LinkedIn (company posts AND/OR user profiles via Playwright)
+    # Single browser session handles both for efficiency
+    linkedin_company_enabled = collection_config.get('linkedin_company_posts_enabled', False)
+    linkedin_user_enabled = collection_config.get('linkedin_user_enabled', False)
+
+    # Check if either should collect based on intervals
+    should_collect_company = linkedin_company_enabled and should_collect_source('linkedin_company')
+    should_collect_users = linkedin_user_enabled and should_collect_source('linkedin_user')
+
+    if should_collect_company or should_collect_users:
         try:
-            # Use Playwright collector if available, otherwise fall back to basic collector
             if PLAYWRIGHT_AVAILABLE and PlaywrightLinkedInCollector:
-                logger.info("Using Playwright-based LinkedIn collector with incremental processing")
+                # Log what we're collecting
+                what_collecting = []
+                if should_collect_company and collection_config.get('linkedin_company_url'):
+                    what_collecting.append("company posts")
+                if should_collect_users and collection_config.get('linkedin_user_profiles'):
+                    what_collecting.append("user profiles")
+
+                logger.info(f"LinkedIn collection for {customer.name}: {' and '.join(what_collecting)}")
+
                 collector = PlaywrightLinkedInCollector(customer_config, db=db)
 
-                # Define callback for incremental item processing (items show up immediately in UI)
+                # Callback for incremental processing
                 async def process_linkedin_items_callback(items: List):
-                    """Process and save items immediately after each profile is collected"""
                     if items:
                         await save_and_process_items(items, customer, db)
                         nonlocal items_collected
                         items_collected += len(items)
-                        logger.info(f"✅ Saved {len(items)} LinkedIn items to database (visible in UI now)")
+                        logger.info(f"✅ Saved {len(items)} LinkedIn items")
 
-                # Collect with callback - items are processed as they're collected
-                items, error = await collector.safe_collect(process_items_callback=process_linkedin_items_callback)
+                # Collect (handles both company and users based on config)
+                items, error = await collector.safe_collect(
+                    process_items_callback=process_linkedin_items_callback
+                )
+
+                # Update status for BOTH source types
+                if linkedin_company_enabled:
+                    update_collection_status(
+                        db=db,
+                        customer_id=customer.id,
+                        source_type='linkedin_company',
+                        success=(error is None),
+                        error_message=error
+                    )
+
+                if linkedin_user_enabled:
+                    update_collection_status(
+                        db=db,
+                        customer_id=customer.id,
+                        source_type='linkedin_user',
+                        success=(error is None),
+                        error_message=error
+                    )
+
+                if error:
+                    errors.append(error)
+
+                # CRITICAL: Delay after LinkedIn collection (5-10 min between customers)
+                if get_linkedin_settings:
+                    linkedin_settings = get_linkedin_settings(db)
+                    delay_min = linkedin_settings.get('delay_between_customers_min', 300.0)
+                    delay_max = linkedin_settings.get('delay_between_customers_max', 600.0)
+                else:
+                    delay_min, delay_max = 10.0, 15.0
+
+                delay = random.uniform(delay_min, delay_max)
+                logger.info(f"⏰ LinkedIn complete. Waiting {delay:.1f}s ({delay/60:.1f} min)")
+                await asyncio.sleep(delay)
 
             else:
-                logger.warning("Playwright not available, using basic LinkedIn collector (limited functionality)")
-                collector = LinkedInUserCollector(customer_config)
-                items, error = await collector.safe_collect()
+                error_msg = "Playwright not available"
+                logger.warning(error_msg)
 
-                # For basic collector, save items in bulk (no incremental support)
-                if items:
-                    await save_and_process_items(items, customer, db)
-                    items_collected += len(items)
-
-            # Update collection status
-            update_collection_status(
-                db=db,
-                customer_id=customer.id,
-                source_type='linkedin_user',
-                success=(error is None),
-                error_message=error
-            )
-
-            if error:
-                errors.append(error)
-
-            # CRITICAL: Add delay after LinkedIn collection to avoid rate limiting across customers
-            # LinkedIn tracks requests globally, not per-customer
-            # Load configured delays from database
-            if get_linkedin_settings:
-                linkedin_settings = get_linkedin_settings(db)
-                delay_min = linkedin_settings.get('delay_between_customers_min', 300.0)
-                delay_max = linkedin_settings.get('delay_between_customers_max', 600.0)
-            else:
-                # Fallback to old aggressive timing if Playwright not available
-                delay_min, delay_max = 10.0, 15.0
-
-            delay = random.uniform(delay_min, delay_max)
-            logger.info(f"⏰ LinkedIn collection complete. Waiting {delay:.1f}s ({delay/60:.1f} min) before next customer to avoid rate limits")
-            await asyncio.sleep(delay)
+                # Update status for both types
+                if linkedin_company_enabled:
+                    update_collection_status(db, customer.id, 'linkedin_company', False, error_msg)
+                if linkedin_user_enabled:
+                    update_collection_status(db, customer.id, 'linkedin_user', False, error_msg)
 
         except Exception as e:
-            error_msg = f"LinkedIn user profile collection error: {str(e)}"
+            error_msg = f"LinkedIn collection error: {str(e)}"
             logger.error(error_msg)
             errors.append(error_msg)
 
-            # Update collection status for exception
-            update_collection_status(
-                db=db,
-                customer_id=customer.id,
-                source_type='linkedin_user',
-                success=False,
-                error_message=error_msg
-            )
+            # Update status for both types on exception
+            if linkedin_company_enabled:
+                update_collection_status(db, customer.id, 'linkedin_company', False, error_msg)
+            if linkedin_user_enabled:
+                update_collection_status(db, customer.id, 'linkedin_user', False, error_msg)
 
-            # Still add delay even on error to avoid hammering LinkedIn
-            # Use 30% of configured delay for errors
+            # Error delay (30% of normal delay)
             if get_linkedin_settings:
                 linkedin_settings = get_linkedin_settings(db)
-                error_delay_min = linkedin_settings.get('delay_between_customers_min', 300.0) * 0.3
-                error_delay_max = linkedin_settings.get('delay_between_customers_max', 600.0) * 0.3
+                error_delay = random.uniform(
+                    linkedin_settings.get('delay_between_customers_min', 300.0) * 0.3,
+                    linkedin_settings.get('delay_between_customers_max', 600.0) * 0.3
+                )
             else:
-                error_delay_min, error_delay_max = 5.0, 10.0
+                error_delay = random.uniform(5.0, 10.0)
 
-            error_delay = random.uniform(error_delay_min, error_delay_max)
-            logger.info(f"⏰ Error occurred. Waiting {error_delay:.1f}s before continuing")
+            logger.info(f"⏰ Error delay: {error_delay:.1f}s")
             await asyncio.sleep(error_delay)
-    elif collection_config.get('linkedin_user_enabled', False):
-        logger.debug(f"Skipping LinkedIn user profiles - not scheduled for {collection_type} collection")
+
+    elif linkedin_company_enabled or linkedin_user_enabled:
+        logger.debug(f"Skipping LinkedIn - not due for {collection_type} collection")
 
     # Collect from Press Release Services
     if collection_config.get('pressrelease_enabled', False) and should_collect_source('pressrelease'):
@@ -806,7 +845,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
     # Collect from Australian News Sites
     if collection_config.get('australian_news_enabled', True) and should_collect_source('australian_news'):  # Enabled by default
         try:
-            collector = AustralianNewsCollector(customer_config)
+            collector = AustralianNewsCollector(customer_config, db=db)
             items, error = await collector.safe_collect()
 
             # Update collection status

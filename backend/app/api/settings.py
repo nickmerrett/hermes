@@ -175,45 +175,49 @@ def get_platform_settings(db: Session = Depends(get_db)):
         settings['australian_news_sources'] = {
             'sources': [
                 {
-                    'name': 'ABC News',
+                    'name': 'ABC News Business',
                     'enabled': True,
                     'feeds': [
-                        'https://www.abc.net.au/news/feed/51120/rss.xml'
+                        'https://www.abc.net.au/news/feed/45924/rss.xml',  # Business
+                        'https://www.abc.net.au/news/feed/5789070/rss.xml'  # Technology
                     ]
                 },
                 {
-                    'name': 'The Guardian Australia',
+                    'name': 'The Guardian Australia Business',
                     'enabled': True,
                     'feeds': [
-                        'https://www.theguardian.com/australia-news/rss'
+                        'https://www.theguardian.com/australia-news/business/rss',
+                        'https://www.theguardian.com/technology/rss'
                     ]
                 },
                 {
-                    'name': 'The Australian',
+                    'name': 'Sydney Morning Herald Business',
                     'enabled': True,
                     'feeds': [
-                        'https://www.theaustralian.com.au/feed/'
+                        'https://www.smh.com.au/rss/business.xml',
+                        'https://www.smh.com.au/rss/technology.xml'
                     ]
                 },
                 {
-                    'name': 'Sydney Morning Herald',
+                    'name': 'The Age Business',
                     'enabled': True,
                     'feeds': [
-                        'https://www.smh.com.au/rss/feed.xml'
+                        'https://www.theage.com.au/rss/business.xml',
+                        'https://www.theage.com.au/rss/technology.xml'
                     ]
                 },
                 {
-                    'name': 'The Age',
+                    'name': 'ITNews Australia',
                     'enabled': True,
                     'feeds': [
-                        'https://www.theage.com.au/rss/feed.xml'
+                        'https://www.itnews.com.au/rss.xml'
                     ]
                 },
                 {
-                    'name': 'News.com.au',
+                    'name': 'Australian Financial Review',
                     'enabled': True,
                     'feeds': [
-                        'https://www.news.com.au/feed/'
+                        'https://www.afr.com/rss'
                     ]
                 }
             ]

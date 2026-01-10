@@ -36,7 +36,7 @@ class Source(Base):
     __tablename__ = "sources"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(50), nullable=False)  # 'news_api', 'rss', 'stock', etc.
     name = Column(String(255), nullable=False)
     url = Column(String(1024))
@@ -56,8 +56,8 @@ class IntelligenceItem(Base):
     __tablename__ = "intelligence_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
-    source_id = Column(Integer, ForeignKey("sources.id"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"))
     source_type = Column(String(50), nullable=False, index=True)
     title = Column(Text, nullable=False)
     content = Column(Text)
@@ -92,7 +92,7 @@ class ProcessedIntelligence(Base):
     __tablename__ = "processed_intelligence"
 
     id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(Integer, ForeignKey("intelligence_items.id"), unique=True, nullable=False)
+    item_id = Column(Integer, ForeignKey("intelligence_items.id", ondelete="CASCADE"), unique=True, nullable=False)
     summary = Column(Text)
     category = Column(String(100), index=True)
     sentiment = Column(String(50), index=True)  # 'positive', 'negative', 'neutral', 'mixed'
@@ -118,8 +118,8 @@ class CollectionJob(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     job_type = Column(String(100), nullable=False)  # 'hourly_news', 'daily_comprehensive', etc.
-    customer_id = Column(Integer, ForeignKey("customers.id"))
-    source_id = Column(Integer, ForeignKey("sources.id"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"))
     status = Column(String(50), nullable=False, index=True)  # 'pending', 'running', 'completed', 'failed'
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
@@ -137,7 +137,7 @@ class DailySummary(Base):
     __tablename__ = "daily_summaries"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
     summary_date = Column(DateTime, nullable=False, index=True)  # The date this summary covers
     summary_text = Column(Text, nullable=False)  # AI-generated executive summary
     total_items = Column(Integer, default=0)
@@ -155,7 +155,7 @@ class CollectionStatus(Base):
     __tablename__ = "collection_status"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
     source_type = Column(String(50), nullable=False, index=True)  # 'reddit', 'linkedin_user', etc.
     status = Column(String(50), nullable=False, index=True)  # 'success', 'error', 'auth_required'
     last_run = Column(DateTime, index=True)
