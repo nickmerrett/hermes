@@ -34,7 +34,7 @@ def test_vector_store():
             print(f"\n⚠️  WARNING: Vector store has {vector_count} items but database has {db_count} items")
             print(f"   Difference: {db_count - vector_count} items not indexed")
         else:
-            print(f"\n✅ Vector store and database are in sync")
+            print("\n✅ Vector store and database are in sync")
 
         # Get recent items from database
         last_24h = datetime.utcnow() - timedelta(hours=24)
@@ -43,13 +43,13 @@ def test_vector_store():
         ).order_by(IntelligenceItem.collected_date.desc()).limit(5).all()
 
         if recent_items:
-            print(f"\n📰 Recent items from last 24 hours:")
+            print("\n📰 Recent items from last 24 hours:")
             for item in recent_items:
                 print(f"   - [{item.id}] {item.title[:60]}...")
                 print(f"     Source: {item.source_type}, Collected: {item.collected_date}")
 
             # Test if recent items are in vector store
-            print(f"\n🔍 Checking if recent items are in vector store...")
+            print("\n🔍 Checking if recent items are in vector store...")
             for item in recent_items[:3]:
                 try:
                     # Try to search for the item by its title
@@ -66,10 +66,10 @@ def test_vector_store():
                 except Exception as e:
                     print(f"   ❌ Error searching for item {item.id}: {e}")
         else:
-            print(f"\n⚠️  No items collected in the last 24 hours")
+            print("\n⚠️  No items collected in the last 24 hours")
 
         # Test some sample searches
-        print(f"\n🔎 Testing sample semantic searches:")
+        print("\n🔎 Testing sample semantic searches:")
         test_queries = [
             "technology innovation",
             "financial results earnings",

@@ -74,7 +74,7 @@ def test_clustering():
             ).all()
 
             if multi_item_clusters:
-                print(f"\n5. Multi-source stories (same story from different sources):")
+                print("\n5. Multi-source stories (same story from different sources):")
                 print(f"   Found {len(multi_item_clusters)} stories covered by multiple sources\n")
 
                 for cluster_id, count in multi_item_clusters[:5]:  # Show top 5
@@ -92,7 +92,7 @@ def test_clustering():
                     print()
 
             # Show source tier distribution
-            print(f"\n6. Source tier distribution:")
+            print("\n6. Source tier distribution:")
             tiers = db.query(
                 IntelligenceItem.source_tier,
                 func.count(IntelligenceItem.id)

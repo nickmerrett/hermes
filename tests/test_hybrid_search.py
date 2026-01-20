@@ -6,7 +6,6 @@ import sys
 sys.path.insert(0, 'backend')
 
 import requests
-import json
 
 API_URL = "http://localhost:8000/api"
 
@@ -42,7 +41,7 @@ def test_search(query, customer_id=1):
                 if content_preview:
                     print(f"   Preview: {content_preview}...")
         else:
-            print(f"\n❌ No results found")
+            print("\n❌ No results found")
     else:
         print(f"\n❌ Error: {response.status_code}")
         print(response.text)

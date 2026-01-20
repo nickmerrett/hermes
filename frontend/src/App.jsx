@@ -33,6 +33,7 @@ function App() {
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showRSSModal, setShowRSSModal] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const { user, isAdmin, logout, isAuthenticated, isLoading: authLoading } = useAuth()
 
@@ -393,29 +394,72 @@ function App() {
       <header className="header">
         <h1>Hermes</h1>
         <div className="header-actions">
-          <label className="auto-refresh-toggle">
-              <input
-                type="checkbox"
-                checked={autoRefreshEnabled}
-                onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
-              />
-              <span>Auto-refresh</span>
-          </label>
-          <button onClick={triggerCollection} className="btn-primary" title="Trigger collection for ALL customers">
-            Full Collection
+          <button
+            className={`hamburger-btn ${menuOpen ? 'open' : ''}`}
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
+          >
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
           </button>
-          <button onClick={() => setShowSettingsModal(true)} className="btn-secondary" title="Platform Settings">
-          Settings
-          </button>
-          {isAdmin && (
-            <Link to="/admin" className="btn-secondary" title="User Administration">
-              Admin
-            </Link>
-          )}
-          <span className="user-email">{user?.email}</span>
-          <button onClick={logout} className="btn-logout" title="Sign out">
-            Logout
-          </button>
+
+          {menuOpen && <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />}
+
+          <nav className={`header-menu ${menuOpen ? 'open' : ''}`}>
+            <div className="menu-header">
+              <span className="user-email">{user?.email}</span>
+              <button className="menu-close-btn" onClick={() => setMenuOpen(false)}>
+                &times;
+              </button>
+            </div>
+
+            <div className="menu-items">
+              <label className="auto-refresh-toggle menu-item">
+                <input
+                  type="checkbox"
+                  checked={autoRefreshEnabled}
+                  onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+                />
+                <span>Auto-refresh</span>
+              </label>
+
+              <button
+                onClick={() => { triggerCollection(); setMenuOpen(false); }}
+                className="menu-item menu-btn"
+                title="Trigger collection for ALL customers"
+              >
+                Full Collection
+              </button>
+
+              <button
+                onClick={() => { setShowSettingsModal(true); setMenuOpen(false); }}
+                className="menu-item menu-btn"
+                title="Platform Settings"
+              >
+                Settings
+              </button>
+
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className="menu-item menu-btn"
+                  title="User Administration"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Admin
+                </Link>
+              )}
+
+              <button
+                onClick={() => { logout(); setMenuOpen(false); }}
+                className="menu-item menu-btn logout-btn"
+                title="Sign out"
+              >
+                Logout
+              </button>
+            </div>
+          </nav>
         </div>
       </header>
 

@@ -5,7 +5,6 @@ Test script to analyze Yahoo Finance news page structure
 import asyncio
 from playwright.async_api import async_playwright
 import json
-from datetime import datetime
 
 
 async def analyze_yahoo_news_page(stock_symbol: str):

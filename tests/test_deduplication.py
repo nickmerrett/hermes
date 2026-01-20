@@ -54,7 +54,7 @@ def test_url_normalization():
         print(f"   Expected: {expected}")
         print(f"   Got:      {result}")
         if result != expected:
-            print(f"   MISMATCH!")
+            print("   MISMATCH!")
 
 
 def test_title_similarity():

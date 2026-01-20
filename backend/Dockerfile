@@ -1,4 +1,7 @@
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+# =============================================================================
+# Base stage - shared dependencies
+# =============================================================================
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy AS base
 
 WORKDIR /app
 
@@ -26,6 +29,33 @@ RUN pip install pydantic[email]
 
 # Note: Playwright and Chromium are already installed in the base image
 # No need to run 'playwright install' again
+
+# =============================================================================
+# Test stage - for running tests
+# =============================================================================
+FROM base AS test
+
+WORKDIR /app
+
+# Copy application and test code
+COPY app/ ./app/
+COPY tests/ ./tests/
+COPY pytest.ini ./
+
+# Set test environment variables
+ENV TESTING=true
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Default command runs all tests
+CMD ["pytest", "tests/", "-v", "--tb=short"]
+
+# =============================================================================
+# Production stage - for running the application
+# =============================================================================
+FROM base AS production
+
+WORKDIR /app
 
 # Copy application code
 COPY app/ ./app/

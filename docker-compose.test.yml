@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Backend tests
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test
+    volumes:
+      - ./backend:/app:Z
+      - /app/__pycache__
+      - /app/.pytest_cache
+    environment:
+      - TESTING=true
+      - JWT_SECRET_KEY=test-secret-key
+      - JWT_ALGORITHM=HS256
+      - PYTHONDONTWRITEBYTECODE=1
+    command: pytest tests/ -v --tb=short
+
+  # Backend tests with coverage
+  backend-coverage:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test
+    volumes:
+      - ./backend:/app:Z
+      - ./backend/htmlcov:/app/htmlcov:Z
+    environment:
+      - TESTING=true
+      - JWT_SECRET_KEY=test-secret-key
+    command: pytest tests/ --cov=app --cov-report=html --cov-report=term-missing
+
+  # Frontend tests
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    volumes:
+      - ./frontend:/app:Z
+      - /app/node_modules
+    command: npm run test -- --run
+
+  # Frontend tests with coverage
+  frontend-coverage:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    volumes:
+      - ./frontend:/app:Z
+      - /app/node_modules
+      - ./frontend/coverage:/app/coverage:Z
+    command: npm run test:coverage -- --run

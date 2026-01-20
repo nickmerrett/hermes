@@ -29,7 +29,7 @@ async def test_reddit_collector():
         print("   REDDIT_USER_AGENT=CustomerIntelligenceTool/1.0")
         return
 
-    print(f"\n✅ Reddit credentials found")
+    print("\n✅ Reddit credentials found")
     print(f"   Client ID: {settings.reddit_client_id[:10]}...")
     print(f"   User Agent: {settings.reddit_user_agent}")
 
@@ -50,22 +50,22 @@ async def test_reddit_collector():
     try:
         collector = RedditCollector(customer_config)
 
-        print(f"\n📊 Collector settings:")
+        print("\n📊 Collector settings:")
         print(f"   Min upvotes: {collector.MIN_UPVOTES}")
         print(f"   Min comments: {collector.MIN_COMMENTS}")
         print(f"   Large thread threshold: {collector.LARGE_THREAD_THRESHOLD} comments")
         print(f"   Max comments to analyze: {collector.MAX_COMMENTS_TO_ANALYZE}")
 
-        print(f"\n⏳ Collecting Reddit posts...")
-        print(f"   (This may take 30-60 seconds)")
+        print("\n⏳ Collecting Reddit posts...")
+        print("   (This may take 30-60 seconds)")
 
         items = await collector.collect()
 
-        print(f"\n✅ Collection complete!")
+        print("\n✅ Collection complete!")
         print(f"   Found {len(items)} items")
 
         if items:
-            print(f"\n📰 Sample items:")
+            print("\n📰 Sample items:")
             for i, item in enumerate(items[:5], 1):
                 print(f"\n{i}. {item.title[:80]}")
                 print(f"   URL: {item.url}")
@@ -82,14 +82,14 @@ async def test_reddit_collector():
                 content_preview = item.content[:300]
                 print(f"   Preview: {content_preview}...")
         else:
-            print(f"\n⚠️  No items collected. This could mean:")
-            print(f"   - No recent posts match the keywords")
-            print(f"   - Posts didn't meet engagement thresholds")
-            print(f"   - Subreddits don't have relevant content")
-            print(f"\n💡 Try:")
-            print(f"   - Lower MIN_UPVOTES or MIN_COMMENTS thresholds")
-            print(f"   - Add more relevant subreddits")
-            print(f"   - Increase lookback_days from 7 to 14")
+            print("\n⚠️  No items collected. This could mean:")
+            print("   - No recent posts match the keywords")
+            print("   - Posts didn't meet engagement thresholds")
+            print("   - Subreddits don't have relevant content")
+            print("\n💡 Try:")
+            print("   - Lower MIN_UPVOTES or MIN_COMMENTS thresholds")
+            print("   - Add more relevant subreddits")
+            print("   - Increase lookback_days from 7 to 14")
 
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
