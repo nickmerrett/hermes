@@ -145,7 +145,7 @@ class LinkedInCollector(RateLimitedCollector):
                             # Create intelligence item about hiring
                             item = self._create_item(
                                 title=f"[LinkedIn Jobs] {self.customer_name} hiring: {job_title}",
-                                content=f"New job posting indicates growth in this area.",
+                                content="New job posting indicates growth in this area.",
                                 url=jobs_url,
                                 published_date=datetime.now(),
                                 raw_data={
@@ -471,7 +471,7 @@ class LinkedInUserCollector(RateLimitedCollector):
                                 try:
                                     from dateutil import parser
                                     published_date = parser.parse(posted_date)
-                                except:
+                                except (ValueError, TypeError):
                                     published_date = datetime.now()
                             else:
                                 published_date = datetime.now()

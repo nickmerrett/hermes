@@ -21,8 +21,9 @@ from app.collectors.rss_collector import RSSCollector
 from app.collectors.yahoo_finance_news_collector import YahooFinanceNewsCollector
 from app.collectors.reddit_collector import RedditCollector
 from app.collectors.twitter_collector import TwitterCollector
-from app.collectors.linkedin_collector import LinkedInCollector, LinkedInUserCollector
+from app.collectors.linkedin_collector import LinkedInCollector
 from app.collectors.youtube_collector import YouTubeCollector
+from app.collectors.gmail_collector import GmailCollector
 
 # Try to import Playwright collector (optional)
 try:
@@ -443,7 +444,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('news_enabled', True):
-        logger.debug(f"Skipping NewsAPI - not due for collection yet")
+        logger.debug("Skipping NewsAPI - not due for collection yet")
 
     # Collect from Yahoo Finance news
     if collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol and should_collect_source('yahoo_finance_news'):
@@ -479,14 +480,14 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol:
-        logger.debug(f"Skipping Yahoo Finance news - not due for collection yet")
+        logger.debug("Skipping Yahoo Finance news - not due for collection yet")
 
     # Collect from RSS feeds
     if collection_config.get('rss_enabled', True) and should_collect_source('rss'):
         rss_sources = db.query(Source).filter(
             Source.customer_id == customer.id,
             Source.type == 'rss',
-            Source.enabled == True
+            Source.enabled.is_(True)
         ).all()
 
         rss_error = None
@@ -533,7 +534,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             error_message=rss_error
         )
     elif collection_config.get('rss_enabled', True):
-        logger.debug(f"Skipping RSS feeds - not due for collection yet")
+        logger.debug("Skipping RSS feeds - not due for collection yet")
 
     # Collect from Reddit
     if collection_config.get('reddit_enabled', False) and should_collect_source('reddit'):
@@ -596,7 +597,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                     items_failed_processing += failed
                     logger.info(f"YouTube collection complete: {len(items)} items collected, {failed} failed processing")
                 else:
-                    logger.info(f"YouTube collection complete: no items found")
+                    logger.info("YouTube collection complete: no items found")
                 if error:
                     errors.append(error)
             else:
@@ -623,7 +624,64 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('youtube_enabled', False):
-        logger.debug(f"Skipping YouTube - not due for collection yet")
+        logger.debug("Skipping YouTube - not due for collection yet")
+
+    # Collect from Gmail (press release digests)
+    if collection_config.get('gmail_enabled', False) and should_collect_source('gmail'):
+        try:
+            gmail_config = collection_config.get('gmail_config', {})
+            if gmail_config.get('connected', False):
+                logger.info(f"Starting Gmail collection for {customer.name}")
+                collector = GmailCollector(customer_config)
+                items, error = await collector.safe_collect()
+
+                # Update collection status
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='gmail',
+                    success=(error is None),
+                    error_message=error
+                )
+
+                if items:
+                    failed = await save_and_process_items(items, customer, db)
+                    items_collected += len(items)
+                    items_failed_processing += failed
+                if error:
+                    errors.append(error)
+            else:
+                logger.debug(f"Gmail enabled but not connected for {customer.name}")
+        except ValueError as e:
+            # Authentication errors (expired token, etc.)
+            error_msg = f"Gmail authentication error: {str(e)}"
+            logger.warning(error_msg)
+            errors.append(error_msg)
+
+            # Update collection status - mark as auth_required
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='gmail',
+                success=False,
+                error_message=error_msg,
+                status='auth_required'
+            )
+        except Exception as e:
+            error_msg = f"Gmail collection error: {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='gmail',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('gmail_enabled', False):
+        logger.debug("Skipping Gmail - not due for collection yet")
 
     # Collect from Twitter/X
     if collection_config.get('twitter_enabled', False) and should_collect_source('twitter'):
@@ -661,7 +719,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('twitter_enabled', False):
-        logger.debug(f"Skipping Twitter - not due for collection yet")
+        logger.debug("Skipping Twitter - not due for collection yet")
 
     # Collect from LinkedIn (company pages)
     if collection_config.get('linkedin_enabled', False) and should_collect_source('linkedin'):
@@ -697,7 +755,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('linkedin_enabled', False):
-        logger.debug(f"Skipping LinkedIn company pages - not due for collection yet")
+        logger.debug("Skipping LinkedIn company pages - not due for collection yet")
 
     # Collect from LinkedIn (company posts AND/OR user profiles via Playwright)
     # Single browser session handles both for efficiency
@@ -840,7 +898,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('pressrelease_enabled', False):
-        logger.debug(f"Skipping Press Release services - not due for collection yet")
+        logger.debug("Skipping Press Release services - not due for collection yet")
 
     # Collect from Australian News Sites
     if collection_config.get('australian_news_enabled', True) and should_collect_source('australian_news'):  # Enabled by default
@@ -876,7 +934,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('australian_news_enabled', True):
-        logger.debug(f"Skipping Australian News - not due for collection yet")
+        logger.debug("Skipping Australian News - not due for collection yet")
 
     # Collect from Google News
     if collection_config.get('google_news_enabled', True) and should_collect_source('google_news'):  # Enabled by default
@@ -912,7 +970,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('google_news_enabled', True):
-        logger.debug(f"Skipping Google News - not due for collection yet")
+        logger.debug("Skipping Google News - not due for collection yet")
 
     # Collect from Web Scraper Sources
     if collection_config.get('web_scrape_sources') and should_collect_source('web_scrape'):
@@ -948,7 +1006,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 error_message=error_msg
             )
     elif collection_config.get('web_scrape_sources'):
-        logger.debug(f"Skipping Web Scraper - not due for collection yet")
+        logger.debug("Skipping Web Scraper - not due for collection yet")
 
     logger.info(f"Completed {collection_type} collection for {customer.name}: {items_collected} items ({items_failed_processing} failed AI processing)")
 
@@ -1082,7 +1140,6 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                 # Exponential backoff: wait 2^attempt seconds between retries
                 if attempt > 0:
                     import asyncio
-                    import time
                     wait_time = 2 ** attempt
                     logger.info(f"Retrying AI processing for item {db_item.id} (attempt {attempt + 1}/{max_retries}) after {wait_time}s...")
                     await asyncio.sleep(wait_time)

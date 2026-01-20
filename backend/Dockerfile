@@ -16,10 +16,13 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install CPU-only PyTorch first (lighter, no CUDA)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Pin to 2.2.0 which has stable CPU wheels available
+RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+RUN pip install pydantic[email]
 
 # Note: Playwright and Chromium are already installed in the base image
 # No need to run 'playwright install' again

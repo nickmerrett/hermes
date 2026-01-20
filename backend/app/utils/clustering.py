@@ -1,7 +1,7 @@
 """Story clustering utilities for intelligent deduplication"""
 
 import uuid
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import numpy as np
@@ -210,7 +210,7 @@ def assign_to_cluster(
         # Check if this should be the new primary (higher priority source)
         current_primary = db.query(IntelligenceItem).filter(
             IntelligenceItem.cluster_id == cluster_id,
-            IntelligenceItem.is_cluster_primary == True
+            IntelligenceItem.is_cluster_primary.is_(True)
         ).first()
 
         if current_primary:

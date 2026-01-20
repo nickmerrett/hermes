@@ -8,8 +8,9 @@ from anthropic import Anthropic
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, DailySummary, PlatformSettings
+from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, DailySummary, PlatformSettings, User
 from app.config.settings import settings
 from app.core.prompt_loader import load_prompt_template, PromptTemplate
 import logging
@@ -42,7 +43,10 @@ def _create_ai_client_from_model_config(model_config):
 
 
 @router.get("/summary", response_model=schemas.AnalyticsSummary)
-async def get_analytics_summary(db: Session = Depends(get_db)):
+async def get_analytics_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get analytics summary across all intelligence items"""
 
     # Total items
@@ -95,7 +99,11 @@ async def get_analytics_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/daily-summary/{customer_id}")
-async def get_daily_summary(customer_id: int, db: Session = Depends(get_db)):
+async def get_daily_summary(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get daily summary of items collected in the last 24 hours for a specific customer"""
 
     yesterday = datetime.utcnow() - timedelta(days=1)
@@ -165,7 +173,8 @@ async def get_daily_summary_ai(
     force_refresh: bool = False,
     persona: str = None,
     custom_persona_text: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get or generate an AI-powered textual summary of the last 24 hours for a customer
@@ -305,7 +314,7 @@ async def get_daily_summary_ai(
                 if custom_persona_text:
                     # Custom persona text provided - use it directly
                     persona_instructions = custom_persona_text
-                    logger.info(f"Using custom persona text for daily summary")
+                    logger.info("Using custom persona text for daily summary")
                 elif persona:
                     # Persona key provided - lookup from template
                     try:

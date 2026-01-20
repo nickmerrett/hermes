@@ -35,13 +35,23 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         reddit_subreddits: [],
         youtube_channels: [],
         priority_keywords: [],
-        web_scrape_sources: []
+        web_scrape_sources: [],
+        gmail_enabled: false,
+        gmail_config: {
+          use_sender_whitelist: false,
+          sender_whitelist: [],
+          label_config: {
+            mark_as_read: true,
+            apply_label: ''
+          }
+        }
       }
     }
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [gmailStatus, setGmailStatus] = useState({ connected: false, email: null, loading: true });
 
   useEffect(() => {
     if (customer) {
@@ -90,12 +100,40 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
               },
               max_articles: source.max_articles || 20,
               extract_full_content: source.extract_full_content !== undefined ? source.extract_full_content : true
-            }))
+            })),
+            gmail_enabled: collectionConfig.gmail_enabled || false,
+            gmail_config: {
+              use_sender_whitelist: config.gmail_config?.use_sender_whitelist || false,
+              sender_whitelist: config.gmail_config?.sender_whitelist || [],
+              label_config: {
+                mark_as_read: config.gmail_config?.label_config?.mark_as_read !== undefined ? config.gmail_config.label_config.mark_as_read : true,
+                apply_label: config.gmail_config?.label_config?.apply_label || ''
+              }
+            }
           }
         }
       });
+
+      // Fetch Gmail connection status
+      fetchGmailStatus();
     }
   }, [customer]);
+
+  const fetchGmailStatus = async () => {
+    if (!customer?.id) return;
+
+    try {
+      const response = await axios.get(`${API_URL}/gmail/status/${customer.id}`);
+      setGmailStatus({
+        connected: response.data.connected,
+        email: response.data.email,
+        loading: false
+      });
+    } catch (err) {
+      console.error('Error fetching Gmail status:', err);
+      setGmailStatus({ connected: false, email: null, loading: false });
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -277,6 +315,66 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         }
       }
     });
+  };
+
+  // Gmail OAuth functions
+  const handleConnectGmail = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/gmail/oauth/start/${customer.id}`);
+      const authUrl = response.data.auth_url;
+
+      // Open OAuth popup
+      const width = 600;
+      const height = 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      const popup = window.open(
+        authUrl,
+        'Gmail OAuth',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+
+      // Poll for popup close and refresh status
+      const pollTimer = setInterval(() => {
+        if (popup && popup.closed) {
+          clearInterval(pollTimer);
+          // Refresh Gmail status after a short delay
+          setTimeout(() => {
+            fetchGmailStatus();
+          }, 1000);
+        }
+      }, 500);
+    } catch (err) {
+      console.error('Error starting Gmail OAuth:', err);
+      setError('Failed to connect Gmail: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!window.confirm('Disconnect Gmail? This will stop monitoring press release digests.')) {
+      return;
+    }
+
+    try {
+      await axios.post(`${API_URL}/gmail/disconnect/${customer.id}`);
+      setGmailStatus({ connected: false, email: null, loading: false });
+
+      // Also disable Gmail in form
+      setFormData({
+        ...formData,
+        config: {
+          ...formData.config,
+          collection_config: {
+            ...formData.config.collection_config,
+            gmail_enabled: false
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Error disconnecting Gmail:', err);
+      setError('Failed to disconnect Gmail: ' + (err.response?.data?.detail || err.message));
+    }
   };
 
   return (
@@ -906,6 +1004,24 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                 />
                 <span>Press Releases</span>
               </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={formData.config.collection_config.gmail_enabled}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        gmail_enabled: e.target.checked
+                      }
+                    }
+                  })}
+                  disabled={!gmailStatus.connected}
+                />
+                <span>Gmail Digest Monitoring</span>
+              </label>
             </div>
           </div>
 
@@ -1111,6 +1227,154 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Gmail Press Release Monitoring</h3>
+
+            <div className="gmail-connection-status">
+              {gmailStatus.loading ? (
+                <p>Loading Gmail status...</p>
+              ) : gmailStatus.connected ? (
+                <div className="gmail-connected">
+                  <div className="gmail-status-header">
+                    <span className="status-indicator status-connected">● Connected</span>
+                    <span className="gmail-email">{gmailStatus.email}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGmail}
+                    className="btn-disconnect"
+                  >
+                    Disconnect Gmail
+                  </button>
+                </div>
+              ) : (
+                <div className="gmail-not-connected">
+                  <p className="option-help">
+                    Connect your Gmail account to monitor press release digests from services like PR Newswire and Business Wire.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleConnectGmail}
+                    className="btn-connect-gmail"
+                  >
+                    Connect Gmail Account
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {gmailStatus.connected && (
+              <div className="gmail-config">
+                <div className="form-field">
+                  <label className="toggle-field">
+                    <input
+                      type="checkbox"
+                      checked={formData.config.collection_config.gmail_config.use_sender_whitelist}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        config: {
+                          ...formData.config,
+                          collection_config: {
+                            ...formData.config.collection_config,
+                            gmail_config: {
+                              ...formData.config.collection_config.gmail_config,
+                              use_sender_whitelist: e.target.checked
+                            }
+                          }
+                        }
+                      })}
+                    />
+                    <span>Filter by sender whitelist</span>
+                  </label>
+                  <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                    Only process emails from specific senders. Leave unchecked to process all emails.
+                  </small>
+                </div>
+
+                {formData.config.collection_config.gmail_config.use_sender_whitelist && (
+                  <div className="form-field">
+                    <label>Allowed Sender Domains</label>
+                    <textarea
+                      value={formData.config.collection_config.gmail_config.sender_whitelist.join('\n')}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        config: {
+                          ...formData.config,
+                          collection_config: {
+                            ...formData.config.collection_config,
+                            gmail_config: {
+                              ...formData.config.collection_config.gmail_config,
+                              sender_whitelist: e.target.value.split('\n').filter(s => s.trim())
+                            }
+                          }
+                        }
+                      })}
+                      placeholder="prnewswire.com&#10;businesswire.com&#10;ir@company.com"
+                      rows="4"
+                    />
+                    <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                      One sender domain or email per line (e.g., prnewswire.com or news@businesswire.com)
+                    </small>
+                  </div>
+                )}
+
+                <div className="form-field">
+                  <label className="toggle-field">
+                    <input
+                      type="checkbox"
+                      checked={formData.config.collection_config.gmail_config.label_config.mark_as_read}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        config: {
+                          ...formData.config,
+                          collection_config: {
+                            ...formData.config.collection_config,
+                            gmail_config: {
+                              ...formData.config.collection_config.gmail_config,
+                              label_config: {
+                                ...formData.config.collection_config.gmail_config.label_config,
+                                mark_as_read: e.target.checked
+                              }
+                            }
+                          }
+                        }
+                      })}
+                    />
+                    <span>Mark emails as read after processing</span>
+                  </label>
+                </div>
+
+                <div className="form-field">
+                  <label>Gmail Label (optional)</label>
+                  <input
+                    type="text"
+                    value={formData.config.collection_config.gmail_config.label_config.apply_label}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      config: {
+                        ...formData.config,
+                        collection_config: {
+                          ...formData.config.collection_config,
+                          gmail_config: {
+                            ...formData.config.collection_config.gmail_config,
+                            label_config: {
+                              ...formData.config.collection_config.gmail_config.label_config,
+                              apply_label: e.target.value
+                            }
+                          }
+                        }
+                      }
+                    })}
+                    placeholder="Intelligence/Processed"
+                  />
+                  <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                    Apply this label to processed emails. Leave empty to skip labeling.
+                  </small>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="modal-footer">

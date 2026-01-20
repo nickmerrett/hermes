@@ -3,6 +3,12 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
+email-validator
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # Pin to 4.0.x for passlib compatibility
 
 # Database
 sqlalchemy==2.0.25
@@ -31,6 +37,12 @@ tweepy==4.14.0           # Twitter/X API
 PyGithub==2.1.1          # GitHub API
 google-api-python-client==2.100.0  # YouTube Data API v3
 youtube-transcript-api==1.2.3      # YouTube transcript fetching
+
+# Gmail OAuth (for press release digest monitoring)
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+cryptography==42.0.0     # For encrypting OAuth tokens
 
 # Scheduling
 apscheduler==3.10.4

@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import Customer
+from app.models.database import Customer, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,8 @@ router = APIRouter()
 async def list_customers(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Get list of all customers"""
     customers = db.query(Customer).offset(skip).limit(limit).all()
@@ -25,7 +27,11 @@ async def list_customers(
 
 
 @router.get("/{customer_id}", response_model=schemas.CustomerResponse)
-async def get_customer(customer_id: int, db: Session = Depends(get_db)):
+async def get_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get a specific customer by ID"""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -36,7 +42,8 @@ async def get_customer(customer_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.CustomerResponse, status_code=201)
 async def create_customer(
     customer: schemas.CustomerCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Create a new customer"""
     db_customer = Customer(
@@ -59,7 +66,8 @@ async def create_customer(
 async def update_customer(
     customer_id: int,
     customer_update: schemas.CustomerUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Update a customer"""
     db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -79,7 +87,11 @@ async def update_customer(
 
 
 @router.delete("/{customer_id}", status_code=204)
-async def delete_customer(customer_id: int, db: Session = Depends(get_db)):
+async def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Delete a customer"""
     db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:

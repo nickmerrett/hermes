@@ -7,8 +7,9 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus
+from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus, User
 from app.utils.smart_feed import (
     get_smart_feed_settings,
     calculate_effective_priority,
@@ -34,7 +35,8 @@ async def get_feed(
     clustered: bool = Query(True, description="Show clustered view (only primary items)"),
     limit: int = Query(50, ge=1, le=200, description="Number of items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get intelligence feed with filtering and pagination
@@ -65,7 +67,7 @@ async def get_feed(
     filters = []
 
     # Always filter out ignored items
-    filters.append(IntelligenceItem.ignored == False)
+    filters.append(IntelligenceItem.ignored.is_(False))
 
     if customer_id:
         filters.append(IntelligenceItem.customer_id == customer_id)
@@ -116,7 +118,7 @@ async def get_feed(
 
     # Clustering filter - only show primary items
     if clustered:
-        filters.append(IntelligenceItem.is_cluster_primary == True)
+        filters.append(IntelligenceItem.is_cluster_primary.is_(True))
 
     if filters:
         query = query.filter(and_(*filters))
@@ -179,7 +181,8 @@ async def get_feed(
 @router.get("/collection-errors")
 async def get_collection_errors(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get collection errors and auth issues
@@ -195,7 +198,7 @@ async def get_collection_errors(
         and_(
             CollectionStatus.status.in_(['error', 'auth_required']),
             CollectionStatus.updated_at >= twenty_four_hours_ago,
-            CollectionStatus.dismissed == False  # Don't show dismissed errors
+            CollectionStatus.dismissed.is_(False)  # Don't show dismissed errors
         )
     )
 
@@ -223,7 +226,11 @@ async def get_collection_errors(
 
 
 @router.get("/{item_id}", response_model=schemas.IntelligenceItemDetail)
-async def get_item(item_id: int, db: Session = Depends(get_db)):
+async def get_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get detailed information about a specific intelligence item"""
     item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
 
@@ -234,7 +241,11 @@ async def get_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/cluster/{cluster_id}")
-async def get_cluster_items(cluster_id: str, db: Session = Depends(get_db)):
+async def get_cluster_items(
+    cluster_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Get all items in a cluster
 
@@ -260,7 +271,11 @@ async def get_cluster_items(cluster_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{item_id}/ignore")
-async def ignore_item(item_id: int, db: Session = Depends(get_db)):
+async def ignore_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Mark an intelligence item as ignored (hide from feed)"""
     item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
 
@@ -276,7 +291,11 @@ async def ignore_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{item_id}/unignore")
-async def unignore_item(item_id: int, db: Session = Depends(get_db)):
+async def unignore_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Un-ignore an intelligence item (show in feed again)"""
     item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
 
@@ -292,7 +311,11 @@ async def unignore_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/collection-errors/{error_id}/dismiss")
-async def dismiss_error(error_id: int, db: Session = Depends(get_db)):
+async def dismiss_error(
+    error_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Dismiss a collection error (hide from error banner)"""
     error = db.query(CollectionStatus).filter(CollectionStatus.id == error_id).first()
 
@@ -308,7 +331,11 @@ async def dismiss_error(error_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{item_id}", status_code=204)
-async def delete_item(item_id: int, db: Session = Depends(get_db)):
+async def delete_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Delete an intelligence item permanently (use ignore instead if you just want to hide it)"""
     item = db.query(IntelligenceItem).filter(IntelligenceItem.id == item_id).first()
 

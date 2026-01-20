@@ -211,7 +211,7 @@ class YahooFinanceNewsCollector(BaseCollector):
             if isinstance(published_date, str):
                 try:
                     published_date = datetime.fromisoformat(published_date.replace('Z', '+00:00'))
-                except:
+                except ValueError:
                     published_date = None
 
             return self._create_item(

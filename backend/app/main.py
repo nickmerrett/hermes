@@ -6,15 +6,13 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 # Disable ChromaDB telemetry to suppress posthog errors
 os.environ['ANONYMIZED_TELEMETRY'] = 'False'
 
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
 import logging
-from typing import List, Optional
 from datetime import datetime
 import json
 
@@ -22,7 +20,7 @@ from app.config.settings import settings
 from app.core.database import init_db, get_db
 from app.core.vector_store import get_vector_store
 from app.models import schemas
-from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing
+from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing, gmail, executive_relationship, auth, rss
 from app import __version__
 
 # Configure logging
@@ -108,6 +106,8 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(rss.router, prefix="/api/rss", tags=["rss"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(feed.router, prefix="/api/feed", tags=["feed"])
 app.include_router(sources.router, prefix="/api/sources", tags=["sources"])
@@ -117,6 +117,8 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 app.include_router(customer_research.router, prefix="/api/customer-research", tags=["customer-research"])
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(testing.router, prefix="/api/testing", tags=["testing"])
+app.include_router(gmail.router, prefix="/api", tags=["gmail"])
+app.include_router(executive_relationship.router, prefix="/api", tags=["executives"])
 
 
 @app.get("/")

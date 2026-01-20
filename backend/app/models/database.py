@@ -179,3 +179,38 @@ class PlatformSettings(Base):
     key = Column(String(255), unique=True, nullable=False, index=True)  # 'daily_briefing', 'ai_config', etc.
     value = Column(JSON, nullable=False)  # JSON configuration
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class User(Base):
+    """User accounts for authentication"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default="user")  # 'platform_admin' or 'user'
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    # Relationships
+    rss_tokens = relationship("RSSFeedToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class RSSFeedToken(Base):
+    """Tokens for RSS feed access"""
+    __tablename__ = "rss_feed_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)  # User-given name for this token
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used = Column(DateTime, nullable=True)
+
+    # Relationships
+    customer = relationship("Customer")
+    user = relationship("User", back_populates="rss_tokens")

@@ -6,11 +6,10 @@ import httpx
 from bs4 import BeautifulSoup
 from dateutil import parser as date_parser
 import trafilatura
-import logging
 import asyncio
 
 try:
-    from playwright.async_api import async_playwright, Page, Browser
+    from playwright.async_api import async_playwright, Page
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -124,7 +123,6 @@ class WebScraperCollector(RateLimitedCollector):
 
         source_name = source_config.get('name', 'Unknown Source')
         url = source_config.get('url')
-        mode = source_config.get('mode', 'trafilatura')
         extract_full = source_config.get('extract_full_content', True)
         selectors = source_config.get('selectors', {})
         max_articles = source_config.get('max_articles', 20)
@@ -275,7 +273,7 @@ class WebScraperCollector(RateLimitedCollector):
             if date_str:
                 try:
                     published_date = date_parser.parse(date_str)
-                except:
+                except (ValueError, TypeError):
                     pass
 
             return self._create_item(

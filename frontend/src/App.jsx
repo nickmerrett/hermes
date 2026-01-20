@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import axios from 'axios'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { Link } from 'react-router-dom'
+import { useAuth } from './contexts/AuthContext'
+import { apiClient } from './api/auth'
 import ErrorBanner from './components/ErrorBanner'
 import CustomerEditModal from './components/CustomerEditModal'
 import PlatformSettingsModal from './components/PlatformSettingsModal'
+import RSSTokenManager from './components/RSSTokenManager'
 import './styles/App.css'
-
-const API_URL = import.meta.env.VITE_API_URL || '/api'
 
 function App() {
   const [feed, setFeed] = useState([])
@@ -32,6 +32,9 @@ function App() {
   const [collectionErrors, setCollectionErrors] = useState([])
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showRSSModal, setShowRSSModal] = useState(false)
+
+  const { user, isAdmin, logout, isAuthenticated, isLoading: authLoading } = useAuth()
 
   // Auto-refresh settings (persisted in localStorage)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => {
@@ -55,6 +58,9 @@ function App() {
   }, [autoRefreshInterval])
 
   useEffect(() => {
+    // Don't fetch until auth is ready and user is authenticated
+    if (authLoading || !isAuthenticated) return
+
     fetchCustomers()
     fetchAnalytics()
     fetchCollectionErrors()
@@ -62,7 +68,7 @@ function App() {
     // Poll for collection errors every 2 minutes
     const errorInterval = setInterval(fetchCollectionErrors, 120000)
     return () => clearInterval(errorInterval)
-  }, [])
+  }, [authLoading, isAuthenticated])
 
   // Auto-refresh feed
   useEffect(() => {
@@ -90,7 +96,7 @@ function App() {
 
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/customers`)
+      const response = await apiClient.get(`/customers`)
       setCustomers(response.data)
       // Auto-select first customer if available
       if (response.data.length > 0 && !selectedCustomer) {
@@ -103,7 +109,7 @@ function App() {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await axios.get(`${API_URL}/analytics/summary`)
+      const response = await apiClient.get(`/analytics/summary`)
       setAnalytics(response.data)
     } catch (err) {
       console.error('Error fetching analytics:', err)
@@ -123,7 +129,7 @@ function App() {
       let persona = null;
       let customPersonaText = null;
       try {
-        const settingsResponse = await axios.get(`${API_URL}/settings/platform`);
+        const settingsResponse = await apiClient.get(`/settings/platform`);
         const settings = settingsResponse.data;
         if (settings.daily_briefing) {
           const template = settings.daily_briefing.template;
@@ -146,7 +152,7 @@ function App() {
         params.custom_persona_text = customPersonaText;
       }
 
-      const response = await axios.get(`${API_URL}/analytics/daily-summary-ai/${selectedCustomer}`, {
+      const response = await apiClient.get(`/analytics/daily-summary-ai/${selectedCustomer}`, {
         params: params
       })
       // If response is null/empty, keep dailySummary as null to show placeholder
@@ -172,7 +178,7 @@ function App() {
         if (params[key] === '' || params[key] === null) delete params[key]
       })
 
-      const response = await axios.get(`${API_URL}/feed`, { params })
+      const response = await apiClient.get(`/feed`, { params })
 
       // Filter out 'unrelated' items unless explicitly selected
       let filteredItems = response.data.items
@@ -199,7 +205,7 @@ function App() {
 
   const fetchClusterItems = async (clusterId) => {
     try {
-      const response = await axios.get(`${API_URL}/feed/cluster/${clusterId}`)
+      const response = await apiClient.get(`/feed/cluster/${clusterId}`)
       setClusterItems(prev => ({
         ...prev,
         [clusterId]: response.data.items
@@ -226,7 +232,7 @@ function App() {
   const triggerCollection = async () => {
     // Global collection - collect for ALL customers
     try {
-      await axios.post(`${API_URL}/jobs/trigger`, {})
+      await apiClient.post(`/jobs/trigger`, {})
       // Refresh feed and summary after collection
       setTimeout(() => {
         fetchFeed()
@@ -242,7 +248,7 @@ function App() {
     if (!selectedCustomer) return
 
     try {
-      await axios.post(`${API_URL}/jobs/trigger`, {}, {
+      await apiClient.post(`/jobs/trigger`, {}, {
         params: { customer_id: selectedCustomer }
       })
       // Refresh feed and summary after collection
@@ -261,7 +267,7 @@ function App() {
     }
 
     try {
-      await axios.patch(`${API_URL}/feed/${itemId}/ignore`)
+      await apiClient.patch(`/feed/${itemId}/ignore`)
       // Remove item from feed or search results locally
       if (searchResults) {
         setSearchResults({
@@ -282,7 +288,7 @@ function App() {
   const fetchCollectionErrors = async () => {
     try {
       const params = selectedCustomer ? { customer_id: selectedCustomer } : {}
-      const response = await axios.get(`${API_URL}/feed/collection-errors`, { params })
+      const response = await apiClient.get(`/feed/collection-errors`, { params })
       setCollectionErrors(response.data.errors)
     } catch (err) {
       console.error('Failed to fetch collection errors:', err)
@@ -291,7 +297,7 @@ function App() {
 
   const dismissError = async (error) => {
     try {
-      await axios.patch(`${API_URL}/feed/collection-errors/${error.id}/dismiss`)
+      await apiClient.patch(`/feed/collection-errors/${error.id}/dismiss`)
       // Remove from local state
       setCollectionErrors(prev => prev.filter(e => e.id !== error.id))
     } catch (err) {
@@ -302,7 +308,7 @@ function App() {
 
   const handleDeleteCustomer = async (customerId) => {
     try {
-      await axios.delete(`${API_URL}/customers/${customerId}`)
+      await apiClient.delete(`/customers/${customerId}`)
       // Refresh customer list
       fetchCustomers()
       // Clear selection if deleted customer was selected
@@ -326,7 +332,7 @@ function App() {
 
     setSearchLoading(true)
     try {
-      const response = await axios.post(`${API_URL}/search`, {
+      const response = await apiClient.post(`/search`, {
         query: searchQuery,
         customer_id: selectedCustomer,
         limit: 20,
@@ -399,12 +405,17 @@ function App() {
             Full Collection
           </button>
           <button onClick={() => setShowSettingsModal(true)} className="btn-secondary" title="Platform Settings">
-          ⚙
+          Settings
           </button>
-          <Link to="/executive/jane-smith" className="btn-secondary" title="Test Executive Dashboard">
-          👤 Test Exec Dashboard
-          </Link>
-          
+          {isAdmin && (
+            <Link to="/admin" className="btn-secondary" title="User Administration">
+              Admin
+            </Link>
+          )}
+          <span className="user-email">{user?.email}</span>
+          <button onClick={logout} className="btn-logout" title="Sign out">
+            Logout
+          </button>
         </div>
       </header>
 
@@ -452,14 +463,21 @@ function App() {
               onClick={triggerCustomerCollection}
               title="Trigger collection for this customer only"
             >
-              ▶ Collect
+              Collect
+            </button>
+            <button
+              className="btn-rss-header"
+              onClick={() => setShowRSSModal(true)}
+              title="RSS Feed"
+            >
+              RSS
             </button>
             <button
               className="btn-settings-header"
               onClick={() => setEditingCustomer(currentCustomer)}
               title="Customer settings"
             >
-              ⚙
+              Settings
             </button>
           </div>
         </div>
@@ -975,6 +993,15 @@ function App() {
             }
             setShowSettingsModal(false)
           }}
+        />
+      )}
+
+      {/* RSS Token Manager Modal */}
+      {showRSSModal && selectedCustomer && currentCustomer && (
+        <RSSTokenManager
+          customerId={selectedCustomer}
+          customerName={currentCustomer.name}
+          onClose={() => setShowRSSModal(false)}
         />
       )}
     </div>

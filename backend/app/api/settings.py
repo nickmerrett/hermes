@@ -6,7 +6,8 @@ from typing import Dict, Any
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models.database import PlatformSettings
+from app.core.dependencies import get_current_user, require_platform_admin
+from app.models.database import PlatformSettings, User
 
 router = APIRouter()
 
@@ -24,7 +25,10 @@ class PlatformSettingsUpdate(BaseModel):
 
 
 @router.get("/settings/platform")
-def get_platform_settings(db: Session = Depends(get_db)):
+def get_platform_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Get all platform settings
 
@@ -229,7 +233,8 @@ def get_platform_settings(db: Session = Depends(get_db)):
 @router.put("/settings/platform")
 def update_platform_settings(
     settings_update: PlatformSettingsUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_platform_admin)
 ):
     """
     Update platform settings
@@ -383,7 +388,10 @@ def update_platform_settings(
 
 
 @router.get("/settings/daily-briefing-prompt")
-def get_daily_briefing_prompt(db: Session = Depends(get_db)):
+def get_daily_briefing_prompt(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Get the current daily briefing prompt configuration
 
@@ -412,7 +420,7 @@ Keep the summary professional, actionable, and under 300 words.""",
 
 
 @router.get("/settings/ai-config-status")
-def get_ai_config_status():
+def get_ai_config_status(current_user: User = Depends(get_current_user)):
     """
     Get AI configuration status including whether UI override is enabled
     and current env var values
@@ -431,7 +439,7 @@ def get_ai_config_status():
 
 
 @router.get("/settings/daily-summary-personas")
-def get_daily_summary_personas():
+def get_daily_summary_personas(current_user: User = Depends(get_current_user)):
     """
     Get available personas for daily summaries from the prompt template
 

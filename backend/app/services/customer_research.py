@@ -189,7 +189,6 @@ class CustomerResearchService:
 
     def _extract_json_from_text(self, text: str) -> str:
         """Extract JSON from text that may contain markdown or explanatory text"""
-        import re
 
         # Try to find JSON in markdown code blocks
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
@@ -254,7 +253,6 @@ Rules:
 
         except Exception as e:
             logger.error(f"Error researching basic info: {e}", exc_info=True)
-            logger.error(f"Raw AI response (if available): {response.content[0].text if 'response' in locals() else 'N/A'}")
             return {
                 'domain': None,
                 'description': None,
@@ -329,7 +327,7 @@ Rules:
                 web_content = await self._search_leadership_page(domain, company_name)
                 if web_content:
                     sources_content.append(("Company Website", web_content))
-                    logger.info(f"✓ Found executives on company website")
+                    logger.info("✓ Found executives on company website")
             except Exception as e:
                 logger.warning(f"Company website search failed: {e}")
 

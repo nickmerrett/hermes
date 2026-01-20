@@ -1,36 +1,22 @@
 """Smart feed filtering utilities"""
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.models.database import PlatformSettings, IntelligenceItem, ProcessedIntelligence
+from app.models.database import PlatformSettings, IntelligenceItem, ProcessedIntelligence, Customer
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def get_smart_feed_settings(db: Session) -> Dict[str, Any]:
-    """
-    Get smart feed configuration from database
-
-    Returns default settings if not configured in database
-    """
-    try:
-        setting = db.query(PlatformSettings).filter(
-            PlatformSettings.key == 'smart_feed_config'
-        ).first()
-
-        if setting and setting.value:
-            return setting.value
-    except Exception as e:
-        logger.warning(f"Error loading smart feed settings from database: {e}")
-
-    # Return defaults if not configured
+def get_default_smart_feed_settings() -> Dict[str, Any]:
+    """Return the default smart feed settings"""
     return {
         'enabled': True,
         'min_priority': 0.3,
         'high_priority_threshold': 0.7,
+        'max_items': 50,
         'recency_boost': {
             'enabled': True,
             'boost_amount': 0.1,
@@ -67,6 +53,74 @@ def get_smart_feed_settings(db: Session) -> Dict[str, Any]:
             'max_consecutive_same_source': 3
         }
     }
+
+
+def get_smart_feed_settings(db: Session) -> Dict[str, Any]:
+    """
+    Get global smart feed configuration from database
+
+    Returns default settings if not configured in database
+    """
+    try:
+        setting = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'smart_feed_config'
+        ).first()
+
+        if setting and setting.value:
+            return setting.value
+    except Exception as e:
+        logger.warning(f"Error loading smart feed settings from database: {e}")
+
+    return get_default_smart_feed_settings()
+
+
+def get_customer_smart_feed_settings(db: Session, customer_id: int) -> Dict[str, Any]:
+    """
+    Get smart feed settings for a specific customer.
+
+    Merges customer-specific overrides with global settings.
+    Customer settings stored in customer.config['smart_feed']
+
+    Args:
+        db: Database session
+        customer_id: Customer ID
+
+    Returns:
+        Merged smart feed settings (customer overrides take precedence)
+    """
+    # Get global settings as base
+    global_settings = get_smart_feed_settings(db)
+
+    # Get customer
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer or not customer.config:
+        return global_settings
+
+    # Get customer-specific smart feed settings
+    customer_smart_feed = customer.config.get('smart_feed')
+    if not customer_smart_feed:
+        return global_settings
+
+    # Check if customer wants to use custom settings
+    if not customer_smart_feed.get('use_custom', False):
+        return global_settings
+
+    # Deep merge customer settings over global settings
+    merged = _deep_merge(global_settings, customer_smart_feed)
+    return merged
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Deep merge two dictionaries, with override taking precedence.
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
 
 
 def calculate_effective_priority(
@@ -183,7 +237,6 @@ def apply_diversity_control(
         return items
 
     result = []
-    source_count = {}
     consecutive_count = 0
     last_source = None
 

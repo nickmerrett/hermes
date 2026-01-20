@@ -2,7 +2,6 @@
 
 from pydantic_settings import BaseSettings
 from typing import List
-import os
 
 
 class Settings(BaseSettings):
@@ -23,6 +22,24 @@ class Settings(BaseSettings):
     github_token: str = ""
 
     youtube_api_key: str = ""
+
+    # Gmail OAuth (for press release digest monitoring)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8000/api/gmail/oauth/callback"
+
+    # Encryption (for storing OAuth tokens securely)
+    encryption_key: str = ""  # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+    # JWT Authentication
+    jwt_secret_key: str = ""  # Required - Generate with: openssl rand -hex 32
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 1440  # 24 hours
+    jwt_refresh_token_expire_days: int = 7
+
+    # Bootstrap admin account (created on first startup if no users exist)
+    first_admin_email: str = ""
+    first_admin_password: str = ""
 
     # Third-party services (optional)
     proxycurl_api_key: str = ""  # For LinkedIn data (deprecated)

@@ -6,8 +6,9 @@ from sqlalchemy import desc
 from typing import List
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import CollectionJob
+from app.models.database import CollectionJob, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ router = APIRouter()
 async def list_jobs(
     limit: int = 50,
     customer_id: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Get list of recent collection jobs"""
     query = db.query(CollectionJob)
@@ -31,7 +33,11 @@ async def list_jobs(
 
 
 @router.get("/{job_id}", response_model=schemas.CollectionJobResponse)
-async def get_job(job_id: int, db: Session = Depends(get_db)):
+async def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get details of a specific job"""
     job = db.query(CollectionJob).filter(CollectionJob.id == job_id).first()
 
@@ -45,7 +51,8 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
 async def trigger_collection(
     background_tasks: BackgroundTasks,
     customer_id: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Manually trigger a collection job"""
     from app.scheduler.collection import run_collection
@@ -63,7 +70,8 @@ async def trigger_collection(
 async def trigger_purge(
     background_tasks: BackgroundTasks,
     retention_days: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Manually trigger a data purge job
 
@@ -86,7 +94,7 @@ async def trigger_purge(
 
 
 @router.get("/scheduler/status")
-async def get_scheduler_status():
+async def get_scheduler_status(current_user: User = Depends(get_current_user)):
     """Get scheduler status and next run times for scheduled jobs"""
     from app.scheduler.jobs import get_scheduler_status
 
@@ -98,7 +106,8 @@ async def reprocess_failed_items(
     background_tasks: BackgroundTasks,
     customer_id: int = None,
     max_items: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Find and reprocess items that failed AI processing
@@ -123,9 +132,9 @@ async def reprocess_failed_items(
 
     # Find items with processing errors
     query = db.query(ProcessedIntelligence).filter(
-        (ProcessedIntelligence.last_processing_error != None) |
+        (ProcessedIntelligence.last_processing_error.isnot(None)) |
         (ProcessedIntelligence.last_processing_error != '') |
-        (ProcessedIntelligence.needs_reprocessing == True)
+        (ProcessedIntelligence.needs_reprocessing.is_(True))
     )
 
     if customer_id:
@@ -291,7 +300,7 @@ async def reprocess_failed_items(
                             # Delete existing embedding if it exists
                             try:
                                 vector_store.delete_item(item.id)
-                            except:
+                            except Exception:
                                 pass  # Item might not exist in vector store yet
 
                             # Add updated embedding
@@ -392,7 +401,8 @@ async def reprocess_incomplete_items(
     background_tasks: BackgroundTasks,
     customer_id: int = None,
     max_items: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Find and reprocess items with missing/incomplete AI processing
@@ -417,23 +427,22 @@ async def reprocess_incomplete_items(
     from app.models.database import Customer
     from app.core.vector_store import get_vector_store
     from datetime import datetime
-    import asyncio
 
     # Find items with missing AI processing data
     # Only for new processing or flagged items - does NOT backfill pain points
     # (Use force_reprocess parameter to backfill all items)
     query = db.query(ProcessedIntelligence).filter(
         (
-            (ProcessedIntelligence.summary == None) |
+            (ProcessedIntelligence.summary.is_(None)) |
             (ProcessedIntelligence.summary == '') |
-            (ProcessedIntelligence.entities == None) |
+            (ProcessedIntelligence.entities.is_(None)) |
             (ProcessedIntelligence.entities == '{}') |
             (ProcessedIntelligence.entities == '{"companies": [], "technologies": [], "people": []}')
         ) &
         (
-            (ProcessedIntelligence.needs_reprocessing == True) |
+            (ProcessedIntelligence.needs_reprocessing.is_(True)) |
             (ProcessedIntelligence.processing_attempts == 0) |
-            (ProcessedIntelligence.processing_attempts == None)
+            (ProcessedIntelligence.processing_attempts.is_(None))
         )
     )
 
@@ -591,7 +600,7 @@ async def reprocess_incomplete_items(
                             # Delete existing embedding if it exists
                             try:
                                 vector_store.delete_item(item.id)
-                            except:
+                            except Exception:
                                 pass  # Item might not exist in vector store yet
 
                             # Add updated embedding

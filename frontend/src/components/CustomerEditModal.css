@@ -397,3 +397,85 @@
 .complex-item-fields .toggle-field {
   width: fit-content;
 }
+
+/* Gmail Configuration Styles */
+.gmail-connection-status {
+  margin: 16px 0;
+  padding: 16px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.gmail-connected {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.gmail-status-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-indicator {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-connected {
+  color: #10b981;
+}
+
+.gmail-email {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.btn-disconnect {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.btn-disconnect:hover {
+  background: #dc2626;
+}
+
+.gmail-not-connected {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-connect-gmail {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+.btn-connect-gmail:hover {
+  background: #2563eb;
+}
+
+.gmail-config {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}

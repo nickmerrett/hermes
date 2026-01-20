@@ -167,7 +167,7 @@ class GoogleNewsCollector(RateLimitedCollector):
                         if hasattr(entry, 'published_parsed') and entry.published_parsed:
                             try:
                                 published_date = datetime(*entry.published_parsed[:6])
-                            except:
+                            except (ValueError, TypeError):
                                 pass
 
                         # Extract source from title (Google News format: "Title - Source")

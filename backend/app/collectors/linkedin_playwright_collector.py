@@ -9,7 +9,7 @@ Requirements:
     playwright install chromium
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import asyncio
 import json
@@ -45,7 +45,7 @@ def get_linkedin_settings(db: Session = None) -> Dict[str, Any]:
 
             if setting and setting.value and 'linkedin' in setting.value:
                 return setting.value['linkedin']
-        except Exception as e:
+        except Exception:
             # Database might not be available during initialization
             pass
 
@@ -379,7 +379,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                 headline = await page.text_content('div.text-body-medium', timeout=5000)
                 if headline:
                     headline = headline.strip()
-            except:
+            except Exception:
                 headline = None
 
             # Extract current position
@@ -390,7 +390,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                     job_title = job_title.strip() if job_title else None
                 else:
                     job_title = headline
-            except:
+            except Exception:
                 job_title = headline
 
             # Create profile update item
@@ -499,7 +499,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                     posts = await page.query_selector_all(selector)
                     if posts:
                         break
-                except:
+                except Exception:
                     continue
 
             if not posts:
@@ -569,7 +569,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                                         for link in all_links[:3]:  # Log first 3 links
                                             href = await link.get_attribute('href')
                                             self.logger.debug(f"  Link: {href}")
-                                except:
+                                except Exception:
                                     pass
 
                                 # Use profile URL with content hash as fallback
@@ -605,11 +605,11 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                                             self.logger.info(f"✓ Parsed post date from '{selector}': '{date_text}' -> {post_date.strftime('%Y-%m-%d %H:%M')}")
                                             date_found = True
                                             break
-                                except Exception as e:
+                                except Exception:
                                     continue
 
                             if not date_found:
-                                self.logger.warning(f"Could not extract date for post, using current time")
+                                self.logger.warning("Could not extract date for post, using current time")
 
                             # Create post item
                             item = self._create_item(
@@ -688,7 +688,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                     if posts:
                         self.logger.info(f"Found posts using selector: {selector}")
                         break
-                except:
+                except Exception:
                     continue
 
             if not posts:
@@ -779,11 +779,11 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                                             self.logger.info(f"✓ Parsed post date from '{selector}': '{date_text}' -> {post_date.strftime('%Y-%m-%d %H:%M')}")
                                             date_found = True
                                             break
-                                except Exception as e:
+                                except Exception:
                                     continue
 
                             if not date_found:
-                                self.logger.warning(f"Could not extract date for post, using current time")
+                                self.logger.warning("Could not extract date for post, using current time")
 
                             # Create post item with linkedin_company source type
                             item = self._create_item(

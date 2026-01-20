@@ -40,6 +40,18 @@ An AI-powered platform that aggregates and analyzes information from 10+ sources
 - **Keyword Generation** - Smart monitoring terms
 - **One-Click YAML Export** - Ready-to-use configuration
 
+### 🔐 Authentication & Access Control
+- **JWT Authentication** - Secure token-based authentication
+- **Role-Based Access** - Platform admin and user roles
+- **Admin User Management** - Create, edit, and delete users
+- **Bootstrap Admin** - First admin created from environment variables
+
+### 📡 RSS Feed Export
+- **Token-Based RSS Feeds** - Subscribe to customer intelligence in any RSS reader
+- **Per-Customer Settings** - Customize smart feed filtering per customer
+- **Configurable Filters** - Category preferences, source preferences, priority thresholds
+- **Multiple Tokens** - Create multiple RSS tokens per customer for different readers
+
 ### ⚡ Reliability & Error Handling
 - **Automatic Retry** - 3 attempts with exponential backoff
 - **Failed Item Tracking** - Visual indicators for items needing reprocessing
@@ -69,6 +81,9 @@ An AI-powered platform that aggregates and analyzes information from 10+ sources
 - API Keys:
   - Anthropic Claude API key
   - NewsAPI key (free tier available at https://newsapi.org)
+- Authentication:
+  - JWT secret key (generate with `openssl rand -hex 32`)
+  - First admin email and password
 
 ### Setup
 
@@ -162,6 +177,20 @@ Full API documentation available at `http://localhost:8000/docs` (OpenAPI/Swagge
 - `GET /api/analytics/daily-summary-ai/{customer_id}` - AI daily summary
 - `POST /api/jobs/reprocess-failed` - Retry failed AI processing
 
+**Authentication:**
+- `POST /api/auth/login` - Login with email/password
+- `POST /api/auth/refresh` - Refresh access token
+- `GET /api/auth/me` - Get current user info
+- `POST /api/auth/users` - Create user (admin only)
+- `GET /api/auth/users` - List users (admin only)
+
+**RSS Feeds:**
+- `GET /api/rss/feed?token=xxx` - Get RSS feed (token auth)
+- `GET /api/rss/tokens` - List user's RSS tokens
+- `POST /api/rss/tokens` - Create RSS token for a customer
+- `GET /api/rss/settings/{customer_id}` - Get customer feed settings
+- `PUT /api/rss/settings/{customer_id}` - Update customer feed settings
+
 ## 🛠️ Tech Stack
 
 - **Backend:** FastAPI, SQLAlchemy, APScheduler
@@ -179,7 +208,6 @@ Full API documentation available at `http://localhost:8000/docs` (OpenAPI/Swagge
 ### Known Limitations
 - LinkedIn scraping may be fragile (Playwright-based)
 - NewsAPI free tier: 100 requests/day limit
-- Single-user system (no authentication)
 - No mobile app (responsive web only)
 
 ## 🤝 Contributing

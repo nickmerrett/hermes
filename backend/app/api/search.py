@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.core.vector_store import get_vector_store
 from app.models import schemas
-from app.models.database import IntelligenceItem
+from app.models.database import IntelligenceItem, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,8 @@ router = APIRouter()
 @router.post("", response_model=schemas.SearchResponse)
 async def semantic_search(
     query: schemas.SemanticSearchQuery,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Perform hybrid search across intelligence items
@@ -116,7 +118,10 @@ async def semantic_search(
 
 
 @router.get("/diagnostics")
-async def vector_store_diagnostics(db: Session = Depends(get_db)):
+async def vector_store_diagnostics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Get vector store diagnostics to help debug search issues
     """

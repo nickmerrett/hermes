@@ -1,19 +1,43 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './contexts/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import App from './App'
+import LoginPage from './pages/LoginPage'
 import AddCustomerPage from './pages/AddCustomerPage'
 import ExecutiveDashboardPage from './pages/ExecutiveDashboard/ExecutiveDashboardPage'
+import AdminPanel from './components/AdminPanel'
 import './styles/index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/add-customer" element={<AddCustomerPage />} />
-        <Route path="/executive/:executiveId" element={<ExecutiveDashboardPage />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={
+            <ProtectedRoute>
+              <App />
+            </ProtectedRoute>
+          } />
+          <Route path="/add-customer" element={
+            <ProtectedRoute>
+              <AddCustomerPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/executive/:executiveId" element={
+            <ProtectedRoute>
+              <ExecutiveDashboardPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin" element={
+            <ProtectedRoute requireAdmin>
+              <AdminPanel />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
 )

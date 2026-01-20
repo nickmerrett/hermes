@@ -2,7 +2,6 @@
 
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-import os
 import time
 import random
 from googleapiclient.discovery import build
@@ -55,7 +54,7 @@ def get_youtube_settings(db: Session = None) -> dict:
             'max_videos_per_search': youtube_config.get('max_videos_per_search', 5),
             'transcript_language': youtube_config.get('transcript_language', 'en')
         }
-    except Exception as e:
+    except Exception:
         # Return defaults on error
         return {
             'min_views': 100,
@@ -191,7 +190,7 @@ class YouTubeCollector(RateLimitedCollector):
                     f"{self.transcript_fail_count} using descriptions only"
                 )
             else:
-                self.logger.info(f"Collected 0 items from YouTube")
+                self.logger.info("Collected 0 items from YouTube")
 
         except Exception as e:
             self.logger.error(f"Error collecting from YouTube: {e}")

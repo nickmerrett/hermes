@@ -43,7 +43,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize database by creating all tables"""
-    Base.metadata.create_all(bind=engine)
+    # checkfirst=True ensures we don't try to create tables that already exist
+    Base.metadata.create_all(bind=engine, checkfirst=True)
 
 
 def get_db() -> Generator[Session, None, None]:

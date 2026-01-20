@@ -4,7 +4,6 @@ from typing import List, Dict, Any
 from datetime import datetime
 import httpx
 import feedparser
-from bs4 import BeautifulSoup
 
 from app.collectors.base import BaseCollector
 from app.models.schemas import IntelligenceItemCreate

@@ -1,7 +1,7 @@
 """Reddit collector for monitoring subreddit mentions and discussions"""
 
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncpraw
 from asyncpraw.exceptions import AsyncPRAWException
 from anthropic import Anthropic
@@ -27,7 +27,7 @@ def get_reddit_settings(db: Session = None) -> Dict[str, Any]:
 
             if setting and setting.value and 'reddit' in setting.value:
                 return setting.value['reddit']
-        except Exception as e:
+        except Exception:
             # Database might not be available during initialization
             pass
 

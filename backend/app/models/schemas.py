@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation"""
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict, model_serializer, field_validator
-from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 

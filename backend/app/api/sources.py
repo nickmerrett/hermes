@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import Source
+from app.models.database import Source, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,8 @@ router = APIRouter()
 @router.get("", response_model=List[schemas.SourceResponse])
 async def list_sources(
     customer_id: int = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Get list of all data sources, optionally filtered by customer"""
     query = db.query(Source)
@@ -29,7 +31,10 @@ async def list_sources(
 
 
 @router.get("/status", response_model=List[schemas.SourceResponse])
-async def get_sources_status(db: Session = Depends(get_db)):
+async def get_sources_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get status of all data sources"""
     sources = db.query(Source).all()
     return sources
@@ -38,7 +43,8 @@ async def get_sources_status(db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.SourceResponse, status_code=201)
 async def create_source(
     source: schemas.SourceCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Create a new data source"""
     db_source = Source(
@@ -58,7 +64,11 @@ async def create_source(
 
 
 @router.post("/{source_id}/enable", response_model=schemas.SourceResponse)
-async def enable_source(source_id: int, db: Session = Depends(get_db)):
+async def enable_source(
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Enable a data source"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
@@ -73,7 +83,11 @@ async def enable_source(source_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{source_id}/disable", response_model=schemas.SourceResponse)
-async def disable_source(source_id: int, db: Session = Depends(get_db)):
+async def disable_source(
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Disable a data source"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
@@ -88,7 +102,11 @@ async def disable_source(source_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{source_id}", status_code=204)
-async def delete_source(source_id: int, db: Session = Depends(get_db)):
+async def delete_source(
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Delete a data source"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:

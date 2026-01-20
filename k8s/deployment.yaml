@@ -18,6 +18,13 @@ spec:
           envFrom:
           - secretRef:
               name: hermes 
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           ports:
             - containerPort: 8000 
           volumeMounts:
@@ -51,6 +58,13 @@ spec:
       containers:
         - name: hermes-frontend
           image: 10.10.20.6:5000/nmerrett/hermes-frontend:latest
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           ports:
             - containerPort: 80 
           envFrom:
