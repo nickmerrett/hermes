@@ -23,9 +23,13 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
 
 def get_engine():
     """Create database engine"""
-    # Ensure database directory exists
-    db_path = settings.database_path
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    # Skip directory creation in test mode (tests use in-memory SQLite)
+    if not os.environ.get("TESTING"):
+        # Ensure database directory exists
+        db_path = settings.database_path
+        db_dir = os.path.dirname(db_path)
+        if db_dir:  # Only create if there's a directory component
+            os.makedirs(db_dir, exist_ok=True)
 
     # Create engine
     engine = create_engine(
@@ -36,15 +40,30 @@ def get_engine():
     return engine
 
 
-# Create engine and session factory
-engine = get_engine()
+# Create engine and session factory (skip in test mode - tests create their own)
+engine = None
+SessionLocal = None
+
+if not os.environ.get("TESTING"):
+    engine = get_engine()
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _get_engine_and_session():
+    """Lazy initialization of engine and session factory"""
+    global engine, SessionLocal
+    if engine is None:
+        engine = get_engine()
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return engine, SessionLocal
 
 
 def init_db():
     """Initialize database by creating all tables"""
+    eng, _ = _get_engine_and_session()
     # checkfirst=True ensures we don't try to create tables that already exist
-    Base.metadata.create_all(bind=engine, checkfirst=True)
+    Base.metadata.create_all(bind=eng, checkfirst=True)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -52,7 +71,8 @@ def get_db() -> Generator[Session, None, None]:
     Dependency function to get database session
     Usage in FastAPI: db: Session = Depends(get_db)
     """
-    db = SessionLocal()
+    _, session_local = _get_engine_and_session()
+    db = session_local()
     try:
         yield db
     finally:
@@ -61,5 +81,6 @@ def get_db() -> Generator[Session, None, None]:
 
 def reset_db():
     """Drop and recreate all tables (use with caution!)"""
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    eng, _ = _get_engine_and_session()
+    Base.metadata.drop_all(bind=eng)
+    Base.metadata.create_all(bind=eng)

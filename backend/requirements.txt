@@ -12,7 +12,7 @@ bcrypt==4.0.1  # Pin to 4.0.x for passlib compatibility
 
 # Database
 sqlalchemy==2.0.25
-alembic==1.13.1
+# alembic==1.13.1  # Not used - no database migrations implemented
 
 # Vector Database
 chromadb==0.5.5  # Updated for NumPy 2.0 compatibility
@@ -21,7 +21,7 @@ chromadb==0.5.5  # Updated for NumPy 2.0 compatibility
 anthropic==0.18.1
 openai==1.54.0  # OpenAI and OpenAI-compatible API support
 sentence-transformers==3.0.1  # Updated for NumPy 2.0 compatibility
-tiktoken==0.6.0
+# tiktoken==0.6.0  # Not used - token counting not implemented
 
 # Data Collection
 requests==2.31.0
@@ -34,7 +34,7 @@ trafilatura==1.12.2  # Advanced web scraping and content extraction
 # Social Media & Community
 asyncpraw==7.7.1         # Async Reddit API
 tweepy==4.14.0           # Twitter/X API
-PyGithub==2.1.1          # GitHub API
+# PyGithub==2.1.1          # GitHub API - not implemented
 google-api-python-client==2.100.0  # YouTube Data API v3
 youtube-transcript-api==1.2.3      # YouTube transcript fetching
 
@@ -61,7 +61,7 @@ aiohttp==3.9.3
 playwright==1.44.0
 
 # Logging & Monitoring
-python-json-logger==2.0.7
+# python-json-logger==2.0.7  # Not used - JSON logging not configured
 
 # Testing
 pytest==8.0.0
@@ -71,4 +71,4 @@ pytest-cov==4.1.0
 # Development
 black==24.1.1
 flake8==7.0.0
-mypy==1.8.0
+# mypy==1.8.0  # Not used - no type checking configured
