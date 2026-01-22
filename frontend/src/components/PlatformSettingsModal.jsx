@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiClient } from '../api/auth';
 import './PlatformSettingsModal.css';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Persona name mappings for display (fallback if API doesn't provide names)
 const PERSONA_DISPLAY_NAMES = {
@@ -183,7 +181,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     try {
       // Load personas from template system
       try {
-        const personasResponse = await axios.get(`${API_URL}/settings/daily-summary-personas`);
+        const personasResponse = await apiClient.get(`/settings/daily-summary-personas`);
         const personasData = personasResponse.data;
         if (personasData.template_based) {
           setPersonas(personasData.personas);
@@ -196,12 +194,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
       }
 
       // Load AI config status (override enabled, env values)
-      const aiConfigStatusResponse = await axios.get(`${API_URL}/settings/ai-config-status`);
+      const aiConfigStatusResponse = await apiClient.get(`/settings/ai-config-status`);
       const aiConfigStatus = aiConfigStatusResponse.data;
       setModelOverrideEnabled(aiConfigStatus.model_override_enabled);
       setEnvValues(aiConfigStatus.env_values);
 
-      const response = await axios.get(`${API_URL}/settings/platform`);
+      const response = await apiClient.get(`/settings/platform`);
       const settings = response.data;
 
       // Daily Briefing Settings
@@ -433,7 +431,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         australian_news_sources: australianNewsSources
       };
 
-      await axios.put(`${API_URL}/settings/platform`, settings);
+      await apiClient.put(`/settings/platform`, settings);
 
       if (onSave) {
         onSave();

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiClient } from '../api/auth';
 import './CustomerEditModal.css';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function CustomerEditModal({ customer, onClose, onSave, onDelete }) {
   const [formData, setFormData] = useState({
@@ -123,7 +121,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     if (!customer?.id) return;
 
     try {
-      const response = await axios.get(`${API_URL}/gmail/status/${customer.id}`);
+      const response = await apiClient.get(`/gmail/status/${customer.id}`);
       setGmailStatus({
         connected: response.data.connected,
         email: response.data.email,
@@ -167,7 +165,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
         config: flatConfig
       };
 
-      await axios.put(`${API_URL}/customers/${customer.id}`, payload);
+      await apiClient.put(`/customers/${customer.id}`, payload);
       onSave();
       onClose();
     } catch (err) {
@@ -320,7 +318,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
   // Gmail OAuth functions
   const handleConnectGmail = async () => {
     try {
-      const response = await axios.get(`${API_URL}/gmail/oauth/start/${customer.id}`);
+      const response = await apiClient.get(`/gmail/oauth/start/${customer.id}`);
       const authUrl = response.data.auth_url;
 
       // Open OAuth popup
@@ -357,7 +355,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     }
 
     try {
-      await axios.post(`${API_URL}/gmail/disconnect/${customer.id}`);
+      await apiClient.post(`/gmail/disconnect/${customer.id}`);
       setGmailStatus({ connected: false, email: null, loading: false });
 
       // Also disable Gmail in form

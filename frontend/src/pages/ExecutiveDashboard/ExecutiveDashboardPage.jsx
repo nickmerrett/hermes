@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { apiClient } from '../../api/auth';
 import './ExecutiveDashboardPage.css';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function ExecutiveDashboardPage() {
   const { executiveId } = useParams();
@@ -16,7 +14,7 @@ export default function ExecutiveDashboardPage() {
     const fetchExecutiveProfile = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${API_URL}/executives/${executiveId}/profile`);
+        const response = await apiClient.get(`/executives/${executiveId}/profile`);
         setProfile(response.data);
       } catch (err) {
         console.error('Error fetching executive profile:', err);

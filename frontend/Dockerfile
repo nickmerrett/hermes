@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as build
+FROM docker.io/library/node:24-alpine as build
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM docker.io/library/nginx:alpine
 
 # Copy built files from build stage
 COPY --from=build /app/dist /usr/share/nginx/html

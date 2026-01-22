@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { apiClient } from '../api/auth';
 import './AddCustomerPage.css';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function AddCustomerPage() {
   const navigate = useNavigate();
@@ -27,7 +25,7 @@ export default function AddCustomerPage() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_URL}/customer-research/research`, {
+      const response = await apiClient.post(`/customer-research/research`, {
         company_name: companyName
       });
 
@@ -61,7 +59,7 @@ export default function AddCustomerPage() {
         }
       };
 
-      await axios.post(`${API_URL}/customers`, customerData);
+      await apiClient.post(`/customers`, customerData);
 
       setStep(3);
     } catch (err) {

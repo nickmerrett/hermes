@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import axios from 'axios';
+import { apiClient } from '../api/auth';
 import './CustomerConfigWizard.css';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function CustomerConfigWizard({ onClose }) {
   const [step, setStep] = useState(1);
@@ -28,7 +26,7 @@ export default function CustomerConfigWizard({ onClose }) {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_URL}/customer-research/research`, {
+      const response = await apiClient.post(`/customer-research/research`, {
         company_name: companyName
       });
 
@@ -47,7 +45,7 @@ export default function CustomerConfigWizard({ onClose }) {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_URL}/customer-research/generate-config`, {
+      const response = await apiClient.post(`/customer-research/generate-config`, {
         research_data: researchData
       });
 
