@@ -42,6 +42,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
             mark_as_read: true,
             apply_label: ''
           }
+        },
+        mailsac_enabled: false,
+        mailsac_config: {
+          email_addresses: [],
+          extract_links: true,
+          delete_after_processing: true,
+          max_age_days: 7
         }
       }
     }
@@ -107,6 +114,13 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                 mark_as_read: config.gmail_config?.label_config?.mark_as_read !== undefined ? config.gmail_config.label_config.mark_as_read : true,
                 apply_label: config.gmail_config?.label_config?.apply_label || ''
               }
+            },
+            mailsac_enabled: collectionConfig.mailsac_enabled || false,
+            mailsac_config: {
+              email_addresses: config.mailsac_config?.email_addresses || [],
+              extract_links: config.mailsac_config?.extract_links !== undefined ? config.mailsac_config.extract_links : true,
+              delete_after_processing: config.mailsac_config?.delete_after_processing !== undefined ? config.mailsac_config.delete_after_processing : true,
+              max_age_days: config.mailsac_config?.max_age_days || 7
             }
           }
         }
@@ -1020,6 +1034,23 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                 />
                 <span>Gmail Digest Monitoring</span>
               </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={formData.config.collection_config.mailsac_enabled}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        mailsac_enabled: e.target.checked
+                      }
+                    }
+                  })}
+                />
+                <span>Mailsac Newsletters</span>
+              </label>
             </div>
           </div>
 
@@ -1373,6 +1404,118 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="form-section">
+            <h3>Mailsac Newsletter Monitoring</h3>
+            <p className="option-help" style={{ marginBottom: '16px' }}>
+              Use Mailsac disposable email addresses to subscribe to newsletters without exposing your personal email.
+              Requires MAILSAC_API_KEY to be set in backend environment.
+            </p>
+
+            <div className="form-field">
+              <label>Email Addresses to Monitor</label>
+              <textarea
+                value={formData.config.collection_config.mailsac_config.email_addresses.join('\n')}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  config: {
+                    ...formData.config,
+                    collection_config: {
+                      ...formData.config.collection_config,
+                      mailsac_config: {
+                        ...formData.config.collection_config.mailsac_config,
+                        email_addresses: e.target.value.split('\n').filter(s => s.trim())
+                      }
+                    }
+                  }
+                })}
+                placeholder="newsletters-companyname@mailsac.com&#10;alerts-companyname@mailsac.com"
+                rows="3"
+              />
+              <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                One Mailsac email address per line. Create addresses at mailsac.com and subscribe them to newsletters.
+              </small>
+            </div>
+
+            <div className="form-field">
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={formData.config.collection_config.mailsac_config.extract_links}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        mailsac_config: {
+                          ...formData.config.collection_config.mailsac_config,
+                          extract_links: e.target.checked
+                        }
+                      }
+                    }
+                  })}
+                />
+                <span>Extract and fetch linked articles</span>
+              </label>
+              <small style={{ display: 'block', marginLeft: '24px', marginTop: '4px', color: '#6b7280' }}>
+                Follow links in newsletters to fetch full article content. Disable to use email content directly.
+              </small>
+            </div>
+
+            <div className="form-field">
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={formData.config.collection_config.mailsac_config.delete_after_processing}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        mailsac_config: {
+                          ...formData.config.collection_config.mailsac_config,
+                          delete_after_processing: e.target.checked
+                        }
+                      }
+                    }
+                  })}
+                />
+                <span>Delete emails after processing</span>
+              </label>
+              <small style={{ display: 'block', marginLeft: '24px', marginTop: '4px', color: '#6b7280' }}>
+                Recommended to stay within Mailsac storage limits (50 messages on free tier).
+              </small>
+            </div>
+
+            <div className="form-field">
+              <label>Max Age (days)</label>
+              <input
+                type="number"
+                value={formData.config.collection_config.mailsac_config.max_age_days}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  config: {
+                    ...formData.config,
+                    collection_config: {
+                      ...formData.config.collection_config,
+                      mailsac_config: {
+                        ...formData.config.collection_config.mailsac_config,
+                        max_age_days: parseInt(e.target.value) || 7
+                      }
+                    }
+                  }
+                })}
+                min="1"
+                max="30"
+                style={{ width: '100px' }}
+              />
+              <small style={{ display: 'block', marginTop: '6px', color: '#6b7280' }}>
+                Ignore emails older than this many days.
+              </small>
+            </div>
           </div>
 
           <div className="modal-footer">

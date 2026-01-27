@@ -133,6 +133,38 @@ Hermes collects intelligence from 10+ data sources. Each collector is configured
   - Trusted source flagging (prevents false "irrelevant" marking)
   - Supports RSS 2.0, Atom, and RSS 1.0
 
+#### Mailsac (Newsletter Monitoring)
+- **What:** Newsletter monitoring via disposable email inboxes
+- **API:** Mailsac REST API
+- **Interval:** 6 hours (default)
+- **Configuration:** Requires `MAILSAC_API_KEY` environment variable
+- **Per-customer:** Enable via `mailsac_enabled: true`
+- **Setup:**
+  1. Create account at https://mailsac.com
+  2. Get API key from https://mailsac.com/api-keys
+  3. Create email addresses (e.g., `newsletters-companyname@mailsac.com`)
+  4. Subscribe those addresses to industry newsletters
+  5. Configure in customer settings
+- **Features:**
+  - Extract and fetch linked articles from newsletter emails
+  - Use email content directly as intelligence items
+  - Automatic deletion after processing (to stay within storage limits)
+  - Configurable max age filter
+- **Free Tier Limits:**
+  - 1,500 operations/month (API calls + emails received)
+  - 50 messages stored
+  - Unlimited public inboxes
+- **Per-customer config:**
+  ```yaml
+  mailsac_config:
+    email_addresses:
+      - "newsletters-acme@mailsac.com"
+      - "alerts-acme@mailsac.com"
+    extract_links: true          # Follow links to fetch full articles
+    delete_after_processing: true # Remove emails after processing
+    max_age_days: 7              # Ignore emails older than this
+  ```
+
 ---
 
 ## Collector Configuration
@@ -179,6 +211,7 @@ collection_config:
   web_scraping_enabled: true
   australian_news_enabled: true
   youtube_enabled: true
+  mailsac_enabled: false
 ```
 
 **Source-specific config:**
@@ -211,6 +244,14 @@ web_scraping_sources:
     title_selector: "h2.title"
     link_selector: "a.link"
     date_selector: "time"
+
+# Mailsac Newsletter Monitoring
+mailsac_config:
+  email_addresses:
+    - "newsletters-acme@mailsac.com"
+  extract_links: true
+  delete_after_processing: true
+  max_age_days: 7
 ```
 
 ## Collector Architecture
@@ -350,6 +391,6 @@ Detailed setup instructions for specific collectors:
 
 ---
 
-**Last Updated:** November 8, 2025
-**Active Collectors:** 11
-**Supported APIs:** NewsAPI, Reddit, YouTube, Yahoo Finance, Twitter, GitHub, LinkedIn (scraping)
+**Last Updated:** January 2026
+**Active Collectors:** 12
+**Supported APIs:** NewsAPI, Reddit, YouTube, Yahoo Finance, Twitter, GitHub, LinkedIn (scraping), Mailsac

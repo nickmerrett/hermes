@@ -18,6 +18,7 @@ An AI-powered platform that aggregates and analyzes information from 10+ sources
 - **Twitter/X** - Social media monitoring
 - **GitHub** - Repository activity and releases
 - **Web Scraper** - Custom sources with CSS selectors
+- **Mailsac** - Newsletter monitoring via disposable email inboxes
 
 ### 🤖 AI-Powered Processing (Claude Sonnet 4.5)
 - **Smart Summarization** - Concise, actionable summaries
@@ -79,8 +80,9 @@ An AI-powered platform that aggregates and analyzes information from 10+ sources
 
 - Docker and Docker Compose
 - API Keys:
-  - Anthropic Claude API key
-  - NewsAPI key (free tier available at https://newsapi.org)
+  - Anthropic Claude API key (required)
+  - NewsAPI key (optional, free tier at https://newsapi.org)
+  - Mailsac API key (optional, for newsletter monitoring - free tier at https://mailsac.com)
 - Authentication:
   - JWT secret key (generate with `openssl rand -hex 32`)
   - First admin email and password

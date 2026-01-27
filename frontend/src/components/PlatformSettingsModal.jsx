@@ -106,8 +106,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
 
   // Clustering Settings
   const [clusteringEnabled, setClusteringEnabled] = useState(true);
-  const [similarityThreshold, setSimilarityThreshold] = useState(0.50);
+  const [similarityThreshold, setSimilarityThreshold] = useState(0.80);
   const [timeWindowHours, setTimeWindowHours] = useState(96);
+  const [titleSimilarityEnabled, setTitleSimilarityEnabled] = useState(true);
+  const [titleSimilarityThreshold, setTitleSimilarityThreshold] = useState(0.40);
+  const [maxClusterSize, setMaxClusterSize] = useState(25);
+  const [maxClusterAgeHours, setMaxClusterAgeHours] = useState(168);
 
   // Reddit Collector Settings
   const [redditMinUpvotes, setRedditMinUpvotes] = useState(5);
@@ -280,8 +284,12 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
       // Clustering Settings
       if (settings.clustering_config) {
         setClusteringEnabled(settings.clustering_config.enabled !== undefined ? settings.clustering_config.enabled : true);
-        setSimilarityThreshold(settings.clustering_config.similarity_threshold || 0.50);
+        setSimilarityThreshold(settings.clustering_config.similarity_threshold || 0.80);
         setTimeWindowHours(settings.clustering_config.time_window_hours || 96);
+        setTitleSimilarityEnabled(settings.clustering_config.title_similarity_enabled !== undefined ? settings.clustering_config.title_similarity_enabled : true);
+        setTitleSimilarityThreshold(settings.clustering_config.title_similarity_threshold || 0.40);
+        setMaxClusterSize(settings.clustering_config.max_cluster_size || 25);
+        setMaxClusterAgeHours(settings.clustering_config.max_cluster_age_hours || 168);
       }
 
       // Reddit Collector Settings
@@ -387,7 +395,11 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
         clustering_config: {
           enabled: clusteringEnabled,
           similarity_threshold: similarityThreshold,
-          time_window_hours: timeWindowHours
+          time_window_hours: timeWindowHours,
+          title_similarity_enabled: titleSimilarityEnabled,
+          title_similarity_threshold: titleSimilarityThreshold,
+          max_cluster_size: maxClusterSize,
+          max_cluster_age_hours: maxClusterAgeHours
         },
         collector_config: {
           reddit: {
@@ -1111,20 +1123,20 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                     {clusteringEnabled && (
                       <>
                         <div className="option-group" style={{ marginTop: '16px' }}>
-                          <label>Similarity Threshold: {(similarityThreshold * 100).toFixed(0)}%</label>
+                          <label>Embedding Similarity Threshold: {(similarityThreshold * 100).toFixed(0)}%</label>
                           <input
                             type="range"
-                            min="0.30"
-                            max="0.80"
+                            min="0.50"
+                            max="0.95"
                             step="0.05"
                             value={similarityThreshold}
                             onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
                             className="similarity-slider"
                           />
                           <p className="option-help">
-                            {similarityThreshold < 0.4 && "Lower threshold - more aggressive clustering (may group unrelated items)"}
-                            {similarityThreshold >= 0.4 && similarityThreshold <= 0.6 && "Balanced - recommended for most use cases"}
-                            {similarityThreshold > 0.6 && "Higher threshold - conservative clustering (may miss similar items)"}
+                            {similarityThreshold < 0.65 && "Lower threshold - more aggressive clustering (may group unrelated items)"}
+                            {similarityThreshold >= 0.65 && similarityThreshold <= 0.80 && "Balanced (70-80%) - recommended for most use cases"}
+                            {similarityThreshold > 0.80 && "Higher threshold - conservative clustering (only very similar items)"}
                           </p>
                         </div>
 
@@ -1144,6 +1156,87 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                           <p className="option-help">
                             How far back to look when clustering new items with existing stories
                           </p>
+                        </div>
+
+                        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+                          <label className="section-label" style={{ fontSize: '14px' }}>Additional Validation</label>
+                          <p className="section-help">Extra checks to prevent unrelated items from clustering together</p>
+
+                          <label className="schedule-option" style={{ marginTop: '12px' }}>
+                            <input
+                              type="checkbox"
+                              checked={titleSimilarityEnabled}
+                              onChange={(e) => setTitleSimilarityEnabled(e.target.checked)}
+                            />
+                            <div className="schedule-info">
+                              <div className="schedule-name">Enable Title Similarity Check</div>
+                              <div className="schedule-description">
+                                Require titles to also be similar (prevents clustering different events about same company)
+                              </div>
+                            </div>
+                          </label>
+
+                          {titleSimilarityEnabled && (
+                            <div className="option-group" style={{ marginTop: '12px', marginLeft: '24px' }}>
+                              <label>Title Similarity Threshold: {(titleSimilarityThreshold * 100).toFixed(0)}%</label>
+                              <input
+                                type="range"
+                                min="0.20"
+                                max="0.70"
+                                step="0.05"
+                                value={titleSimilarityThreshold}
+                                onChange={(e) => setTitleSimilarityThreshold(parseFloat(e.target.value))}
+                                className="similarity-slider"
+                              />
+                              <p className="option-help">
+                                Minimum word overlap between titles (40% recommended - allows for different headlines about same event)
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+                          <label className="section-label" style={{ fontSize: '14px' }}>Cluster Limits</label>
+                          <p className="section-help">Prevent clusters from growing too large or spanning too much time</p>
+
+                          <div className="option-row" style={{ marginTop: '12px' }}>
+                            <div className="option-group">
+                              <label>Max Cluster Size</label>
+                              <select
+                                value={maxClusterSize}
+                                onChange={(e) => setMaxClusterSize(parseInt(e.target.value))}
+                                className="settings-select"
+                              >
+                                <option value={10}>10 items</option>
+                                <option value={15}>15 items</option>
+                                <option value={25}>25 items (Recommended)</option>
+                                <option value={50}>50 items</option>
+                                <option value={0}>No limit</option>
+                              </select>
+                              <p className="option-help">
+                                Stop adding to clusters once they reach this size
+                              </p>
+                            </div>
+
+                            <div className="option-group">
+                              <label>Max Cluster Age</label>
+                              <select
+                                value={maxClusterAgeHours}
+                                onChange={(e) => setMaxClusterAgeHours(parseInt(e.target.value))}
+                                className="settings-select"
+                              >
+                                <option value={48}>48 hours (2 days)</option>
+                                <option value={72}>72 hours (3 days)</option>
+                                <option value={96}>96 hours (4 days)</option>
+                                <option value={168}>168 hours (7 days) - Recommended</option>
+                                <option value={336}>336 hours (14 days)</option>
+                                <option value={0}>No limit</option>
+                              </select>
+                              <p className="option-help">
+                                Don't add to clusters older than this (prevents chain clustering across weeks)
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </>
                     )}

@@ -24,6 +24,7 @@ from app.collectors.twitter_collector import TwitterCollector
 from app.collectors.linkedin_collector import LinkedInCollector
 from app.collectors.youtube_collector import YouTubeCollector
 from app.collectors.gmail_collector import GmailCollector
+from app.collectors.mailsac_collector import MailsacCollector
 
 # Try to import Playwright collector (optional)
 try:
@@ -682,6 +683,60 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             )
     elif collection_config.get('gmail_enabled', False):
         logger.debug("Skipping Gmail - not due for collection yet")
+
+    # Collect from Mailsac (newsletter monitoring via disposable inboxes)
+    if collection_config.get('mailsac_enabled', False) and should_collect_source('mailsac'):
+        try:
+            mailsac_config = collection_config.get('mailsac_config', {})
+            if mailsac_config.get('email_addresses'):
+                logger.info(f"Starting Mailsac collection for {customer.name}")
+                collector = MailsacCollector(customer_config)
+                items, error = await collector.safe_collect()
+
+                # Update collection status
+                update_collection_status(
+                    db=db,
+                    customer_id=customer.id,
+                    source_type='mailsac',
+                    success=(error is None),
+                    error_message=error
+                )
+
+                if items:
+                    failed = await save_and_process_items(items, customer, db)
+                    items_collected += len(items)
+                    items_failed_processing += failed
+                if error:
+                    errors.append(error)
+            else:
+                logger.debug(f"Mailsac enabled but no email addresses configured for {customer.name}")
+        except ValueError as e:
+            # Configuration errors (missing API key, etc.)
+            error_msg = f"Mailsac configuration error: {str(e)}"
+            logger.warning(error_msg)
+            errors.append(error_msg)
+
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='mailsac',
+                success=False,
+                error_message=error_msg
+            )
+        except Exception as e:
+            error_msg = f"Mailsac collection error: {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='mailsac',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('mailsac_enabled', False):
+        logger.debug("Skipping Mailsac - not due for collection yet")
 
     # Collect from Twitter/X
     if collection_config.get('twitter_enabled', False) and should_collect_source('twitter'):

@@ -25,15 +25,27 @@ def get_clustering_settings(db: Session) -> Dict:
         ).first()
 
         if setting and setting.value:
-            return setting.value
+            # Merge with defaults for any missing keys
+            defaults = get_default_clustering_settings()
+            merged = {**defaults, **setting.value}
+            return merged
     except Exception as e:
         logger.warning(f"Error loading clustering settings from database: {e}")
 
-    # Return defaults if not configured
+    return get_default_clustering_settings()
+
+
+def get_default_clustering_settings() -> Dict:
+    """Return default clustering settings"""
     return {
         'enabled': True,
-        'similarity_threshold': 0.50,
-        'time_window_hours': 96
+        'similarity_threshold': 0.80,  # Raised from 0.50
+        'time_window_hours': 96,
+        # New settings
+        'title_similarity_enabled': True,
+        'title_similarity_threshold': 0.40,  # Titles must be at least 40% similar
+        'max_cluster_size': 25,  # Don't add to clusters larger than this
+        'max_cluster_age_hours': 168,  # Don't add to clusters older than 7 days
     }
 
 
@@ -97,22 +109,32 @@ def get_source_priority(source_type: str) -> int:
 
 def find_similar_cluster(
     item_embedding: List[float],
+    item_title: str,
     customer_id: int,
     published_date: datetime,
     db: Session,
-    similarity_threshold: float = 0.50,
-    time_window_hours: int = 96
+    similarity_threshold: float = 0.80,
+    time_window_hours: int = 96,
+    title_similarity_enabled: bool = True,
+    title_similarity_threshold: float = 0.40,
+    max_cluster_size: int = 25,
+    max_cluster_age_hours: int = 168
 ) -> Optional[str]:
     """
     Find existing cluster for a new item based on embedding similarity
 
     Args:
         item_embedding: Vector embedding of the new item
+        item_title: Title of the new item (for title similarity check)
         customer_id: Customer ID for filtering
         published_date: When item was published
         db: Database session
-        similarity_threshold: Min similarity to consider same story (0.0-1.0)
+        similarity_threshold: Min embedding similarity to consider same story (0.0-1.0)
         time_window_hours: How far back to look for similar items
+        title_similarity_enabled: Whether to also check title similarity
+        title_similarity_threshold: Min title similarity if enabled (0.0-1.0)
+        max_cluster_size: Don't add to clusters larger than this
+        max_cluster_age_hours: Don't add to clusters older than this
 
     Returns:
         cluster_id if similar cluster found, None otherwise
@@ -137,12 +159,36 @@ def find_similar_cluster(
         # Get vector store
         vector_store = get_vector_store()
 
+        # Track cluster info to avoid repeated lookups
+        cluster_info_cache = {}
+
         # Get embeddings for recent items from vector store
         best_similarity = 0.0
+        best_title_sim = 0.0
         best_cluster_id = None
 
         for existing_item in recent_items:
             try:
+                cluster_id = existing_item.cluster_id
+
+                # Check cluster constraints (size and age)
+                if cluster_id not in cluster_info_cache:
+                    cluster_info_cache[cluster_id] = get_cluster_info(cluster_id, db)
+
+                cluster_info = cluster_info_cache[cluster_id]
+
+                # Skip if cluster is too large
+                if max_cluster_size > 0 and cluster_info['size'] >= max_cluster_size:
+                    logger.debug(f"Skipping cluster {cluster_id}: size {cluster_info['size']} >= max {max_cluster_size}")
+                    continue
+
+                # Skip if cluster is too old
+                if max_cluster_age_hours > 0 and cluster_info['oldest_date']:
+                    cluster_age = published_date - cluster_info['oldest_date']
+                    if cluster_age.total_seconds() / 3600 > max_cluster_age_hours:
+                        logger.debug(f"Skipping cluster {cluster_id}: age {cluster_age.total_seconds()/3600:.1f}h > max {max_cluster_age_hours}h")
+                        continue
+
                 # Get embedding from vector store
                 existing_embedding = vector_store.get_embedding(existing_item.id)
 
@@ -150,18 +196,39 @@ def find_similar_cluster(
                     continue
 
                 # Calculate cosine similarity
-                similarity = cosine_similarity(item_embedding, existing_embedding)
+                embedding_sim = cosine_similarity(item_embedding, existing_embedding)
 
-                if similarity >= similarity_threshold and similarity > best_similarity:
-                    best_similarity = similarity
-                    best_cluster_id = existing_item.cluster_id
+                if embedding_sim < similarity_threshold:
+                    continue
+
+                # Check title similarity if enabled
+                if title_similarity_enabled:
+                    t_sim = title_similarity(item_title, existing_item.title)
+                    if t_sim < title_similarity_threshold:
+                        logger.debug(
+                            f"Rejected cluster match: embedding sim {embedding_sim:.3f} OK but "
+                            f"title sim {t_sim:.3f} < {title_similarity_threshold} "
+                            f"('{item_title[:50]}...' vs '{existing_item.title[:50]}...')"
+                        )
+                        continue
+                else:
+                    t_sim = 1.0  # Not checking titles
+
+                # This is a valid match - check if it's the best one
+                if embedding_sim > best_similarity:
+                    best_similarity = embedding_sim
+                    best_title_sim = t_sim
+                    best_cluster_id = cluster_id
 
             except Exception as e:
                 logger.warning(f"Error comparing with item {existing_item.id}: {e}")
                 continue
 
         if best_cluster_id:
-            logger.info(f"Found similar cluster {best_cluster_id} with similarity {best_similarity:.3f}")
+            logger.info(
+                f"Found similar cluster {best_cluster_id} with embedding similarity {best_similarity:.3f}"
+                + (f", title similarity {best_title_sim:.3f}" if title_similarity_enabled else "")
+            )
 
         return best_cluster_id
 
@@ -187,6 +254,82 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     except Exception as e:
         logger.error(f"Error calculating cosine similarity: {e}")
         return 0.0
+
+
+def title_similarity(title1: str, title2: str) -> float:
+    """
+    Calculate similarity between two titles using token overlap (Jaccard-like)
+
+    This is a simple but effective check to ensure titles are about the same event,
+    not just the same company/topic.
+
+    Args:
+        title1: First title
+        title2: Second title
+
+    Returns:
+        Similarity score 0.0-1.0
+    """
+    if not title1 or not title2:
+        return 0.0
+
+    # Normalize: lowercase, remove punctuation, split into words
+    import re
+
+    def tokenize(text: str) -> set:
+        # Remove punctuation and lowercase
+        text = re.sub(r'[^\w\s]', ' ', text.lower())
+        # Split and filter short words (articles, prepositions)
+        words = set(w for w in text.split() if len(w) > 2)
+        return words
+
+    tokens1 = tokenize(title1)
+    tokens2 = tokenize(title2)
+
+    if not tokens1 or not tokens2:
+        return 0.0
+
+    # Jaccard similarity: intersection / union
+    intersection = len(tokens1 & tokens2)
+    union = len(tokens1 | tokens2)
+
+    if union == 0:
+        return 0.0
+
+    return intersection / union
+
+
+def get_cluster_info(cluster_id: str, db: Session) -> Dict:
+    """
+    Get information about a cluster
+
+    Args:
+        cluster_id: The cluster ID
+        db: Database session
+
+    Returns:
+        Dict with cluster info (size, oldest_date, newest_date, primary_title)
+    """
+    try:
+        items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.cluster_id == cluster_id
+        ).all()
+
+        if not items:
+            return {'size': 0, 'oldest_date': None, 'newest_date': None, 'primary_title': None}
+
+        dates = [i.published_date or i.collected_date for i in items]
+        primary = next((i for i in items if i.is_cluster_primary), items[0])
+
+        return {
+            'size': len(items),
+            'oldest_date': min(dates) if dates else None,
+            'newest_date': max(dates) if dates else None,
+            'primary_title': primary.title if primary else None
+        }
+    except Exception as e:
+        logger.error(f"Error getting cluster info: {e}")
+        return {'size': 0, 'oldest_date': None, 'newest_date': None, 'primary_title': None}
 
 
 def assign_to_cluster(
@@ -307,9 +450,15 @@ def cluster_item(
 
         # Use provided threshold or get from settings
         if similarity_threshold is None:
-            similarity_threshold = clustering_settings.get('similarity_threshold', 0.50)
+            similarity_threshold = clustering_settings.get('similarity_threshold', 0.80)
 
         time_window_hours = clustering_settings.get('time_window_hours', 96)
+
+        # New settings with defaults
+        title_similarity_enabled = clustering_settings.get('title_similarity_enabled', True)
+        title_similarity_threshold = clustering_settings.get('title_similarity_threshold', 0.40)
+        max_cluster_size = clustering_settings.get('max_cluster_size', 25)
+        max_cluster_age_hours = clustering_settings.get('max_cluster_age_hours', 168)
 
         # LinkedIn posts are individual perspectives, don't cluster them
         # Always give them their own cluster
@@ -320,11 +469,16 @@ def cluster_item(
         # Try to find similar cluster
         cluster_id = find_similar_cluster(
             item_embedding=item_embedding,
+            item_title=item.title or '',
             customer_id=item.customer_id,
             published_date=item.published_date or item.collected_date,
             db=db,
             similarity_threshold=similarity_threshold,
-            time_window_hours=time_window_hours
+            time_window_hours=time_window_hours,
+            title_similarity_enabled=title_similarity_enabled,
+            title_similarity_threshold=title_similarity_threshold,
+            max_cluster_size=max_cluster_size,
+            max_cluster_age_hours=max_cluster_age_hours
         )
 
         if cluster_id:

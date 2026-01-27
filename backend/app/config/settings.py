@@ -23,6 +23,9 @@ class Settings(BaseSettings):
 
     youtube_api_key: str = ""
 
+    # Mailsac (for newsletter monitoring via disposable inboxes)
+    mailsac_api_key: str = ""
+
     # Gmail OAuth (for press release digest monitoring)
     google_client_id: str = ""
     google_client_secret: str = ""
