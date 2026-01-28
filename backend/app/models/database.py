@@ -22,6 +22,7 @@ class Customer(Base):
     competitors = Column(JSON)  # List of competitor names
     stock_symbol = Column(String(10))
     tab_color = Column(String(7), default='#ffffff')  # Hex color for tab background
+    sort_order = Column(Integer, default=0)
     config = Column(JSON)  # Additional configuration
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

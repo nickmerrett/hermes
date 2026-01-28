@@ -38,9 +38,36 @@ export const mockCustomers = [
     competitors: ['GlobalCorp'],
     stock_symbol: 'ACME',
     tab_color: '#3498db',
+    sort_order: 0,
     config: {},
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z'
+  },
+  {
+    id: 2,
+    name: 'Beta Inc',
+    domain: 'beta.com',
+    keywords: ['beta'],
+    competitors: [],
+    stock_symbol: 'BETA',
+    tab_color: '#e74c3c',
+    sort_order: 1,
+    config: {},
+    created_at: '2024-01-02T00:00:00Z',
+    updated_at: '2024-01-02T00:00:00Z'
+  },
+  {
+    id: 3,
+    name: 'Gamma LLC',
+    domain: 'gamma.com',
+    keywords: ['gamma'],
+    competitors: [],
+    stock_symbol: 'GAMA',
+    tab_color: '#2ecc71',
+    sort_order: 2,
+    config: {},
+    created_at: '2024-01-03T00:00:00Z',
+    updated_at: '2024-01-03T00:00:00Z'
   }
 ]
 
@@ -197,6 +224,11 @@ const customerHandlers = [
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }, { status: 201 })
+  }),
+
+  // Reorder customers
+  http.patch(`${API_URL}/customers/reorder`, async () => {
+    return HttpResponse.json({ status: 'ok' })
   }),
 
   // Delete customer

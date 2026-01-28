@@ -120,12 +120,22 @@ async def get_feed(
     if clustered:
         filters.append(IntelligenceItem.is_cluster_primary.is_(True))
 
+    # Exclude unrelated/advertisement items unless explicitly filtering for them
+    if not category or category not in ('unrelated', 'advertisement'):
+        filters.append(
+            ~ProcessedIntelligence.category.in_(['unrelated', 'advertisement'])
+            | ProcessedIntelligence.category.is_(None)  # Keep unprocessed items
+        )
+
     if filters:
         query = query.filter(and_(*filters))
 
-    # For Smart Feed, we need to fetch more items than requested
-    # because filtering will reduce the count
-    fetch_limit = limit * 3 if (clustered and smart_config and smart_config.get('enabled', True)) else limit
+    # Fetch more items than requested to account for filtering
+    # Smart Feed needs extra because smart filtering further reduces the count
+    if clustered and smart_config and smart_config.get('enabled', True):
+        fetch_limit = limit * 3
+    else:
+        fetch_limit = limit
 
     # Apply sorting and get items
     all_items = query.order_by(

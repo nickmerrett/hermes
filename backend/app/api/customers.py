@@ -1,6 +1,7 @@
 """Customer management API endpoints"""
 
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -22,8 +23,28 @@ async def list_customers(
     current_user: User = Depends(get_current_user)
 ):
     """Get list of all customers"""
-    customers = db.query(Customer).offset(skip).limit(limit).all()
+    customers = db.query(Customer).order_by(Customer.sort_order, Customer.id).offset(skip).limit(limit).all()
     return customers
+
+
+class CustomerOrderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+@router.patch("/reorder")
+async def reorder_customers(
+    items: List[CustomerOrderItem],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update sort order for customers"""
+    for item in items:
+        db.query(Customer).filter(Customer.id == item.id).update(
+            {Customer.sort_order: item.sort_order}
+        )
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/{customer_id}", response_model=schemas.CustomerResponse)

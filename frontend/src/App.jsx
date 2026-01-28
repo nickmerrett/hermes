@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { Link } from 'react-router-dom'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useAuth } from './contexts/AuthContext'
 import { apiClient } from './api/auth'
 import ErrorBanner from './components/ErrorBanner'
@@ -8,6 +11,39 @@ import CustomerEditModal from './components/CustomerEditModal'
 import PlatformSettingsModal from './components/PlatformSettingsModal'
 import RSSTokenManager from './components/RSSTokenManager'
 import './styles/App.css'
+
+function SortableTab({ customer, isActive, onClick }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: customer.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    backgroundColor: customer.tab_color || '#ffffff',
+    borderColor: isActive ? '#3b82f6' : '#d1d5db',
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      className={`customer-tab ${isActive ? 'active' : ''}`}
+      onClick={onClick}
+      {...attributes}
+      {...listeners}
+    >
+      {customer.name}
+    </button>
+  )
+}
 
 function App() {
   const [feed, setFeed] = useState([])
@@ -86,20 +122,20 @@ function App() {
   }, [autoRefreshEnabled, autoRefreshInterval, filters, selectedCustomer, showClustered])
 
   useEffect(() => {
+    if (!selectedCustomer) {
+      setDailySummary(null)
+      return
+    }
     fetchFeed()
     fetchCollectionErrors()
-    if (selectedCustomer) {
-      fetchDailySummary()
-    } else {
-      setDailySummary(null)
-    }
+    fetchDailySummary()
   }, [filters, selectedCustomer, showClustered])
 
   const fetchCustomers = async () => {
     try {
       const response = await apiClient.get(`/customers`)
       setCustomers(response.data)
-      // Auto-select first customer if available
+      // Default to first customer if none selected
       if (response.data.length > 0 && !selectedCustomer) {
         setSelectedCustomer(response.data[0].id)
       }
@@ -385,6 +421,27 @@ function App() {
     }
   }
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = customers.findIndex(c => c.id === active.id)
+    const newIndex = customers.findIndex(c => c.id === over.id)
+    const reordered = arrayMove(customers, oldIndex, newIndex)
+    setCustomers(reordered)
+
+    const items = reordered.map((c, i) => ({ id: c.id, sort_order: i }))
+    try {
+      await apiClient.patch('/customers/reorder', items)
+    } catch (err) {
+      console.error('Failed to save tab order:', err)
+    }
+  }
+
   const currentCustomer = customers.find(c => c.id === selectedCustomer)
 
   return (
@@ -465,28 +522,34 @@ function App() {
 
       {/* Customer Tabs */}
       <div className="customer-tabs">
-        <div className="customer-tabs-list">
-          {customers.map(customer => (
-            <button
-              key={customer.id}
-              className={`customer-tab ${selectedCustomer === customer.id ? 'active' : ''}`}
-              onClick={() => setSelectedCustomer(customer.id)}
-              style={{
-                backgroundColor: customer.tab_color || '#ffffff',
-                borderColor: selectedCustomer === customer.id ? '#3b82f6' : '#d1d5db'
-              }}
-            >
-              {customer.name}
-            </button>
-          ))}
-          <Link
-            to="/add-customer"
-            className="customer-tab add-customer-btn"
-            title="Add new customer using AI-powered config wizard"
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={customers.map(c => c.id)}
+            strategy={horizontalListSortingStrategy}
           >
-            + Add Customer
-          </Link>
-        </div>
+            <div className="customer-tabs-list">
+              {customers.map(customer => (
+                <SortableTab
+                  key={customer.id}
+                  customer={customer}
+                  isActive={selectedCustomer === customer.id}
+                  onClick={() => setSelectedCustomer(customer.id)}
+                />
+              ))}
+              <Link
+                to="/add-customer"
+                className="customer-tab add-customer-btn"
+                title="Add new customer using AI-powered config wizard"
+              >
+                + Add Customer
+              </Link>
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       {/* Customer Info Header */}

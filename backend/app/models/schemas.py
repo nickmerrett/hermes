@@ -62,6 +62,7 @@ class CustomerBase(BaseModel):
     competitors: List[str] = []
     stock_symbol: Optional[str] = None
     tab_color: Optional[str] = '#ffffff'
+    sort_order: int = 0
     config: Optional[Dict[str, Any]] = None
 
 

@@ -363,3 +363,98 @@ class TestCustomerResponseFormat:
         # Should be ISO format with Z suffix
         assert "T" in data["created_at"]
         assert "T" in data["updated_at"]
+
+    def test_response_includes_sort_order(self, client, auth_headers, sample_customer):
+        """Response should include sort_order field."""
+        response = client.get(f"/api/customers/{sample_customer.id}", headers=auth_headers)
+
+        data = response.json()
+        assert "sort_order" in data
+        assert data["sort_order"] == 0
+
+
+class TestReorderCustomersEndpoint:
+    """Tests for PATCH /api/customers/reorder endpoint."""
+
+    def test_reorder_customers(self, client, auth_headers, test_db):
+        """Should update sort_order for multiple customers."""
+        from app.models.database import Customer
+        from datetime import datetime
+
+        customers = []
+        for i in range(3):
+            c = Customer(
+                name=f"Customer {i}",
+                domain=f"c{i}.com",
+                keywords=[],
+                competitors=[],
+                sort_order=i,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            test_db.add(c)
+            test_db.commit()
+            test_db.refresh(c)
+            customers.append(c)
+
+        # Reverse the order
+        reorder_payload = [
+            {"id": customers[2].id, "sort_order": 0},
+            {"id": customers[1].id, "sort_order": 1},
+            {"id": customers[0].id, "sort_order": 2},
+        ]
+
+        response = client.patch("/api/customers/reorder",
+                                headers=auth_headers,
+                                json=reorder_payload)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+        # Verify order persisted
+        list_response = client.get("/api/customers", headers=auth_headers)
+        data = list_response.json()
+        assert data[0]["name"] == "Customer 2"
+        assert data[1]["name"] == "Customer 1"
+        assert data[2]["name"] == "Customer 0"
+
+    def test_reorder_customers_no_auth(self, client):
+        """Should return 401 without authentication."""
+        response = client.patch("/api/customers/reorder",
+                                json=[{"id": 1, "sort_order": 0}])
+
+        assert response.status_code == 401
+
+    def test_reorder_empty_list(self, client, auth_headers):
+        """Should accept empty list."""
+        response = client.patch("/api/customers/reorder",
+                                headers=auth_headers,
+                                json=[])
+
+        assert response.status_code == 200
+
+    def test_list_customers_ordered_by_sort_order(self, client, auth_headers, test_db):
+        """Customer list should be ordered by sort_order then id."""
+        from app.models.database import Customer
+        from datetime import datetime
+
+        # Create customers with non-sequential sort_orders
+        for name, order in [("Zebra", 2), ("Alpha", 0), ("Middle", 1)]:
+            c = Customer(
+                name=name,
+                domain=f"{name.lower()}.com",
+                keywords=[],
+                competitors=[],
+                sort_order=order,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            test_db.add(c)
+        test_db.commit()
+
+        response = client.get("/api/customers", headers=auth_headers)
+        data = response.json()
+
+        assert data[0]["name"] == "Alpha"
+        assert data[1]["name"] == "Middle"
+        assert data[2]["name"] == "Zebra"

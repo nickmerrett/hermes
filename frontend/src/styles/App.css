@@ -286,7 +286,7 @@
   font-size: 14px;
   font-weight: 600;
   color: #6b7280;
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   margin-top: 8px;
   border-bottom: 2px solid transparent;
@@ -299,6 +299,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.customer-tab:active:not(.add-customer-btn) {
+  cursor: grabbing;
 }
 
 .customer-tab:hover:not(.active) {
