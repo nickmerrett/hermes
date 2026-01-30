@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
@@ -16,6 +16,13 @@ from app.utils.smart_feed import (
     should_include_item,
     apply_diversity_control
 )
+from app.utils.clustering import (
+    get_clustering_settings,
+    title_similarity,
+    cosine_similarity,
+    cluster_item
+)
+from app.core.vector_store import get_vector_store
 import logging
 
 logger = logging.getLogger(__name__)
@@ -277,6 +284,276 @@ async def get_cluster_items(
         "cluster_id": cluster_id,
         "item_count": len(items),
         "items": items
+    }
+
+
+@router.get("/debug/clustering")
+async def debug_clustering(
+    search: str = Query(..., description="Search term to find items (e.g., 'Rio Tinto')"),
+    limit: int = Query(10, ge=1, le=20, description="Number of items to analyze"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Debug clustering - analyze why items may not have clustered together
+
+    Returns:
+    - Current clustering settings
+    - Items matching the search term
+    - Pairwise similarity analysis (embedding + title similarity)
+    - Explanation of why items did/didn't cluster
+    """
+    # Get clustering settings
+    settings = get_clustering_settings(db)
+    emb_threshold = settings.get('similarity_threshold', 0.80)
+    title_threshold = settings.get('title_similarity_threshold', 0.40)
+    title_enabled = settings.get('title_similarity_enabled', True)
+
+    # Search for items
+    items = db.query(IntelligenceItem).filter(
+        IntelligenceItem.title.ilike(f'%{search}%')
+    ).order_by(desc(IntelligenceItem.collected_date)).limit(limit).all()
+
+    if not items:
+        return {
+            "settings": settings,
+            "search": search,
+            "items": [],
+            "analysis": [],
+            "message": "No items found matching search term"
+        }
+
+    # Get vector store for embeddings
+    vector_store = get_vector_store()
+
+    # Build item info
+    items_info = []
+    items_with_embeddings = []
+    embeddings = []
+
+    for item in items:
+        emb = vector_store.get_embedding(item.id)
+        has_embedding = emb is not None
+
+        item_info = {
+            "id": item.id,
+            "title": item.title,
+            "source_type": item.source_type,
+            "published_date": item.published_date.isoformat() if item.published_date else None,
+            "cluster_id": item.cluster_id,
+            "is_cluster_primary": item.is_cluster_primary,
+            "cluster_member_count": item.cluster_member_count or 1,
+            "has_embedding": has_embedding
+        }
+        items_info.append(item_info)
+
+        if has_embedding:
+            items_with_embeddings.append(item)
+            embeddings.append(emb)
+
+    # Pairwise analysis
+    analysis = []
+    for i in range(len(items_with_embeddings)):
+        for j in range(i + 1, len(items_with_embeddings)):
+            item_i = items_with_embeddings[i]
+            item_j = items_with_embeddings[j]
+            emb_i = embeddings[i]
+            emb_j = embeddings[j]
+
+            emb_sim = cosine_similarity(emb_i, emb_j)
+            title_sim = title_similarity(item_i.title, item_j.title)
+
+            emb_pass = emb_sim >= emb_threshold
+            title_pass = title_sim >= title_threshold or not title_enabled
+
+            would_cluster = emb_pass and title_pass
+            same_cluster = (
+                item_i.cluster_id and item_j.cluster_id and
+                item_i.cluster_id == item_j.cluster_id
+            )
+
+            # Build reason
+            if would_cluster:
+                reason = "Would cluster (both thresholds met)"
+            else:
+                blockers = []
+                if not emb_pass:
+                    blockers.append(f"embedding {emb_sim:.3f} < {emb_threshold}")
+                if title_enabled and not title_pass:
+                    blockers.append(f"title {title_sim:.3f} < {title_threshold}")
+                reason = f"Blocked: {', '.join(blockers)}"
+
+            analysis.append({
+                "item_a": {"id": item_i.id, "title": item_i.title[:80]},
+                "item_b": {"id": item_j.id, "title": item_j.title[:80]},
+                "embedding_similarity": round(emb_sim, 3),
+                "embedding_passes": emb_pass,
+                "title_similarity": round(title_sim, 3),
+                "title_passes": title_pass,
+                "would_cluster": would_cluster,
+                "currently_same_cluster": same_cluster,
+                "reason": reason
+            })
+
+    return {
+        "settings": {
+            "similarity_threshold": emb_threshold,
+            "title_similarity_enabled": title_enabled,
+            "title_similarity_threshold": title_threshold,
+            "time_window_hours": settings.get('time_window_hours', 96),
+            "max_cluster_size": settings.get('max_cluster_size', 25),
+            "max_cluster_age_hours": settings.get('max_cluster_age_hours', 168)
+        },
+        "search": search,
+        "items_found": len(items),
+        "items_with_embeddings": len(items_with_embeddings),
+        "items": items_info,
+        "pairwise_analysis": analysis
+    }
+
+
+@router.post("/debug/recluster")
+async def recluster_items(
+    customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
+    search: Optional[str] = Query(None, description="Search term to find items to recluster"),
+    item_ids: Optional[List[int]] = Query(None, description="Specific item IDs to recluster"),
+    hours: int = Query(48, ge=1, le=168, description="Recluster items from the last N hours"),
+    dry_run: bool = Query(False, description="If true, only show what would happen without making changes"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Re-cluster items using current clustering settings
+
+    Use this after changing clustering settings to see if items cluster better.
+    Items are processed oldest-first so newer items can cluster with older ones.
+
+    Options:
+    - customer_id: Filter to a specific customer
+    - search: Recluster items matching a search term (e.g., "Rio Tinto")
+    - item_ids: Recluster specific items by ID
+    - hours: Recluster all items from the last N hours (default: 48)
+    - dry_run: Preview what would happen without making changes
+    """
+    vector_store = get_vector_store()
+    settings = get_clustering_settings(db)
+
+    # Build base query
+    query = db.query(IntelligenceItem)
+
+    # Apply customer filter if provided
+    if customer_id:
+        query = query.filter(IntelligenceItem.customer_id == customer_id)
+
+    # Find items to recluster
+    if item_ids:
+        items = query.filter(
+            IntelligenceItem.id.in_(item_ids)
+        ).order_by(IntelligenceItem.published_date.asc()).all()
+    elif search:
+        items = query.filter(
+            IntelligenceItem.title.ilike(f'%{search}%')
+        ).order_by(IntelligenceItem.published_date.asc()).all()
+    else:
+        # Default: last N hours
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        items = query.filter(
+            IntelligenceItem.collected_date >= cutoff
+        ).order_by(IntelligenceItem.published_date.asc()).all()
+
+    if not items:
+        return {
+            "message": "No items found to recluster",
+            "settings": settings
+        }
+
+    results = []
+    reclustered = 0
+    errors = 0
+
+    for item in items:
+        old_cluster = item.cluster_id
+        old_primary = item.is_cluster_primary
+
+        # Get embedding
+        embedding = vector_store.get_embedding(item.id)
+        if not embedding:
+            results.append({
+                "id": item.id,
+                "title": item.title[:60],
+                "status": "skipped",
+                "reason": "no embedding"
+            })
+            continue
+
+        if dry_run:
+            # For dry run, just report current state
+            results.append({
+                "id": item.id,
+                "title": item.title[:60],
+                "status": "would_recluster",
+                "current_cluster": old_cluster[:8] + "..." if old_cluster else None,
+                "has_embedding": True
+            })
+            continue
+
+        try:
+            # Clear existing cluster assignment
+            item.cluster_id = None
+            item.is_cluster_primary = False
+            item.cluster_member_count = None
+            db.flush()
+
+            # Re-cluster with current settings
+            new_cluster = cluster_item(item, embedding, db)
+
+            results.append({
+                "id": item.id,
+                "title": item.title[:60],
+                "status": "reclustered",
+                "old_cluster": old_cluster[:8] + "..." if old_cluster else None,
+                "new_cluster": new_cluster[:8] + "..." if new_cluster else None,
+                "changed": old_cluster != new_cluster,
+                "is_primary": item.is_cluster_primary
+            })
+            reclustered += 1
+
+        except Exception as e:
+            logger.error(f"Error reclustering item {item.id}: {e}")
+            db.rollback()
+            results.append({
+                "id": item.id,
+                "title": item.title[:60],
+                "status": "error",
+                "error": str(e)
+            })
+            errors += 1
+
+    # Update member counts for affected clusters
+    if not dry_run:
+        affected_clusters = set(r.get('new_cluster') for r in results if r.get('new_cluster'))
+        for cluster_id_short in affected_clusters:
+            if cluster_id_short:
+                # Find full cluster ID and update counts
+                cluster_items = db.query(IntelligenceItem).filter(
+                    IntelligenceItem.cluster_id.like(f'{cluster_id_short.replace("...", "")}%')
+                ).all()
+                count = len(cluster_items)
+                for ci in cluster_items:
+                    ci.cluster_member_count = count
+        db.commit()
+
+    return {
+        "dry_run": dry_run,
+        "settings": {
+            "similarity_threshold": settings.get('similarity_threshold'),
+            "title_similarity_threshold": settings.get('title_similarity_threshold'),
+            "title_similarity_enabled": settings.get('title_similarity_enabled')
+        },
+        "items_processed": len(items),
+        "reclustered": reclustered,
+        "errors": errors,
+        "results": results
     }
 
 
