@@ -1,16 +1,21 @@
 """Story clustering utilities for intelligent deduplication"""
 
 import uuid
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import numpy as np
 
 from app.models.database import IntelligenceItem, PlatformSettings
 from app.core.vector_store import get_vector_store
+from app.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+# LLM clients (lazy loaded)
+_anthropic_client = None
+_openai_client = None
 
 
 def get_clustering_settings(db: Session) -> Dict:
@@ -41,12 +46,129 @@ def get_default_clustering_settings() -> Dict:
         'enabled': True,
         'similarity_threshold': 0.80,  # Raised from 0.50
         'time_window_hours': 96,
-        # New settings
+        # Title similarity settings
         'title_similarity_enabled': True,
         'title_similarity_threshold': 0.40,  # Titles must be at least 40% similar
         'max_cluster_size': 25,  # Don't add to clusters larger than this
         'max_cluster_age_hours': 168,  # Don't add to clusters older than 7 days
+        # LLM tiebreaker settings
+        'llm_tiebreaker_enabled': False,  # Use LLM when embedding/title disagree
+        'llm_tiebreaker_provider': 'anthropic',  # 'anthropic' or 'openai'
+        'llm_tiebreaker_model': 'claude-haiku-4-5-20250929',  # Fast cheap model for yes/no
+        'llm_tiebreaker_embedding_min': 0.50,  # Only use LLM if embedding >= this
     }
+
+
+def _get_llm_client(provider: str):
+    """Get or create LLM client for tiebreaker"""
+    global _anthropic_client, _openai_client
+
+    if provider == 'anthropic':
+        if _anthropic_client is None:
+            from anthropic import Anthropic
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY not configured for LLM tiebreaker")
+            _anthropic_client = Anthropic(
+                api_key=settings.anthropic_api_key,
+                base_url=settings.anthropic_api_base_url
+            )
+        return _anthropic_client, 'anthropic'
+
+    elif provider == 'openai':
+        if _openai_client is None:
+            from openai import OpenAI
+            if not settings.openai_api_key:
+                raise ValueError("OPENAI_API_KEY not configured for LLM tiebreaker")
+            _openai_client = OpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url
+            )
+        return _openai_client, 'openai'
+
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}")
+
+
+def llm_similarity_check(
+    title_a: str,
+    title_b: str,
+    embedding_similarity: float,
+    title_similarity: float,
+    provider: str = 'anthropic',
+    model: str = 'claude-haiku-4-5-20250929'
+) -> Tuple[bool, str]:
+    """
+    Use LLM to determine if two headlines are about the same news story.
+
+    This is a tiebreaker for when embedding similarity is high but title
+    similarity (Jaccard) is low - common when articles use different wording.
+
+    Args:
+        title_a: First headline
+        title_b: Second headline
+        embedding_similarity: Cosine similarity of embeddings (0.0-1.0)
+        title_similarity: Jaccard similarity of titles (0.0-1.0)
+        provider: LLM provider ('anthropic' or 'openai')
+        model: Model name to use
+
+    Returns:
+        Tuple of (is_same_story: bool, reasoning: str)
+    """
+    try:
+        client, client_type = _get_llm_client(provider)
+
+        prompt = f"""You are analyzing news headlines to determine if they cover the same story.
+
+Context:
+- Embedding similarity: {embedding_similarity:.0%} (semantic similarity of full content)
+- Title word overlap: {title_similarity:.0%} (Jaccard coefficient)
+
+The embedding similarity is high but title word overlap is low. This often happens when:
+- Different outlets use different words for the same event (buy/acquire, deal/merger)
+- Entity name variations (Chalco/Chinalco, CBA/Companhia Brasileira de Alumínio)
+- Different focus angles on the same underlying news
+
+Headline A: {title_a}
+
+Headline B: {title_b}
+
+Are these two headlines about the SAME news story/event?
+
+Answer with ONLY "YES" or "NO" on the first line, then a brief reason on the second line."""
+
+        if client_type == 'anthropic':
+            response = client.messages.create(
+                model=model,
+                max_tokens=100,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            response_text = response.content[0].text.strip()
+        else:  # openai
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=100,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            response_text = response.choices[0].message.content.strip()
+
+        # Parse response
+        lines = response_text.split('\n')
+        answer = lines[0].strip().upper()
+        reasoning = lines[1].strip() if len(lines) > 1 else ""
+
+        is_same = answer.startswith('YES')
+
+        logger.info(
+            f"LLM tiebreaker: {'SAME' if is_same else 'DIFFERENT'} story - "
+            f"'{title_a[:40]}...' vs '{title_b[:40]}...' - {reasoning}"
+        )
+
+        return is_same, reasoning
+
+    except Exception as e:
+        logger.error(f"LLM tiebreaker error: {e}")
+        # On error, fall back to not clustering (safer)
+        return False, f"Error: {e}"
 
 
 # Source tier rankings (lower = higher priority)
@@ -118,7 +240,11 @@ def find_similar_cluster(
     title_similarity_enabled: bool = True,
     title_similarity_threshold: float = 0.40,
     max_cluster_size: int = 25,
-    max_cluster_age_hours: int = 168
+    max_cluster_age_hours: int = 168,
+    llm_tiebreaker_enabled: bool = False,
+    llm_tiebreaker_provider: str = 'anthropic',
+    llm_tiebreaker_model: str = 'claude-haiku-4-5-20250929',
+    llm_tiebreaker_embedding_min: float = 0.50
 ) -> Optional[str]:
     """
     Find existing cluster for a new item based on embedding similarity
@@ -205,12 +331,39 @@ def find_similar_cluster(
                 if title_similarity_enabled:
                     t_sim = title_similarity(item_title, existing_item.title)
                     if t_sim < title_similarity_threshold:
-                        logger.debug(
-                            f"Rejected cluster match: embedding sim {embedding_sim:.3f} OK but "
-                            f"title sim {t_sim:.3f} < {title_similarity_threshold} "
-                            f"('{item_title[:50]}...' vs '{existing_item.title[:50]}...')"
-                        )
-                        continue
+                        # Title similarity failed - try LLM tiebreaker if enabled
+                        if llm_tiebreaker_enabled and embedding_sim >= llm_tiebreaker_embedding_min:
+                            logger.info(
+                                f"Title mismatch (emb={embedding_sim:.3f}, title={t_sim:.3f}) - "
+                                f"invoking LLM tiebreaker"
+                            )
+                            is_same, reason = llm_similarity_check(
+                                title_a=item_title,
+                                title_b=existing_item.title,
+                                embedding_similarity=embedding_sim,
+                                title_similarity=t_sim,
+                                provider=llm_tiebreaker_provider,
+                                model=llm_tiebreaker_model
+                            )
+                            if not is_same:
+                                logger.debug(
+                                    f"LLM confirmed different stories: "
+                                    f"'{item_title[:50]}...' vs '{existing_item.title[:50]}...' - {reason}"
+                                )
+                                continue
+                            else:
+                                logger.info(
+                                    f"LLM confirmed same story despite title mismatch: "
+                                    f"'{item_title[:50]}...' vs '{existing_item.title[:50]}...' - {reason}"
+                                )
+                                # LLM says it's the same - allow clustering
+                        else:
+                            logger.debug(
+                                f"Rejected cluster match: embedding sim {embedding_sim:.3f} OK but "
+                                f"title sim {t_sim:.3f} < {title_similarity_threshold} "
+                                f"('{item_title[:50]}...' vs '{existing_item.title[:50]}...')"
+                            )
+                            continue
                 else:
                     t_sim = 1.0  # Not checking titles
 
@@ -460,6 +613,12 @@ def cluster_item(
         max_cluster_size = clustering_settings.get('max_cluster_size', 25)
         max_cluster_age_hours = clustering_settings.get('max_cluster_age_hours', 168)
 
+        # LLM tiebreaker settings
+        llm_tiebreaker_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
+        llm_tiebreaker_provider = clustering_settings.get('llm_tiebreaker_provider', 'anthropic')
+        llm_tiebreaker_model = clustering_settings.get('llm_tiebreaker_model', 'claude-haiku-4-5-20250929')
+        llm_tiebreaker_embedding_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
+
         # LinkedIn posts are individual perspectives, don't cluster them
         # Always give them their own cluster
         if item.source_type in ['linkedin', 'linkedin_user']:
@@ -478,7 +637,11 @@ def cluster_item(
             title_similarity_enabled=title_similarity_enabled,
             title_similarity_threshold=title_similarity_threshold,
             max_cluster_size=max_cluster_size,
-            max_cluster_age_hours=max_cluster_age_hours
+            max_cluster_age_hours=max_cluster_age_hours,
+            llm_tiebreaker_enabled=llm_tiebreaker_enabled,
+            llm_tiebreaker_provider=llm_tiebreaker_provider,
+            llm_tiebreaker_model=llm_tiebreaker_model,
+            llm_tiebreaker_embedding_min=llm_tiebreaker_embedding_min
         )
 
         if cluster_id:

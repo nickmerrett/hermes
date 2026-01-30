@@ -20,7 +20,8 @@ from app.utils.clustering import (
     get_clustering_settings,
     title_similarity,
     cosine_similarity,
-    cluster_item
+    cluster_item,
+    llm_similarity_check
 )
 from app.core.vector_store import get_vector_store
 import logging
@@ -291,6 +292,7 @@ async def get_cluster_items(
 async def debug_clustering(
     search: str = Query(..., description="Search term to find items (e.g., 'Rio Tinto')"),
     limit: int = Query(10, ge=1, le=20, description="Number of items to analyze"),
+    test_llm: bool = Query(False, description="Test LLM tiebreaker on mismatches"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -302,12 +304,17 @@ async def debug_clustering(
     - Items matching the search term
     - Pairwise similarity analysis (embedding + title similarity)
     - Explanation of why items did/didn't cluster
+    - Optional LLM tiebreaker test results
     """
     # Get clustering settings
-    settings = get_clustering_settings(db)
-    emb_threshold = settings.get('similarity_threshold', 0.80)
-    title_threshold = settings.get('title_similarity_threshold', 0.40)
-    title_enabled = settings.get('title_similarity_enabled', True)
+    clustering_settings = get_clustering_settings(db)
+    emb_threshold = clustering_settings.get('similarity_threshold', 0.80)
+    title_threshold = clustering_settings.get('title_similarity_threshold', 0.40)
+    title_enabled = clustering_settings.get('title_similarity_enabled', True)
+    llm_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
+    llm_provider = clustering_settings.get('llm_tiebreaker_provider', 'anthropic')
+    llm_model = clustering_settings.get('llm_tiebreaker_model', 'claude-haiku-4-5-20250929')
+    llm_emb_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
 
     # Search for items
     items = db.query(IntelligenceItem).filter(
@@ -316,7 +323,7 @@ async def debug_clustering(
 
     if not items:
         return {
-            "settings": settings,
+            "settings": clustering_settings,
             "search": search,
             "items": [],
             "analysis": [],
@@ -373,6 +380,7 @@ async def debug_clustering(
             )
 
             # Build reason
+            llm_result = None
             if would_cluster:
                 reason = "Would cluster (both thresholds met)"
             else:
@@ -383,7 +391,28 @@ async def debug_clustering(
                     blockers.append(f"title {title_sim:.3f} < {title_threshold}")
                 reason = f"Blocked: {', '.join(blockers)}"
 
-            analysis.append({
+                # Test LLM tiebreaker if requested and embedding is decent
+                if test_llm and emb_pass and not title_pass:
+                    try:
+                        is_same, llm_reason = llm_similarity_check(
+                            title_a=item_i.title,
+                            title_b=item_j.title,
+                            embedding_similarity=emb_sim,
+                            title_similarity=title_sim,
+                            provider=llm_provider,
+                            model=llm_model
+                        )
+                        llm_result = {
+                            "is_same_story": is_same,
+                            "reasoning": llm_reason,
+                            "would_override": is_same  # LLM would allow clustering
+                        }
+                        if is_same:
+                            reason += f" -> LLM OVERRIDE: same story ({llm_reason})"
+                    except Exception as e:
+                        llm_result = {"error": str(e)}
+
+            result_entry = {
                 "item_a": {"id": item_i.id, "title": item_i.title[:80]},
                 "item_b": {"id": item_j.id, "title": item_j.title[:80]},
                 "embedding_similarity": round(emb_sim, 3),
@@ -393,22 +422,31 @@ async def debug_clustering(
                 "would_cluster": would_cluster,
                 "currently_same_cluster": same_cluster,
                 "reason": reason
-            })
+            }
+            if llm_result:
+                result_entry["llm_tiebreaker"] = llm_result
+
+            analysis.append(result_entry)
 
     return {
         "settings": {
             "similarity_threshold": emb_threshold,
             "title_similarity_enabled": title_enabled,
             "title_similarity_threshold": title_threshold,
-            "time_window_hours": settings.get('time_window_hours', 96),
-            "max_cluster_size": settings.get('max_cluster_size', 25),
-            "max_cluster_age_hours": settings.get('max_cluster_age_hours', 168)
+            "time_window_hours": clustering_settings.get('time_window_hours', 96),
+            "max_cluster_size": clustering_settings.get('max_cluster_size', 25),
+            "max_cluster_age_hours": clustering_settings.get('max_cluster_age_hours', 168),
+            "llm_tiebreaker_enabled": llm_enabled,
+            "llm_tiebreaker_provider": llm_provider,
+            "llm_tiebreaker_model": llm_model,
+            "llm_tiebreaker_embedding_min": llm_emb_min
         },
         "search": search,
         "items_found": len(items),
         "items_with_embeddings": len(items_with_embeddings),
         "items": items_info,
-        "pairwise_analysis": analysis
+        "pairwise_analysis": analysis,
+        "test_llm_requested": test_llm
     }
 
 
@@ -436,7 +474,7 @@ async def recluster_items(
     - dry_run: Preview what would happen without making changes
     """
     vector_store = get_vector_store()
-    settings = get_clustering_settings(db)
+    clustering_settings = get_clustering_settings(db)
 
     # Build base query
     query = db.query(IntelligenceItem)
@@ -464,7 +502,7 @@ async def recluster_items(
     if not items:
         return {
             "message": "No items found to recluster",
-            "settings": settings
+            "settings": clustering_settings
         }
 
     results = []
@@ -473,7 +511,6 @@ async def recluster_items(
 
     for item in items:
         old_cluster = item.cluster_id
-        old_primary = item.is_cluster_primary
 
         # Get embedding
         embedding = vector_store.get_embedding(item.id)
@@ -546,9 +583,10 @@ async def recluster_items(
     return {
         "dry_run": dry_run,
         "settings": {
-            "similarity_threshold": settings.get('similarity_threshold'),
-            "title_similarity_threshold": settings.get('title_similarity_threshold'),
-            "title_similarity_enabled": settings.get('title_similarity_enabled')
+            "similarity_threshold": clustering_settings.get('similarity_threshold'),
+            "title_similarity_threshold": clustering_settings.get('title_similarity_threshold'),
+            "title_similarity_enabled": clustering_settings.get('title_similarity_enabled'),
+            "llm_tiebreaker_enabled": clustering_settings.get('llm_tiebreaker_enabled')
         },
         "items_processed": len(items),
         "reclustered": reclustered,
