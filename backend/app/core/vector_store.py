@@ -61,14 +61,15 @@ class VectorStore:
             # Generate embedding
             embedding = self.embedding_model.encode(text).tolist()
 
-            # Store in ChromaDB
-            self.collection.add(
+            # Store in ChromaDB (use upsert to handle re-processing)
+            # Note: add() silently fails on duplicate IDs, keeping old embedding!
+            self.collection.upsert(
                 ids=[str(item_id)],
                 embeddings=[embedding],
                 metadatas=[metadata or {}],
                 documents=[text]
             )
-            logger.debug(f"Added item {item_id} to vector store")
+            logger.debug(f"Upserted item {item_id} to vector store")
 
         except Exception as e:
             logger.error(f"Error adding item {item_id} to vector store: {e}")
@@ -92,14 +93,15 @@ class VectorStore:
             # Generate embeddings
             embeddings = self.embedding_model.encode(texts).tolist()
 
-            # Store in ChromaDB
-            self.collection.add(
+            # Store in ChromaDB (use upsert to handle re-processing)
+            # Note: add() silently fails on duplicate IDs, keeping old embedding!
+            self.collection.upsert(
                 ids=[str(id) for id in item_ids],
                 embeddings=embeddings,
                 metadatas=metadatas or [{} for _ in item_ids],
                 documents=texts
             )
-            logger.info(f"Added {len(item_ids)} items to vector store")
+            logger.info(f"Upserted {len(item_ids)} items to vector store")
 
         except Exception as e:
             logger.error(f"Error adding batch to vector store: {e}")
@@ -187,7 +189,8 @@ class VectorStore:
         self.client.delete_collection(self.collection_name)
         self.collection = self.client.create_collection(
             name=self.collection_name,
-            metadata={"description": "Intelligence item embeddings for semantic search"}
+            metadata={"description": "Intelligence item embeddings for semantic search",
+                     "hnsw:space": "cosine"}  # Use cosine similarity
         )
         logger.warning("Vector store has been reset")
 
