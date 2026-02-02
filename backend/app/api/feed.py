@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus, User
+from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus, User, PlatformSettings
 from app.utils.smart_feed import (
     get_smart_feed_settings,
     calculate_effective_priority,
@@ -315,6 +315,14 @@ async def debug_clustering(
     llm_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
     llm_emb_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
 
+    # Get actual model being used (from db ai_config, same as ai_processor)
+    actual_model = settings.ai_model_cheap
+    ai_config_row = db.query(PlatformSettings).filter(
+        PlatformSettings.key == 'ai_config'
+    ).first()
+    if ai_config_row and isinstance(ai_config_row.value, dict):
+        actual_model = ai_config_row.value.get('model_cheap', actual_model)
+
     # Search for items
     items = db.query(IntelligenceItem).filter(
         IntelligenceItem.title.ilike(f'%{search}%')
@@ -397,7 +405,8 @@ async def debug_clustering(
                             title_a=item_i.title,
                             title_b=item_j.title,
                             embedding_similarity=emb_sim,
-                            title_similarity=title_sim
+                            title_similarity=title_sim,
+                            db=db
                         )
                         llm_result = {
                             "is_same_story": is_same,
@@ -436,7 +445,8 @@ async def debug_clustering(
             "llm_tiebreaker_enabled": llm_enabled,
             "llm_tiebreaker_embedding_min": llm_emb_min,
             "ai_provider_cheap": settings.ai_provider_cheap,
-            "ai_model_cheap": settings.ai_model_cheap
+            "ai_model_cheap_env": settings.ai_model_cheap,
+            "ai_model_cheap_actual": actual_model
         },
         "search": search,
         "items_found": len(items),

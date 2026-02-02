@@ -91,7 +91,8 @@ def llm_similarity_check(
     title_a: str,
     title_b: str,
     embedding_similarity: float,
-    title_similarity: float
+    title_similarity: float,
+    db: Session = None
 ) -> Tuple[bool, str]:
     """
     Use LLM to determine if two headlines are about the same news story.
@@ -100,18 +101,33 @@ def llm_similarity_check(
     similarity (Jaccard) is low - common when articles use different wording.
 
     Uses settings.ai_provider_cheap and settings.ai_model_cheap (same as entity extraction).
+    If db is provided, reads model override from platform_settings ai_config.
 
     Args:
         title_a: First headline
         title_b: Second headline
         embedding_similarity: Cosine similarity of embeddings (0.0-1.0)
         title_similarity: Jaccard similarity of titles (0.0-1.0)
+        db: Database session (optional, used to read model from platform settings)
 
     Returns:
         Tuple of (is_same_story: bool, reasoning: str)
     """
     provider = settings.ai_provider_cheap
     model = settings.ai_model_cheap
+
+    # Check for model override in platform settings (same as ai_processor.py)
+    if db:
+        try:
+            ai_config_row = db.query(PlatformSettings).filter(
+                PlatformSettings.key == 'ai_config'
+            ).first()
+            if ai_config_row and isinstance(ai_config_row.value, dict):
+                config = ai_config_row.value
+                model = config.get('model_cheap', model)
+                logger.debug(f"LLM tiebreaker using model from ai_config: {model}")
+        except Exception as e:
+            logger.warning(f"Could not read ai_config from database: {e}")
 
     try:
         client, client_type = _get_llm_client(provider)
@@ -340,7 +356,8 @@ def find_similar_cluster(
                                 title_a=item_title,
                                 title_b=existing_item.title,
                                 embedding_similarity=embedding_sim,
-                                title_similarity=t_sim
+                                title_similarity=t_sim,
+                                db=db
                             )
                             if not is_same:
                                 logger.debug(

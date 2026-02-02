@@ -35,7 +35,7 @@ def get_engine():
     engine = create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False},  # Needed for SQLite
-        echo=settings.is_development,  # Log SQL in development
+        echo=settings.sql_echo,  # Log SQL only when SQL_ECHO=true
     )
     return engine
 

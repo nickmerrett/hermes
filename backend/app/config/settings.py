@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     # Application
     app_env: str = "development"
     log_level: str = "INFO"
+    sql_echo: bool = False  # Log all SQL queries (very verbose, only for debugging)
 
     # Database
     database_path: str = "data/db/intelligence.db"
