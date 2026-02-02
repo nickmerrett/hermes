@@ -51,10 +51,8 @@ def get_default_clustering_settings() -> Dict:
         'title_similarity_threshold': 0.40,  # Titles must be at least 40% similar
         'max_cluster_size': 25,  # Don't add to clusters larger than this
         'max_cluster_age_hours': 168,  # Don't add to clusters older than 7 days
-        # LLM tiebreaker settings
+        # LLM tiebreaker settings (uses ai_model_cheap/ai_provider_cheap from settings)
         'llm_tiebreaker_enabled': False,  # Use LLM when embedding/title disagree
-        'llm_tiebreaker_provider': 'anthropic',  # 'anthropic' or 'openai'
-        'llm_tiebreaker_model': 'claude-haiku-4-5-20250929',  # Fast cheap model for yes/no
         'llm_tiebreaker_embedding_min': 0.50,  # Only use LLM if embedding >= this
     }
 
@@ -93,9 +91,7 @@ def llm_similarity_check(
     title_a: str,
     title_b: str,
     embedding_similarity: float,
-    title_similarity: float,
-    provider: str = 'anthropic',
-    model: str = 'claude-haiku-4-5-20250929'
+    title_similarity: float
 ) -> Tuple[bool, str]:
     """
     Use LLM to determine if two headlines are about the same news story.
@@ -103,17 +99,20 @@ def llm_similarity_check(
     This is a tiebreaker for when embedding similarity is high but title
     similarity (Jaccard) is low - common when articles use different wording.
 
+    Uses settings.ai_provider_cheap and settings.ai_model_cheap (same as entity extraction).
+
     Args:
         title_a: First headline
         title_b: Second headline
         embedding_similarity: Cosine similarity of embeddings (0.0-1.0)
         title_similarity: Jaccard similarity of titles (0.0-1.0)
-        provider: LLM provider ('anthropic' or 'openai')
-        model: Model name to use
 
     Returns:
         Tuple of (is_same_story: bool, reasoning: str)
     """
+    provider = settings.ai_provider_cheap
+    model = settings.ai_model_cheap
+
     try:
         client, client_type = _get_llm_client(provider)
 
@@ -242,8 +241,6 @@ def find_similar_cluster(
     max_cluster_size: int = 25,
     max_cluster_age_hours: int = 168,
     llm_tiebreaker_enabled: bool = False,
-    llm_tiebreaker_provider: str = 'anthropic',
-    llm_tiebreaker_model: str = 'claude-haiku-4-5-20250929',
     llm_tiebreaker_embedding_min: float = 0.50
 ) -> Optional[str]:
     """
@@ -261,6 +258,8 @@ def find_similar_cluster(
         title_similarity_threshold: Min title similarity if enabled (0.0-1.0)
         max_cluster_size: Don't add to clusters larger than this
         max_cluster_age_hours: Don't add to clusters older than this
+        llm_tiebreaker_enabled: Use LLM when embedding passes but title fails
+        llm_tiebreaker_embedding_min: Min embedding similarity to invoke LLM
 
     Returns:
         cluster_id if similar cluster found, None otherwise
@@ -341,9 +340,7 @@ def find_similar_cluster(
                                 title_a=item_title,
                                 title_b=existing_item.title,
                                 embedding_similarity=embedding_sim,
-                                title_similarity=t_sim,
-                                provider=llm_tiebreaker_provider,
-                                model=llm_tiebreaker_model
+                                title_similarity=t_sim
                             )
                             if not is_same:
                                 logger.debug(
@@ -615,8 +612,6 @@ def cluster_item(
 
         # LLM tiebreaker settings
         llm_tiebreaker_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
-        llm_tiebreaker_provider = clustering_settings.get('llm_tiebreaker_provider', 'anthropic')
-        llm_tiebreaker_model = clustering_settings.get('llm_tiebreaker_model', 'claude-haiku-4-5-20250929')
         llm_tiebreaker_embedding_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
 
         # LinkedIn posts are individual perspectives, don't cluster them
@@ -639,8 +634,6 @@ def cluster_item(
             max_cluster_size=max_cluster_size,
             max_cluster_age_hours=max_cluster_age_hours,
             llm_tiebreaker_enabled=llm_tiebreaker_enabled,
-            llm_tiebreaker_provider=llm_tiebreaker_provider,
-            llm_tiebreaker_model=llm_tiebreaker_model,
             llm_tiebreaker_embedding_min=llm_tiebreaker_embedding_min
         )
 

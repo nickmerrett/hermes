@@ -24,6 +24,7 @@ from app.utils.clustering import (
     llm_similarity_check
 )
 from app.core.vector_store import get_vector_store
+from app.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -312,8 +313,6 @@ async def debug_clustering(
     title_threshold = clustering_settings.get('title_similarity_threshold', 0.40)
     title_enabled = clustering_settings.get('title_similarity_enabled', True)
     llm_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
-    llm_provider = clustering_settings.get('llm_tiebreaker_provider', 'anthropic')
-    llm_model = clustering_settings.get('llm_tiebreaker_model', 'claude-haiku-4-5-20250929')
     llm_emb_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
 
     # Search for items
@@ -398,9 +397,7 @@ async def debug_clustering(
                             title_a=item_i.title,
                             title_b=item_j.title,
                             embedding_similarity=emb_sim,
-                            title_similarity=title_sim,
-                            provider=llm_provider,
-                            model=llm_model
+                            title_similarity=title_sim
                         )
                         llm_result = {
                             "is_same_story": is_same,
@@ -437,9 +434,9 @@ async def debug_clustering(
             "max_cluster_size": clustering_settings.get('max_cluster_size', 25),
             "max_cluster_age_hours": clustering_settings.get('max_cluster_age_hours', 168),
             "llm_tiebreaker_enabled": llm_enabled,
-            "llm_tiebreaker_provider": llm_provider,
-            "llm_tiebreaker_model": llm_model,
-            "llm_tiebreaker_embedding_min": llm_emb_min
+            "llm_tiebreaker_embedding_min": llm_emb_min,
+            "ai_provider_cheap": settings.ai_provider_cheap,
+            "ai_model_cheap": settings.ai_model_cheap
         },
         "search": search,
         "items_found": len(items),
