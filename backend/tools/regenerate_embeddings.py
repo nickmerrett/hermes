@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.database import SessionLocal
 from app.models.database import IntelligenceItem
 from app.core.vector_store import get_vector_store
+from app.utils.text_cleaning import clean_text_for_embedding
 from sqlalchemy import desc
 import argparse
 
@@ -50,8 +51,8 @@ def regenerate_embeddings(hours: int = None, item_ids: list = None, batch_size: 
             except Exception:
                 pass  # May not exist
 
-            # Generate new embedding
-            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+            # Generate new embedding (strip HTML/markdown/URLs from content)
+            text_for_embedding = clean_text_for_embedding(item.title, item.content)
             embedding = vector_store.embedding_model.encode(text_for_embedding).tolist()
 
             # Store new embedding

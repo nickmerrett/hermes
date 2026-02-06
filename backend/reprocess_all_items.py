@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.models.database import ProcessedIntelligence, IntelligenceItem, Customer
 from app.processors.ai_processor import get_ai_processor
 from app.core.vector_store import get_vector_store
+from app.utils.text_cleaning import clean_text_for_embedding
 from datetime import datetime
 
 async def reprocess_all_incomplete_items():
@@ -120,7 +121,7 @@ async def reprocess_all_incomplete_items():
             try:
                 vector_store.add_item(
                     item_id=str(item.id),
-                    text=f"{item.title}\n\n{item.content or ''}",
+                    text=clean_text_for_embedding(item.title, item.content),
                     metadata={
                         'customer_id': item.customer_id,
                         'source_type': item.source_type,

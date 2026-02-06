@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.database import SessionLocal
 from app.models.database import IntelligenceItem
 from app.core.vector_store import get_vector_store
+from app.utils.text_cleaning import clean_text_for_embedding
 
 
 def compare_content(item_ids: list):
@@ -37,8 +38,8 @@ def compare_content(item_ids: list):
             print(f"Item {item_id}: ERROR getting from ChromaDB: {e}")
             continue
 
-        # What we would embed now
-        expected_doc = f"{item.title}\n\n{item.content or ''}"
+        # What we would embed now (with markup stripped)
+        expected_doc = clean_text_for_embedding(item.title, item.content)
 
         print(f"Item {item_id}:")
         print(f"  Title (DB): {item.title[:70]}...")

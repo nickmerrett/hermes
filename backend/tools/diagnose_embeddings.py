@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.models.database import IntelligenceItem
 from app.core.vector_store import get_vector_store
 from app.utils.clustering import cosine_similarity
+from app.utils.text_cleaning import clean_text_for_embedding
 import numpy as np
 
 
@@ -42,8 +43,8 @@ def diagnose_embeddings(item_ids: list):
         except Exception:
             stored_doc = None
 
-        # Generate fresh embedding from title+content
-        text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+        # Generate fresh embedding from title+content (with markup stripped)
+        text_for_embedding = clean_text_for_embedding(item.title, item.content)
         fresh_emb = vector_store.embedding_model.encode(text_for_embedding).tolist()
 
         # Generate title-only embedding for comparison

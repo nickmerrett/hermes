@@ -304,7 +304,8 @@ async def reprocess_failed_items(
                                 pass  # Item might not exist in vector store yet
 
                             # Add updated embedding
-                            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+                            from app.utils.text_cleaning import clean_text_for_embedding
+                            text_for_embedding = clean_text_for_embedding(item.title, item.content)
                             vector_store.add_item(
                                 item_id=str(item.id),
                                 text=text_for_embedding,
@@ -604,7 +605,8 @@ async def reprocess_incomplete_items(
                                 pass  # Item might not exist in vector store yet
 
                             # Add updated embedding
-                            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+                            from app.utils.text_cleaning import clean_text_for_embedding
+                            text_for_embedding = clean_text_for_embedding(item.title, item.content)
                             vector_store.add_item(
                                 item_id=str(item.id),
                                 text=text_for_embedding,

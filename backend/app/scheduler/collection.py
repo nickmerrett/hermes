@@ -15,6 +15,7 @@ from app.core.vector_store import get_vector_store
 from app.models.database import Customer, Source, IntelligenceItem, ProcessedIntelligence, CollectionJob, CollectionStatus
 from app.utils.deduplication import normalize_url, is_similar_title
 from app.utils.clustering import cluster_item
+from app.utils.text_cleaning import clean_text_for_embedding
 from app.utils.rate_limiter import GlobalRateLimiter, TaskQueue
 from app.collectors.news_collector import NewsAPICollector
 from app.collectors.rss_collector import RSSCollector
@@ -1265,7 +1266,7 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
             embedding_added = False
             item_embedding = None
             try:
-                text_for_embedding = f"{db_item.title}\n\n{db_item.content or ''}"
+                text_for_embedding = clean_text_for_embedding(db_item.title, db_item.content)
                 vector_store.add_item(
                     item_id=db_item.id,
                     text=text_for_embedding,

@@ -72,6 +72,7 @@ else:
 from app.core.database import SessionLocal
 from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer
 from app.scheduler.collection import sync_customers_to_db, export_customers_to_yaml
+from app.utils.text_cleaning import clean_text_for_embedding
 from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta
 import time
@@ -748,7 +749,7 @@ def cmd_rebuild_vectors(args):
 
         print("\n🔄 Preparing embeddings...")
         for item in items:
-            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+            text_for_embedding = clean_text_for_embedding(item.title, item.content)
 
             item_ids.append(item.id)
             texts.append(text_for_embedding)

@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     ai_model: str = "claude-sonnet-4-5-20250929"  # Model for daily summaries and complex tasks
     ai_model_tier: str = "frontier"  # Prompt complexity tier: "frontier" (Sonnet, GPT-4, Opus) or "small" (Haiku, GPT-3.5, local models)
     ai_provider_cheap: str = "anthropic"  # Provider for economy model: anthropic or openai
-    ai_model_cheap: str = "claude-haiku-4-5-20250929"  # Cheaper model for entity extraction, filtering, article summaries
+    ai_model_cheap: str = "claude-haiku-4-5-20251001"  # Cheaper model for entity extraction, filtering, article summaries
     ai_model_tier_cheap: str = "small"  # Prompt complexity tier for cheap model: "frontier" or "small"
     model_override_in_ui: bool = False  # Allow UI to override model settings from environment variables
 

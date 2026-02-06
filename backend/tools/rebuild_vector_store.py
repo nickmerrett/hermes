@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.core.database import SessionLocal
 from app.core.vector_store import get_vector_store
 from app.models.database import IntelligenceItem
+from app.utils.text_cleaning import clean_text_for_embedding
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +42,7 @@ def rebuild_vector_store():
         metadatas = []
 
         for item in items:
-            text_for_embedding = f"{item.title}\n\n{item.content or ''}"
+            text_for_embedding = clean_text_for_embedding(item.title, item.content)
 
             item_ids.append(item.id)
             texts.append(text_for_embedding)
