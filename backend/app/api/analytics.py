@@ -1,11 +1,13 @@
 """Analytics API endpoints"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from datetime import datetime, timedelta
 from anthropic import Anthropic
 from typing import Optional
+from collections import Counter, defaultdict
+import json
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -214,6 +216,7 @@ async def get_daily_summary_ai(
                 "high_priority_count": cached_summary.high_priority_count,
                 "items_by_category": cached_summary.items_by_category or {},
                 "summary": cached_summary.summary_text,
+                "sources": cached_summary.sources_json or [],
                 "cached": True,
                 "generated_at": cached_summary.generated_at
             }
@@ -251,6 +254,7 @@ async def get_daily_summary_ai(
 
     # Prepare items for AI summarization
     items_text = []
+    sources_map = []
     for idx, item in enumerate(recent_items[:20], 1):  # Limit to top 20 for token usage
         priority = "HIGH" if item.processed and item.processed.priority_score >= 0.7 else "MEDIUM" if item.processed and item.processed.priority_score >= 0.5 else "LOW"
         category = item.processed.category if item.processed else "unknown"
@@ -263,6 +267,13 @@ async def get_daily_summary_ai(
             f"   Sentiment: {sentiment}\n"
             f"   Source: {item.source_type}"
         )
+        sources_map.append({
+            "index": idx,
+            "title": item.title,
+            "url": item.url,
+            "source_type": item.source_type,
+            "item_id": item.id
+        })
 
     # Group by category for context
     category_counts = {}
@@ -420,6 +431,8 @@ async def get_daily_summary_ai(
 - Notable competitor activities
 - Strategic opportunities and risks
 
+When referencing specific intelligence items, include their number in square brackets like [1], [3]. Only use numbers from the items list.
+
 Keep the summary professional, actionable, and under 300 words."""
 
             # Build the full prompt with context
@@ -464,7 +477,8 @@ Write the briefing now:"""
             summary_text=summary_text,
             total_items=len(recent_items),
             high_priority_count=sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7),
-            items_by_category=category_counts
+            items_by_category=category_counts,
+            sources_json=sources_map
         )
         db.add(summary_record)
         db.commit()
@@ -480,6 +494,7 @@ Write the briefing now:"""
             "high_priority_count": sum(1 for item in recent_items if item.processed and item.processed.priority_score >= 0.7),
             "items_by_category": category_counts,
             "summary": summary_text,
+            "sources": sources_map,
             "cached": False,
             "generated_at": summary_record.generated_at
         }
@@ -493,3 +508,244 @@ Write the briefing now:"""
             "total_items": len(recent_items),
             "summary": f"Error generating AI summary: {str(e)}"
         }
+
+
+@router.get("/dashboard/{customer_id}")
+async def get_analytics_dashboard(
+    customer_id: int,
+    days: int = Query(default=30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get full analytics dashboard data for a customer"""
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return {"error": "Customer not found"}
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Base query filters
+    base_item_filter = [
+        IntelligenceItem.customer_id == customer_id,
+        IntelligenceItem.collected_date >= cutoff,
+        IntelligenceItem.ignored == False,
+    ]
+
+    # --- Summary stats ---
+    total_items = db.query(func.count(IntelligenceItem.id)).filter(
+        *base_item_filter
+    ).scalar() or 0
+
+    high_priority_count = db.query(func.count(ProcessedIntelligence.id)).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+        ProcessedIntelligence.priority_score >= 0.7,
+    ).scalar() or 0
+
+    avg_priority = db.query(func.avg(ProcessedIntelligence.priority_score)).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+    ).scalar()
+    avg_priority = round(avg_priority, 2) if avg_priority else 0
+
+    sources_active = db.query(func.count(func.distinct(IntelligenceItem.source_type))).filter(
+        *base_item_filter
+    ).scalar() or 0
+
+    # --- Timeline: daily counts by category ---
+    timeline_rows = db.query(
+        func.date(IntelligenceItem.collected_date).label('day'),
+        ProcessedIntelligence.category,
+        func.count(IntelligenceItem.id).label('cnt'),
+    ).outerjoin(
+        ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+    ).group_by('day', ProcessedIntelligence.category).all()
+
+    # Build timeline with zero-fill
+    timeline_map = defaultdict(lambda: defaultdict(int))
+    all_categories = set()
+    for row in timeline_rows:
+        day_str = str(row.day)
+        cat = row.category or 'uncategorized'
+        timeline_map[day_str][cat] += row.cnt
+        all_categories.add(cat)
+
+    # Zero-fill missing days
+    timeline = []
+    if timeline_map:
+        current = cutoff.date()
+        end = datetime.utcnow().date()
+        while current <= end:
+            day_str = current.isoformat()
+            breakdown = timeline_map.get(day_str, {})
+            count = sum(breakdown.values())
+            timeline.append({
+                "date": day_str,
+                "count": count,
+                "breakdown": dict(breakdown),
+            })
+            current += timedelta(days=1)
+
+    # --- Tag frequencies ---
+    tag_rows = db.query(ProcessedIntelligence.tags).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+        ProcessedIntelligence.tags.isnot(None),
+    ).all()
+
+    tag_counter = Counter()
+    for (tags_json,) in tag_rows:
+        if isinstance(tags_json, list):
+            for tag in tags_json:
+                if isinstance(tag, str) and tag.strip():
+                    tag_counter[tag.strip().lower()] += 1
+        elif isinstance(tags_json, str):
+            try:
+                tags_list = json.loads(tags_json)
+                for tag in tags_list:
+                    if isinstance(tag, str) and tag.strip():
+                        tag_counter[tag.strip().lower()] += 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    tag_frequencies = [
+        {"tag": tag, "count": count}
+        for tag, count in tag_counter.most_common(80)
+    ]
+
+    # --- Distributions ---
+    category_rows = db.query(
+        ProcessedIntelligence.category,
+        func.count(ProcessedIntelligence.id),
+    ).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+    ).group_by(ProcessedIntelligence.category).all()
+    items_by_category = {cat: cnt for cat, cnt in category_rows if cat}
+
+    sentiment_rows = db.query(
+        ProcessedIntelligence.sentiment,
+        func.count(ProcessedIntelligence.id),
+    ).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+    ).group_by(ProcessedIntelligence.sentiment).all()
+    items_by_sentiment = {sent: cnt for sent, cnt in sentiment_rows if sent}
+
+    source_rows = db.query(
+        IntelligenceItem.source_type,
+        func.count(IntelligenceItem.id),
+    ).filter(
+        *base_item_filter,
+    ).group_by(IntelligenceItem.source_type).all()
+    items_by_source = {src: cnt for src, cnt in source_rows}
+
+    # --- Priority histogram ---
+    priority_scores = db.query(ProcessedIntelligence.priority_score).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+        ProcessedIntelligence.priority_score.isnot(None),
+    ).all()
+
+    bins = [
+        ("0.0-0.2", "Very Low", 0.0, 0.2),
+        ("0.2-0.4", "Low", 0.2, 0.4),
+        ("0.4-0.6", "Medium", 0.4, 0.6),
+        ("0.6-0.8", "High", 0.6, 0.8),
+        ("0.8-1.0", "Critical", 0.8, 1.01),
+    ]
+    priority_histogram = []
+    for bin_label, label, lo, hi in bins:
+        count = sum(1 for (s,) in priority_scores if s is not None and lo <= s < hi)
+        priority_histogram.append({"bin": bin_label, "label": label, "count": count})
+
+    # --- Weekly trends ---
+    weekly_rows = db.query(
+        func.strftime('%Y-%W', IntelligenceItem.collected_date).label('week'),
+        ProcessedIntelligence.sentiment,
+        ProcessedIntelligence.category,
+        func.count(IntelligenceItem.id).label('cnt'),
+    ).outerjoin(
+        ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+    ).group_by('week', ProcessedIntelligence.sentiment, ProcessedIntelligence.category).all()
+
+    weekly_map = defaultdict(lambda: {"total": 0, "by_sentiment": defaultdict(int), "by_category": defaultdict(int)})
+    for row in weekly_rows:
+        w = row.week
+        weekly_map[w]["total"] += row.cnt
+        if row.sentiment:
+            weekly_map[w]["by_sentiment"][row.sentiment] += row.cnt
+        if row.category:
+            weekly_map[w]["by_category"][row.category] += row.cnt
+
+    weekly_trends = sorted([
+        {
+            "week_start": week,
+            "total": data["total"],
+            "by_sentiment": dict(data["by_sentiment"]),
+            "by_category": dict(data["by_category"]),
+        }
+        for week, data in weekly_map.items()
+    ], key=lambda x: x["week_start"])
+
+    # --- Top entities ---
+    entity_rows = db.query(ProcessedIntelligence.entities).join(
+        IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+    ).filter(
+        *base_item_filter,
+        ProcessedIntelligence.entities.isnot(None),
+    ).all()
+
+    entity_counters = defaultdict(Counter)
+    for (entities_json,) in entity_rows:
+        if isinstance(entities_json, dict):
+            for entity_type, entity_list in entities_json.items():
+                if isinstance(entity_list, list):
+                    for name in entity_list:
+                        if isinstance(name, str) and name.strip():
+                            entity_counters[entity_type][name.strip()] += 1
+        elif isinstance(entities_json, str):
+            try:
+                entities_dict = json.loads(entities_json)
+                if isinstance(entities_dict, dict):
+                    for entity_type, entity_list in entities_dict.items():
+                        if isinstance(entity_list, list):
+                            for name in entity_list:
+                                if isinstance(name, str) and name.strip():
+                                    entity_counters[entity_type][name.strip()] += 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    top_entities = {
+        etype: [{"name": name, "count": cnt} for name, cnt in counter.most_common(10)]
+        for etype, counter in entity_counters.items()
+    }
+
+    return {
+        "customer_id": customer_id,
+        "customer_name": customer.name,
+        "period_days": days,
+        "total_items": total_items,
+        "high_priority_count": high_priority_count,
+        "avg_priority": avg_priority,
+        "sources_active": sources_active,
+        "timeline": timeline,
+        "tag_frequencies": tag_frequencies,
+        "items_by_category": items_by_category,
+        "items_by_sentiment": items_by_sentiment,
+        "items_by_source": items_by_source,
+        "priority_histogram": priority_histogram,
+        "weekly_trends": weekly_trends,
+        "top_entities": top_entities,
+    }

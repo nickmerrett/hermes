@@ -81,6 +81,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     news_api: 1,
     rss: 1,
     yahoo_finance_news: 1,
+    asx_announcements: 6,
     australian_news: 6,
     google_news: 6,
     twitter: 3,
@@ -89,7 +90,9 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     linkedin: 24,
     linkedin_user: 24,
     pressrelease: 12,
-    web_scrape: 12
+    web_scrape: 12,
+    gmail: 6,
+    mailsac: 6
   });
 
   // Domain Blacklist Settings
@@ -167,6 +170,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
     rss: true,
     google_news: false,
     yahoo_finance_news: true,
+    asx_announcements: true,
     yahoo_news: false,
     australian_news: false,
     news_api: false,
@@ -899,6 +903,7 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                           news_api: 'News API',
                           rss: 'RSS Feeds',
                           yahoo_finance_news: 'Yahoo Finance News',
+                          asx_announcements: 'ASX Announcements',
                           australian_news: 'Australian News',
                           google_news: 'Google News',
                           twitter: 'Twitter/X',
@@ -907,7 +912,9 @@ export default function PlatformSettingsModal({ onClose, onSave }) {
                           linkedin: 'LinkedIn (Company)',
                           linkedin_user: 'LinkedIn (User Profiles)',
                           pressrelease: 'Press Releases',
-                          web_scrape: 'Web Scraper'
+                          web_scrape: 'Web Scraper',
+                          gmail: 'Gmail',
+                          mailsac: 'Mailsac (Newsletters)'
                         }).map(([key, label]) => (
                           <div key={key} className="interval-setting">
                             <label>{label}</label>

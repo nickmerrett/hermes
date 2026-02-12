@@ -144,6 +144,7 @@ class DailySummary(Base):
     total_items = Column(Integer, default=0)
     high_priority_count = Column(Integer, default=0)
     items_by_category = Column(JSON)  # Category breakdown
+    sources_json = Column(JSON)  # Source citations [{index, title, url, source_type, item_id}]
     generated_at = Column(DateTime, default=datetime.utcnow, index=True)  # When this was generated
 
     __table_args__ = (

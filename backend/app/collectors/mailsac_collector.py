@@ -8,7 +8,7 @@ and creates intelligence items from newsletter content.
 import re
 import json
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import trafilatura
@@ -92,7 +92,7 @@ class MailsacCollector(RateLimitedCollector):
             self.logger.info(f"Found {len(messages)} messages in {email_address}")
 
             # Filter by age
-            cutoff_date = datetime.utcnow() - timedelta(days=self.max_age_days)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.max_age_days)
 
             for msg in messages:
                 try:

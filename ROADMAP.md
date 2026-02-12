@@ -134,24 +134,36 @@ Sources:
 ---
 
 #### 3. Add AFR (Australian Financial Review) as News Source
-**Status:** Pending
+**Status:** In Progress
 **Effort:** Medium
 **Description:** Integrate Australian Financial Review for high-quality Australian business and technology news.
 
+**Progress:**
+- ✅ AFR "Need to Know" newsletter ingestion via Mailsac collector (email body mode)
+- ✅ Fixed datetime timezone bug in Mailsac collector (naive vs aware comparison)
+- ⬜ Add AFR RSS feeds to Australian news sources config
+- ⬜ Test RSS feed content quality (headlines + snippets, no full text due to paywall)
+
 **Tasks:**
-- Investigate AFR RSS feeds or API access
-- Implement AFR collector
-- Add AFR-specific content parsing
+- ~~Investigate AFR RSS feeds or API access~~ Done - RSS gives headlines, Mailsac gives newsletter digests
+- ~~Implement AFR collector~~ Covered by Mailsac + Australian News collectors
+- Add AFR RSS feeds to platform settings
 - Test with Australian customers
 
 ---
 
 #### 4. Improve Google News Results Quality
-**Status:** Pending
+**Status:** In Progress
 **Effort:** Medium
 **Description:** Enhance Google News collector to return more relevant, higher-quality results.
 
-**Tasks:**
+**Progress:**
+- ✅ Fixed HTML/base64 URL contamination in embeddings (Google News RSS content was full of HTML)
+- ✅ Added `clean_text_for_embedding()` pipeline to strip HTML, markdown, URLs before embedding
+- ✅ Regenerated all embeddings with clean text
+- ✅ Improved clustering accuracy as a result (cleaner similarity scores)
+
+**Remaining Tasks:**
 - Refine search query generation
 - Improve result filtering (remove duplicates, low-quality sources)
 - Add source ranking/weighting
@@ -1063,9 +1075,17 @@ entity_discovery:
 ---
 
 #### 15. Implement Story Clustering & Intelligent Deduplication
-**Status:** ✅ Complete
+**Status:** ✅ Complete (Ongoing Tuning)
 **Effort:** Medium
 **Description:** Reduce feed clutter by intelligently grouping similar stories from multiple sources into clusters, surfacing only the most relevant and authoritative content.
+
+**Recent Improvements (Feb 2026):**
+- Fixed HTML/base64 contamination in embeddings that was degrading similarity scores
+- Added `clean_text_for_embedding()` to all 8 embedding generation points
+- Implemented two-gate AND logic: embedding similarity + title Jaccard similarity
+- Added optional LLM tiebreaker for borderline cases
+- Regenerated all embeddings and reclustered with clean data
+- Web scraper selector validation added (required fields in UI) to prevent empty selector crashes
 
 **Current Problem:**
 - Same news story appears 10+ times from different sources (Google News, Reuters, TechCrunch, etc.)
@@ -1579,9 +1599,14 @@ Users must manually find the channel ID (UCxxx...) from YouTube's page source, w
 ---
 
 #### 29. Email Inbox Monitoring for News Alerts
-**Status:** Pending
+**Status:** ✅ Complete
 **Effort:** Medium
 **Description:** Monitor dedicated email inbox for news alerts, subscriptions, and notifications from websites that don't offer RSS feeds or APIs.
+
+**Implemented via two collectors:**
+- **Mailsac Collector** - Disposable inboxes for newsletter subscriptions (no personal email exposed). Supports link extraction mode and email body mode. Configurable per-customer with delete-after-processing.
+- **Gmail Collector** - Direct Gmail API integration for accounts that receive alerts/newsletters.
+
 
 **Use Cases:**
 - **News Alert Subscriptions** - Google Alerts, industry newsletters, company notifications

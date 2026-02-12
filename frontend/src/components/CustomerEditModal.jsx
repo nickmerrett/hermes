@@ -21,6 +21,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
       collection_config: {
         news_enabled: true,
         yahoo_finance_news_enabled: false,
+        asx_announcements_enabled: false,
         rss_enabled: true,
         australian_news_enabled: true,
         google_news_enabled: true,
@@ -84,6 +85,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
           collection_config: {
             news_enabled: collectionConfig.news_enabled !== undefined ? collectionConfig.news_enabled : true,
             yahoo_finance_news_enabled: collectionConfig.yahoo_finance_news_enabled || collectionConfig.stock_enabled || false,
+            asx_announcements_enabled: collectionConfig.asx_announcements_enabled || false,
             rss_enabled: collectionConfig.rss_enabled !== undefined ? collectionConfig.rss_enabled : true,
             australian_news_enabled: collectionConfig.australian_news_enabled !== undefined ? collectionConfig.australian_news_enabled : true,
             google_news_enabled: collectionConfig.google_news_enabled !== undefined ? collectionConfig.google_news_enabled : true,
@@ -151,6 +153,17 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    // Validate web scrape sources have required fields
+    const webSources = formData.config.collection_config.web_scrape_sources || [];
+    for (let i = 0; i < webSources.length; i++) {
+      const src = webSources[i];
+      if (!src.name?.trim() || !src.url?.trim() || !src.selectors?.article_list?.trim()) {
+        setError(`Web Scrape Source #${i + 1}: Name, URL, and Article List Selector are required`);
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       // Flatten the config structure to match how the backend stores it
@@ -900,6 +913,23 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
               <label className="toggle-field">
                 <input
                   type="checkbox"
+                  checked={formData.config.collection_config.asx_announcements_enabled}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    config: {
+                      ...formData.config,
+                      collection_config: {
+                        ...formData.config.collection_config,
+                        asx_announcements_enabled: e.target.checked
+                      }
+                    }
+                  })}
+                />
+                <span>ASX Announcements</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
                   checked={formData.config.collection_config.rss_enabled}
                   onChange={(e) => setFormData({
                     ...formData,
@@ -1198,30 +1228,33 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                   </div>
                   <div className="complex-item-fields">
                     <div className="form-field">
-                      <label>Source Name</label>
+                      <label>Source Name <span className="required">*</span></label>
                       <input
                         type="text"
                         value={source.name}
                         onChange={(e) => updateWebScrapeSource(idx, 'name', e.target.value)}
                         placeholder="e.g., Company Newsroom"
+                        required
                       />
                     </div>
                     <div className="form-field">
-                      <label>URL</label>
+                      <label>URL <span className="required">*</span></label>
                       <input
                         type="text"
                         value={source.url}
                         onChange={(e) => updateWebScrapeSource(idx, 'url', e.target.value)}
                         placeholder="https://example.com/news"
+                        required
                       />
                     </div>
                     <div className="form-field">
-                      <label>Article List Selector</label>
+                      <label>Article List Selector <span className="required">*</span></label>
                       <input
                         type="text"
                         value={source.selectors.article_list}
                         onChange={(e) => updateWebScrapeSource(idx, 'selectors.article_list', e.target.value)}
                         placeholder="CSS selector (e.g., div.article)"
+                        required
                       />
                     </div>
                     <div className="form-field">

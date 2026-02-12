@@ -220,6 +220,7 @@ customers:
       # Core sources
       news_enabled: true
       stock_enabled: true  # Re-enabled with updated yfinance and retry logic
+      asx_announcements_enabled: true  # Official ASX announcements via MarkitDigital API
       rss_enabled: true
       australian_news_enabled: true
       google_news_enabled: true  # Auto-generates searches for company, competitors, keywords

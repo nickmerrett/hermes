@@ -12,6 +12,27 @@ import PlatformSettingsModal from './components/PlatformSettingsModal'
 import RSSTokenManager from './components/RSSTokenManager'
 import './styles/App.css'
 
+function renderTextWithCitations(text, sources) {
+  if (!sources || sources.length === 0) return text
+  const parts = text.split(/(\[\d+\])/)
+  return parts.map((part, i) => {
+    const match = part.match(/^\[(\d+)\]$/)
+    if (!match) return part
+    const num = parseInt(match[1], 10)
+    const source = sources.find(s => s.index === num)
+    if (!source) return part
+    if (source.url) {
+      return (
+        <a key={i} href={source.url} target="_blank" rel="noopener noreferrer"
+           className="citation-link" title={source.title}>
+          [{num}]
+        </a>
+      )
+    }
+    return <span key={i} className="citation-link" title={source.title}>[{num}]</span>
+  })
+}
+
 function SortableTab({ customer, isActive, onClick }) {
   const {
     attributes,
@@ -497,6 +518,15 @@ function App() {
                 Settings
               </button>
 
+              <Link
+                to="/analytics"
+                className="menu-item menu-btn"
+                title="Intelligence Analytics Dashboard"
+                onClick={() => setMenuOpen(false)}
+              >
+                Analytics
+              </Link>
+
               {isAdmin && (
                 <Link
                   to="/admin"
@@ -572,6 +602,13 @@ function App() {
             >
               Collect
             </button>
+            <Link
+              to={`/analytics?customer=${selectedCustomer}&days=30`}
+              className="btn-analytics-header"
+              title="Intelligence Analytics"
+            >
+              Analytics
+            </Link>
             <button
               className="btn-rss-header"
               onClick={() => setShowRSSModal(true)}
@@ -1036,9 +1073,28 @@ function App() {
                     <h4>Executive Summary</h4>
                     <div className="ai-summary-content">
                       {dailySummary.summary.split('\n\n').map((paragraph, idx) => (
-                        <p key={idx}>{paragraph}</p>
+                        <p key={idx}>{renderTextWithCitations(paragraph, dailySummary.sources)}</p>
                       ))}
                     </div>
+                    {dailySummary.sources && dailySummary.sources.length > 0 && (
+                      <div className="citation-sources">
+                        <h5>Sources</h5>
+                        <ol className="sources-list">
+                          {dailySummary.sources.map(source => (
+                            <li key={source.index}>
+                              {source.url ? (
+                                <a href={source.url} target="_blank" rel="noopener noreferrer">
+                                  {source.title}
+                                </a>
+                              ) : (
+                                <span>{source.title}</span>
+                              )}
+                              <span className="source-type-badge">{source.source_type}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="summary-placeholder">

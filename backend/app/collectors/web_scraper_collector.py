@@ -183,7 +183,7 @@ class WebScraperCollector(RateLimitedCollector):
         articles = []
         soup = BeautifulSoup(html, 'html.parser')
 
-        article_list_selector = selectors.get('article_list', 'article, .article, .post')
+        article_list_selector = selectors.get('article_list') or 'article, .article, .post'
         article_containers = soup.select(article_list_selector)
 
         for article_elem in article_containers:

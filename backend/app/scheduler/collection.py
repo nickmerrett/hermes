@@ -20,6 +20,7 @@ from app.utils.rate_limiter import GlobalRateLimiter, TaskQueue
 from app.collectors.news_collector import NewsAPICollector
 from app.collectors.rss_collector import RSSCollector
 from app.collectors.yahoo_finance_news_collector import YahooFinanceNewsCollector
+from app.collectors.asx_announcements_collector import ASXAnnouncementsCollector
 from app.collectors.reddit_collector import RedditCollector
 from app.collectors.twitter_collector import TwitterCollector
 from app.collectors.linkedin_collector import LinkedInCollector
@@ -181,6 +182,7 @@ def export_customers_to_yaml(db: Session, output_path: Optional[str] = None, cus
             'collection_config': {
                 'news_enabled': config.get('news_enabled', True),
                 'yahoo_finance_news_enabled': config.get('yahoo_finance_news_enabled', False),
+                'asx_announcements_enabled': config.get('asx_announcements_enabled', False),
                 'rss_enabled': config.get('rss_enabled', True),
                 'australian_news_enabled': config.get('australian_news_enabled', True),
                 'google_news_enabled': config.get('google_news_enabled', True),
@@ -483,6 +485,43 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             )
     elif collection_config.get('yahoo_finance_news_enabled', False) and customer.stock_symbol:
         logger.debug("Skipping Yahoo Finance news - not due for collection yet")
+
+    # Collect from ASX Announcements
+    if collection_config.get('asx_announcements_enabled', False) and customer.stock_symbol and should_collect_source('asx_announcements'):
+        try:
+            collector = ASXAnnouncementsCollector(customer_config)
+            items, error = await collector.safe_collect()
+
+            # Update collection status
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='asx_announcements',
+                success=(error is None),
+                error_message=error
+            )
+
+            if items:
+                failed = await save_and_process_items(items, customer, db)
+                items_collected += len(items)
+                items_failed_processing += failed
+            if error:
+                errors.append(error)
+        except Exception as e:
+            error_msg = f"ASX announcements collection error: {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+            # Update collection status for exception
+            update_collection_status(
+                db=db,
+                customer_id=customer.id,
+                source_type='asx_announcements',
+                success=False,
+                error_message=error_msg
+            )
+    elif collection_config.get('asx_announcements_enabled', False) and customer.stock_symbol:
+        logger.debug("Skipping ASX announcements - not due for collection yet")
 
     # Collect from RSS feeds
     if collection_config.get('rss_enabled', True) and should_collect_source('rss'):
