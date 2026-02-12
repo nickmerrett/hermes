@@ -1,9 +1,10 @@
 """Database connection and session management"""
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text, inspect
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 from typing import Generator
+import logging
 import os
 
 from app.config.settings import settings
@@ -59,9 +60,49 @@ def _get_engine_and_session():
     return engine, SessionLocal
 
 
+def _migrate_add_missing_columns(eng):
+    """Add columns that exist in models but not yet in the database.
+
+    SQLAlchemy's create_all(checkfirst=True) creates new tables but does NOT
+    add new columns to existing tables. This function inspects each table and
+    adds any missing columns using ALTER TABLE.
+    """
+    logger = logging.getLogger(__name__)
+    inspector = inspect(eng)
+
+    with eng.begin() as conn:
+        for table_name, table in Base.metadata.tables.items():
+            if not inspector.has_table(table_name):
+                continue  # Table doesn't exist yet; create_all will handle it
+
+            existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+
+            for column in table.columns:
+                if column.name not in existing_columns:
+                    # Build ALTER TABLE statement
+                    col_type = column.type.compile(eng.dialect)
+                    default_clause = ""
+                    if column.default is not None:
+                        default_val = column.default.arg
+                        if callable(default_val):
+                            default_clause = ""  # Skip callable defaults (handled by ORM)
+                        elif isinstance(default_val, str):
+                            default_clause = f" DEFAULT '{default_val}'"
+                        else:
+                            default_clause = f" DEFAULT {default_val}"
+                    elif column.server_default is not None:
+                        default_clause = f" DEFAULT {column.server_default.arg}"
+
+                    sql = f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}{default_clause}"
+                    logger.info(f"Migration: adding column {table_name}.{column.name} ({col_type})")
+                    conn.execute(text(sql))
+
+
 def init_db():
-    """Initialize database by creating all tables"""
+    """Initialize database by creating all tables and adding missing columns"""
     eng, _ = _get_engine_and_session()
+    # Add any missing columns to existing tables first
+    _migrate_add_missing_columns(eng)
     # checkfirst=True ensures we don't try to create tables that already exist
     Base.metadata.create_all(bind=eng, checkfirst=True)
 
