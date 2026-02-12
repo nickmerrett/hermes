@@ -3,13 +3,13 @@ FROM docker.io/library/node:24-alpine as build
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files first (layer cached unless these change)
+COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies using ci for faster, reproducible installs from lockfile
+RUN npm ci
 
-# Copy source code
+# Copy source code (only this layer invalidates on code changes)
 COPY . .
 
 # Build the app
