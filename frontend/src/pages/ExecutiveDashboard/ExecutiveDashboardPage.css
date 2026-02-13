@@ -662,6 +662,43 @@
   line-height: 1.4;
 }
 
+/* Recent LinkedIn Posts (in Profile card) */
+.exec-recent-posts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exec-recent-post {
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border-left: 3px solid #0077b5;
+}
+
+.exec-recent-post-title {
+  font-size: 0.85rem;
+  color: #374151;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.exec-recent-post-title a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.exec-recent-post-title a:hover {
+  text-decoration: underline;
+}
+
+.exec-recent-post-date {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 2px;
+  display: inline-block;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .exec-grid {

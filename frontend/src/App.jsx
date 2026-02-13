@@ -1058,7 +1058,9 @@ function App() {
                   <div className="category-breakdown">
                     <h4>Intelligence By Category</h4>
                     <div className="category-list">
-                      {Object.entries(dailySummary.items_by_category).map(([category, count]) => (
+                      {Object.entries(dailySummary.items_by_category)
+                        .filter(([category]) => category !== 'unrelated' && category !== 'advertisement')
+                        .map(([category, count]) => (
                         <div key={category} className="category-item">
                           <span className="category-name">{category.replace('_', ' ')}</span>
                           <span className="category-count">{count}</span>

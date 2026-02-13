@@ -56,12 +56,12 @@ export default function ExecutiveDashboardPage() {
     setSectionLoading(prev => ({ ...prev, [section]: value }));
   };
 
-  const fetchActivity = useCallback(async (days) => {
+  const fetchActivity = useCallback(async (days, custId) => {
     setLoading('activity', true);
     try {
-      const response = await apiClient.get(`/executives/${executiveId}/activity`, {
-        params: { days },
-      });
+      const params = { days };
+      if (custId) params.customer_id = custId;
+      const response = await apiClient.get(`/executives/${executiveId}/activity`, { params });
       setActivity(response.data);
     } catch (err) {
       console.error('Error fetching activity:', err);
@@ -70,6 +70,12 @@ export default function ExecutiveDashboardPage() {
     }
   }, [executiveId]);
 
+  // Fetch customers list once on mount
+  useEffect(() => {
+    apiClient.get('/customers').then(res => setCustomers(res.data)).catch(() => {});
+  }, []);
+
+  // Fetch executive data whenever executiveId or customerId changes
   useEffect(() => {
     if (!executiveId) return;
 
@@ -77,9 +83,12 @@ export default function ExecutiveDashboardPage() {
       setError(null);
       setSectionLoading({ profile: true, activity: true, connections: true, talkingPoints: false });
 
+      const profileParams = customerId ? { customer_id: customerId } : {};
+      const activityParams = { days: activityDays, ...(customerId ? { customer_id: customerId } : {}) };
+
       const [profileRes, activityRes, connectionsRes] = await Promise.allSettled([
-        apiClient.get(`/executives/${executiveId}/profile`),
-        apiClient.get(`/executives/${executiveId}/activity`, { params: { days: activityDays } }),
+        apiClient.get(`/executives/${executiveId}/profile`, { params: profileParams }),
+        apiClient.get(`/executives/${executiveId}/activity`, { params: activityParams }),
         apiClient.get(`/executives/${executiveId}/connections`),
       ]);
 
@@ -102,15 +111,12 @@ export default function ExecutiveDashboardPage() {
     };
 
     fetchData();
+  }, [executiveId, customerId]);
 
-    // Fetch customers for talking points dropdown
-    apiClient.get('/customers').then(res => setCustomers(res.data)).catch(() => {});
-  }, [executiveId]);
-
-  // Re-fetch activity when days changes (but not on initial load)
+  // Re-fetch activity when days changes (customerId changes handled by main effect)
   useEffect(() => {
     if (!executiveId || !activity) return;
-    fetchActivity(activityDays);
+    fetchActivity(activityDays, customerId);
   }, [activityDays]);
 
   const generateTalkingPoints = async () => {
@@ -261,23 +267,43 @@ export default function ExecutiveDashboardPage() {
                     </div>
                   </div>
                 )}
+
+                {profile.recent_posts && profile.recent_posts.length > 0 && (
+                  <div className="exec-tags-section">
+                    <h4>Recent LinkedIn Posts</h4>
+                    <div className="exec-recent-posts">
+                      {profile.recent_posts.map((post, i) => (
+                        <div key={i} className="exec-recent-post">
+                          <p className="exec-recent-post-title">
+                            {post.url ? (
+                              <a href={post.url} target="_blank" rel="noopener noreferrer">
+                                {post.title}
+                              </a>
+                            ) : post.title}
+                          </p>
+                          {post.date && (
+                            <span className="exec-recent-post-date">
+                              {formatActivityDate(post.date)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="exec-empty">No profile data available.</p>
             )}
           </div>
 
-          {/* Connections Card */}
-          <div className="exec-card">
-            <div className="exec-card-header">
-              <h2>Connections</h2>
-              {connections && (
-                <span className="exec-count-badge">{connections.total_paths} paths</span>
-              )}
-            </div>
-            {sectionLoading.connections ? (
-              <div className="exec-section-loading"><div className="exec-spinner-sm"></div></div>
-            ) : connections && connections.connection_paths && connections.connection_paths.length > 0 ? (
+          {/* Connections Card — only shown when colleagues exist */}
+          {!sectionLoading.connections && connections && connections.connection_paths && connections.connection_paths.length > 0 && (
+            <div className="exec-card">
+              <div className="exec-card-header">
+                <h2>Colleagues</h2>
+                <span className="exec-count-badge">{connections.total_paths} found</span>
+              </div>
               <div className="exec-connections-list">
                 {connections.connection_paths.map((conn, i) => (
                   <div key={i} className="exec-connection-item">
@@ -304,10 +330,14 @@ export default function ExecutiveDashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="exec-empty">No connection paths found.</p>
-            )}
-          </div>
+            </div>
+          )}
+          {sectionLoading.connections && (
+            <div className="exec-card">
+              <div className="exec-card-header"><h2>Colleagues</h2></div>
+              <div className="exec-section-loading"><div className="exec-spinner-sm"></div></div>
+            </div>
+          )}
         </div>
 
         {/* Right Column */}
@@ -371,7 +401,10 @@ export default function ExecutiveDashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="exec-empty">No activity found for the last {activityDays} days.</p>
+              <p className="exec-empty">
+                No mentions found in collected intelligence for the last {activityDays} days.
+                {!customerId && ' Try selecting a customer above for scoped results.'}
+              </p>
             )}
           </div>
 

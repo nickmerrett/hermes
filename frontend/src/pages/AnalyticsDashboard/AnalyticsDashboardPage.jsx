@@ -112,10 +112,12 @@ export default function AnalyticsDashboardPage() {
     return [...cats];
   }, [dashboard]);
 
-  // Category bar chart data (horizontal)
+  // Category bar chart data (horizontal) — exclude "unrelated" noise
+  const HIDDEN_CATEGORIES = new Set(['unrelated', 'advertisement']);
   const categoryData = useMemo(() => {
     if (!dashboard?.items_by_category) return [];
     return Object.entries(dashboard.items_by_category)
+      .filter(([cat]) => !HIDDEN_CATEGORIES.has(cat))
       .map(([cat, count]) => ({ name: formatCategoryLabel(cat), count, key: cat }))
       .sort((a, b) => b.count - a.count);
   }, [dashboard]);
@@ -134,10 +136,10 @@ export default function AnalyticsDashboardPage() {
       .map(([src, count]) => ({ name: src.replace(/_/g, ' '), count }));
   }, [dashboard]);
 
-  // Sparkline data per category
+  // Sparkline data per category — exclude hidden categories
   const sparklineData = useMemo(() => {
     if (!dashboard?.weekly_trends || !dashboard?.items_by_category) return [];
-    const categories = Object.keys(dashboard.items_by_category);
+    const categories = Object.keys(dashboard.items_by_category).filter(cat => !HIDDEN_CATEGORIES.has(cat));
     return categories.map(cat => ({
       category: cat,
       data: dashboard.weekly_trends.map(w => ({
