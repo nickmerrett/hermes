@@ -16,7 +16,7 @@ def generate_daily_summaries():
     """Generate daily summaries for all customers"""
     from app.core.database import SessionLocal
     from app.models.database import Customer
-    import requests
+    from app.services.daily_summary import generate_daily_summary
 
     logger.info("Running daily summary generation job")
 
@@ -26,17 +26,21 @@ def generate_daily_summaries():
 
         for customer in customers:
             try:
-                # Call the daily summary API endpoint with force_refresh=True
-                api_url = f"http://localhost:{settings.api_port}/api/analytics/daily-summary-ai/{customer.id}?force_refresh=true"
-                response = requests.get(api_url, timeout=120)
+                # Call the service directly (no HTTP request needed)
+                result = generate_daily_summary(
+                    customer_id=customer.id,
+                    db=db,
+                    force_refresh=True
+                )
 
-                if response.status_code == 200:
+                if result and not result.get('error'):
                     logger.info(f"Generated daily summary for {customer.name}")
                 else:
-                    logger.warning(f"Failed to generate summary for {customer.name}: {response.status_code}")
+                    error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                    logger.warning(f"Failed to generate summary for {customer.name}: {error_msg}")
 
             except Exception as e:
-                logger.error(f"Error generating summary for {customer.name}: {e}")
+                logger.error(f"Error generating summary for {customer.name}: {e}", exc_info=True)
 
         logger.info(f"Daily summary generation completed for {len(customers)} customers")
 

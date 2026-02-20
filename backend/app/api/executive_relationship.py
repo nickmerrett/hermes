@@ -16,6 +16,30 @@ router = APIRouter(prefix="/executives", tags=["executives"])
 logger = logging.getLogger(__name__)
 
 
+def normalize_executive_id(identifier: str) -> str:
+    """
+    Convert various input formats to executive_id slug.
+
+    Accepts:
+    - LinkedIn URL: https://www.linkedin.com/in/john-doe/ → john-doe
+    - Name: "John Doe" → john-doe
+    - Slug: john-doe → john-doe
+    """
+    import re
+
+    # Check if it's a LinkedIn URL
+    url_match = re.search(r'linkedin\.com/in/([^/?#]+)', identifier)
+    if url_match:
+        return url_match.group(1).rstrip('/')
+
+    # Otherwise, slugify the name (lowercase, replace spaces/special chars with hyphens)
+    slug = identifier.lower().strip()
+    slug = re.sub(r'[^\w\s-]', '', slug)  # Remove non-alphanumeric except spaces and hyphens
+    slug = re.sub(r'[\s_]+', '-', slug)   # Replace spaces/underscores with hyphens
+    slug = re.sub(r'-+', '-', slug)        # Collapse multiple hyphens
+    return slug.strip('-')
+
+
 @router.get("/{executive_id}/profile")
 async def get_executive_profile(
     executive_id: str,
@@ -26,15 +50,23 @@ async def get_executive_profile(
     Get executive profile with LinkedIn and Hermes intelligence data.
 
     Args:
-        executive_id: Executive identifier (e.g., linkedin-url-slug or email)
+        executive_id: Executive identifier - accepts:
+                     - LinkedIn URL: https://www.linkedin.com/in/john-doe
+                     - Name: "John Doe"
+                     - Slug: john-doe
         customer_id: Optional customer ID for context
 
     Returns:
-        ExecutiveProfile with background, interests, and recent activity
+        ExecutiveProfile with background, interests, and recent activity.
+        Will attempt to discover profile via Proxycurl/Google if not found in database.
     """
     try:
+        # Normalize input (handle URLs, names, etc.)
+        normalized_id = normalize_executive_id(executive_id)
+        logger.info(f"Looking up executive: {executive_id} → {normalized_id}")
+
         service = ExecutiveRelationshipService(db)
-        profile = await service.get_executive_profile(executive_id, customer_id)
+        profile = await service.get_executive_profile(normalized_id, customer_id)
 
         if not profile:
             raise HTTPException(status_code=404, detail="Executive profile not found")
@@ -63,7 +95,7 @@ async def get_executive_activity(
     - Company announcements
 
     Args:
-        executive_id: Executive identifier
+        executive_id: Executive identifier (LinkedIn URL, name, or slug)
         customer_id: Optional customer context
         days: Number of days to look back (default 90)
 
@@ -71,8 +103,10 @@ async def get_executive_activity(
         List of activities sorted by date (newest first)
     """
     try:
+        normalized_id = normalize_executive_id(executive_id)
+
         service = ExecutiveRelationshipService(db)
-        activities = await service.get_executive_activity(executive_id, customer_id, days)
+        activities = await service.get_executive_activity(normalized_id, customer_id, days)
 
         return {
             'executive_id': executive_id,
@@ -134,7 +168,7 @@ async def generate_talking_points(
     Generate AI-powered talking points for meeting with executive.
 
     Args:
-        executive_id: Executive identifier
+        executive_id: Executive identifier (LinkedIn URL, name, or slug)
         customer_id: Customer context (required)
         meeting_context: Optional context about the meeting
 
@@ -142,9 +176,11 @@ async def generate_talking_points(
         Talking points, ice breakers, discussion topics, and action items
     """
     try:
+        normalized_id = normalize_executive_id(executive_id)
+
         service = ExecutiveRelationshipService(db)
         talking_points = await service.generate_talking_points(
-            executive_id, customer_id, meeting_context
+            normalized_id, customer_id, meeting_context
         )
 
         if 'error' in talking_points:
@@ -174,14 +210,14 @@ async def get_meeting_prep(
     Get complete meeting preparation document.
 
     Combines:
-    - Executive profile
+    - Executive profile (discovered on-demand if not in database)
     - Recent activity timeline
     - Connection paths
     - AI-generated talking points
     - Competitive intelligence
 
     Args:
-        executive_id: Executive identifier
+        executive_id: Executive identifier (LinkedIn URL, name, or slug)
         customer_id: Customer context (required)
         meeting_context: Optional meeting context
 
@@ -189,9 +225,11 @@ async def get_meeting_prep(
         Complete meeting prep document
     """
     try:
+        normalized_id = normalize_executive_id(executive_id)
+
         service = ExecutiveRelationshipService(db)
         meeting_prep = await service.get_meeting_prep(
-            executive_id, customer_id, meeting_context
+            normalized_id, customer_id, meeting_context
         )
 
         return {

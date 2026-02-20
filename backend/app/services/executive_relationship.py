@@ -827,13 +827,39 @@ class ExecutiveRelationshipService:
                 primary['name'], primary['customer_id']
             )
         else:
-            # No match — return minimal profile using slug as display name
-            display_name = executive_id.replace('-', ' ').title()
-            profile = ExecutiveProfile(
-                executive_id=executive_id,
-                name=display_name,
-                linkedin_url=f"https://linkedin.com/in/{executive_id}",
-            )
+            # No match in configs or existing intelligence - try to discover
+            self.logger.info(f"No pre-configured data for {executive_id}, attempting discovery...")
+            discovered = await self._discover_linkedin_profile(executive_id, customer_id)
+
+            if discovered:
+                # Build profile from discovered data
+                profile = ExecutiveProfile(
+                    executive_id=executive_id,
+                    name=discovered['name'],
+                    title=discovered.get('role', ''),
+                    company=discovered.get('customer_name', ''),
+                    linkedin_url=discovered.get('linkedin_url', ''),
+                )
+
+                # Add background if available
+                if '_background' in discovered:
+                    for bg in discovered['_background']:
+                        profile.add_background(**bg)
+
+                # Add summary to interests if available
+                if '_summary' in discovered and discovered['_summary']:
+                    profile.interests = [discovered['_summary'][:200]]
+
+                self.logger.info(f"Successfully discovered profile for {executive_id}")
+            else:
+                # Discovery failed - return minimal profile
+                display_name = executive_id.replace('-', ' ').title()
+                profile = ExecutiveProfile(
+                    executive_id=executive_id,
+                    name=display_name,
+                    linkedin_url=f"https://linkedin.com/in/{executive_id}",
+                )
+                self.logger.warning(f"Could not discover profile for {executive_id}")
 
         return profile
 
