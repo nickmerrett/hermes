@@ -4,7 +4,6 @@ Integration tests for app/api/customers.py
 Tests customer CRUD operations including create, read, update, delete.
 """
 
-import pytest
 from fastapi import status
 
 

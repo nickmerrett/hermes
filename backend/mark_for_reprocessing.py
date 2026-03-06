@@ -21,9 +21,9 @@ def mark_items_for_reprocessing():
     # Find items with missing AI processing data
     # Items are considered incomplete if they have empty/null summary or entities
     query = db.query(ProcessedIntelligence).filter(
-        (ProcessedIntelligence.summary == None) |
+        (ProcessedIntelligence.summary.is_(None)) |
         (ProcessedIntelligence.summary == '') |
-        (ProcessedIntelligence.entities == None) |
+        (ProcessedIntelligence.entities.is_(None)) |
         (ProcessedIntelligence.entities == '{}') |
         (ProcessedIntelligence.entities == '{"companies": [], "technologies": [], "people": []}')
     )
@@ -76,7 +76,7 @@ def mark_items_for_reprocessing():
     print("\n2. To reprocess them, call the API endpoint:")
     print(f"   curl -X POST 'http://localhost:8000/api/jobs/reprocess-failed?max_items={marked_count}'")
     print("\n   Or reprocess in batches of 100:")
-    print(f"   curl -X POST 'http://localhost:8000/api/jobs/reprocess-failed?max_items=100'")
+    print("   curl -X POST 'http://localhost:8000/api/jobs/reprocess-failed?max_items=100'")
     print("\n3. The items will be processed in the background using the new AI config")
     print("=" * 80)
 

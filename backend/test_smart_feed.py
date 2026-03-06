@@ -5,16 +5,14 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.models.database import IntelligenceItem, ProcessedIntelligence, PlatformSettings
+from app.models.database import IntelligenceItem, ProcessedIntelligence
 from app.utils.smart_feed import (
     get_smart_feed_settings,
     calculate_effective_priority,
     should_include_item,
     apply_diversity_control
 )
-from datetime import datetime, timedelta
 from sqlalchemy import desc
 
 
@@ -69,7 +67,7 @@ def test_smart_feed():
 
     # Get primary items only (clustered view)
     query = db.query(IntelligenceItem).filter(
-        IntelligenceItem.is_cluster_primary == True
+        IntelligenceItem.is_cluster_primary.is_(True)
     ).order_by(desc(IntelligenceItem.published_date))
 
     all_items = query.limit(100).all()

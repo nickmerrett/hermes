@@ -3,11 +3,13 @@
 import asyncio
 import logging
 import random
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, List
 import yaml
 import os
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -334,6 +336,13 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
     """
     logger.info(f"Starting {collection_type} collection for customer: {customer.name}")
 
+    # Cache plain values from the ORM object immediately. After any session error
+    # (e.g. IntegrityError → rollback), SQLAlchemy expires all attributes on the
+    # customer object and lazy-loading will fail on a dead session. Using plain
+    # Python ints/strings in except blocks avoids that crash entirely.
+    customer_id = customer.id
+    customer_name = customer.name
+
     items_collected = 0
     items_failed_processing = 0
     errors = []
@@ -376,7 +385,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
         # Check last run time from CollectionStatus table
         status = db.query(CollectionStatus).filter(
-            CollectionStatus.customer_id == customer.id,
+            CollectionStatus.customer_id == customer_id,
             CollectionStatus.source_type == source_type
         ).first()
 
@@ -401,7 +410,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
     # Prepare customer config for collectors
     customer_config = {
-        'id': customer.id,
+        'id': customer_id,
         'name': customer.name,
         'domain': customer.domain,
         'keywords': customer.keywords,
@@ -422,7 +431,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='news_api',
                     success=(error is None),
                     error_message=error
@@ -442,7 +451,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='news_api',
                 success=False,
                 error_message=error_msg
@@ -459,7 +468,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='yahoo_finance_news',
                 success=(error is None),
                 error_message=error
@@ -478,7 +487,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='yahoo_finance_news',
                 success=False,
                 error_message=error_msg
@@ -495,7 +504,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='asx_announcements',
                 success=(error is None),
                 error_message=error
@@ -515,7 +524,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='asx_announcements',
                 success=False,
                 error_message=error_msg
@@ -526,7 +535,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
     # Collect from RSS feeds
     if collection_config.get('rss_enabled', True) and should_collect_source('rss'):
         rss_sources = db.query(Source).filter(
-            Source.customer_id == customer.id,
+            Source.customer_id == customer_id,
             Source.type == 'rss',
             Source.enabled.is_(True)
         ).all()
@@ -569,7 +578,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
         # Update collection status for RSS (tracks all RSS feeds collectively)
         update_collection_status(
             db=db,
-            customer_id=customer.id,
+            customer_id=customer_id,
             source_type='rss',
             success=rss_success,
             error_message=rss_error
@@ -587,7 +596,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='reddit',
                     success=(error is None),
                     error_message=error
@@ -607,7 +616,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='reddit',
                 success=False,
                 error_message=error_msg
@@ -626,7 +635,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='youtube',
                     success=(error is None),
                     error_message=error
@@ -646,7 +655,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 logger.warning(error_msg)
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='youtube',
                     success=False,
                     error_message=error_msg
@@ -659,7 +668,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='youtube',
                 success=False,
                 error_message=error_msg
@@ -679,7 +688,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='gmail',
                     success=(error is None),
                     error_message=error
@@ -702,7 +711,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status - mark as auth_required
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='gmail',
                 success=False,
                 error_message=error_msg,
@@ -716,7 +725,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='gmail',
                 success=False,
                 error_message=error_msg
@@ -736,7 +745,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='mailsac',
                     success=(error is None),
                     error_message=error
@@ -758,7 +767,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='mailsac',
                 success=False,
                 error_message=error_msg
@@ -770,7 +779,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='mailsac',
                 success=False,
                 error_message=error_msg
@@ -788,7 +797,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 # Update collection status
                 update_collection_status(
                     db=db,
-                    customer_id=customer.id,
+                    customer_id=customer_id,
                     source_type='twitter',
                     success=(error is None),
                     error_message=error
@@ -808,7 +817,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='twitter',
                 success=False,
                 error_message=error_msg
@@ -825,7 +834,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='linkedin',
                 success=(error is None),
                 error_message=error
@@ -844,7 +853,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='linkedin',
                 success=False,
                 error_message=error_msg
@@ -892,7 +901,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 if linkedin_company_enabled:
                     update_collection_status(
                         db=db,
-                        customer_id=customer.id,
+                        customer_id=customer_id,
                         source_type='linkedin_company',
                         success=(error is None),
                         error_message=error
@@ -901,7 +910,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
                 if linkedin_user_enabled:
                     update_collection_status(
                         db=db,
-                        customer_id=customer.id,
+                        customer_id=customer_id,
                         source_type='linkedin_user',
                         success=(error is None),
                         error_message=error
@@ -928,9 +937,9 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
                 # Update status for both types
                 if linkedin_company_enabled:
-                    update_collection_status(db, customer.id, 'linkedin_company', False, error_msg)
+                    update_collection_status(db, customer_id, 'linkedin_company', False, error_msg)
                 if linkedin_user_enabled:
-                    update_collection_status(db, customer.id, 'linkedin_user', False, error_msg)
+                    update_collection_status(db, customer_id, 'linkedin_user', False, error_msg)
 
         except Exception as e:
             error_msg = f"LinkedIn collection error: {str(e)}"
@@ -939,9 +948,9 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
 
             # Update status for both types on exception
             if linkedin_company_enabled:
-                update_collection_status(db, customer.id, 'linkedin_company', False, error_msg)
+                update_collection_status(db, customer_id, 'linkedin_company', False, error_msg)
             if linkedin_user_enabled:
-                update_collection_status(db, customer.id, 'linkedin_user', False, error_msg)
+                update_collection_status(db, customer_id, 'linkedin_user', False, error_msg)
 
             # Error delay (30% of normal delay)
             if get_linkedin_settings:
@@ -968,7 +977,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='pressrelease',
                 success=(error is None),
                 error_message=error
@@ -987,7 +996,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='pressrelease',
                 success=False,
                 error_message=error_msg
@@ -1004,7 +1013,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='australian_news',
                 success=(error is None),
                 error_message=error
@@ -1023,7 +1032,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='australian_news',
                 success=False,
                 error_message=error_msg
@@ -1040,7 +1049,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='google_news',
                 success=(error is None),
                 error_message=error
@@ -1059,7 +1068,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='google_news',
                 success=False,
                 error_message=error_msg
@@ -1076,7 +1085,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='web_scrape',
                 success=(error is None),
                 error_message=error
@@ -1095,7 +1104,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
             # Update collection status for exception
             update_collection_status(
                 db=db,
-                customer_id=customer.id,
+                customer_id=customer_id,
                 source_type='web_scrape',
                 success=False,
                 error_message=error_msg
@@ -1103,10 +1112,10 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
     elif collection_config.get('web_scrape_sources'):
         logger.debug("Skipping Web Scraper - not due for collection yet")
 
-    logger.info(f"Completed {collection_type} collection for {customer.name}: {items_collected} items ({items_failed_processing} failed AI processing)")
+    logger.info(f"Completed {collection_type} collection for {customer_name}: {items_collected} items ({items_failed_processing} failed AI processing)")
 
     return {
-        'customer_id': customer.id,
+        'customer_id': customer_id,
         'items_collected': items_collected,
         'items_failed_processing': items_failed_processing,
         'errors': errors
@@ -1145,11 +1154,21 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
 
     blacklist_config = collection_config.get('domain_blacklist', {})
 
+    # Dedup within this batch by URL before hitting the DB
+    seen_urls_in_batch: set = set()
+
     for item_create in items:
         # Check domain blacklist first
         if BaseCollector.is_url_blacklisted(item_create.url, blacklist_config):
             logger.debug(f"Skipping blacklisted URL: {item_create.url}")
             continue
+
+        # Dedup within this batch (same URL returned multiple times by a source)
+        if item_create.url and item_create.url in seen_urls_in_batch:
+            logger.debug(f"Duplicate URL within batch for customer {item_create.customer_id}: {item_create.url}")
+            continue
+        if item_create.url:
+            seen_urls_in_batch.add(item_create.url)
 
         # Level 1 Deduplication: Check by normalized URL (per customer)
         if item_create.url:
@@ -1215,8 +1234,13 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
             raw_data=item_create.raw_data
         )
         db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
+        try:
+            db.commit()
+            db.refresh(db_item)
+        except IntegrityError:
+            db.rollback()
+            logger.debug(f"Duplicate URL (race condition) for customer {item_create.customer_id}: {item_create.url}")
+            continue
 
         # Process with AI (with retry logic)
         processing_succeeded = False
@@ -1299,7 +1323,13 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                 last_processing_attempt=datetime.utcnow()
             )
             db.add(processed)
-            db.commit()
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to save processed intelligence for item {db_item.id}: {e}")
+                failed_processing_count += 1
+                continue
 
             # Add to vector store for semantic search
             embedding_added = False
@@ -1310,7 +1340,7 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                     item_id=db_item.id,
                     text=text_for_embedding,
                     metadata={
-                        'customer_id': customer.id,
+                        'customer_id': db_item.customer_id,
                         'source_type': db_item.source_type,
                         'category': processed_data['category'],
                         'priority': processed_data['priority_score']
@@ -1359,7 +1389,12 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                 last_processing_attempt=datetime.utcnow()
             )
             db.add(processed)
-            db.commit()
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to save fallback processed intelligence for item {db_item.id}: {e}")
+                failed_processing_count += 1
 
     return failed_processing_count
 
@@ -1530,6 +1565,9 @@ async def run_collection_async(customer_id: Optional[int] = None, max_concurrent
         db.close()
 
 
+_collection_lock = threading.Lock()
+
+
 def run_collection(customer_id: Optional[int] = None, collection_type: str = 'manual'):
     """
     Run collection job (synchronous wrapper for async implementation)
@@ -1544,11 +1582,20 @@ def run_collection(customer_id: Optional[int] = None, collection_type: str = 'ma
     """
     import asyncio
 
-    # Determine concurrent workers based on whether single customer or all
-    max_concurrent = 1 if customer_id else 4
+    if not _collection_lock.acquire(blocking=False):
+        logger.warning(
+            f"Skipping {collection_type} collection run — another collection is already in progress"
+        )
+        return
 
-    # Run the async collection
-    asyncio.run(run_collection_async(customer_id, max_concurrent, collection_type))
+    try:
+        # Determine concurrent workers based on whether single customer or all
+        max_concurrent = 1 if customer_id else 4
+
+        # Run the async collection
+        asyncio.run(run_collection_async(customer_id, max_concurrent, collection_type))
+    finally:
+        _collection_lock.release()
 
 
 def purge_old_items(retention_days: int = None):

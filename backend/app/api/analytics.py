@@ -2,19 +2,16 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func
 from datetime import datetime, timedelta
 from anthropic import Anthropic
-from typing import Optional
 from collections import Counter, defaultdict
 import json
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import schemas
-from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, DailySummary, PlatformSettings, User
-from app.config.settings import settings
-from app.core.prompt_loader import load_prompt_template, PromptTemplate
+from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -222,7 +219,7 @@ async def get_analytics_dashboard(
     base_item_filter = [
         IntelligenceItem.customer_id == customer_id,
         IntelligenceItem.collected_date >= cutoff,
-        IntelligenceItem.ignored == False,
+        IntelligenceItem.ignored.is_(False),
     ]
 
     # --- Summary stats ---

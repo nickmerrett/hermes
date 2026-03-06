@@ -5,9 +5,8 @@ Tests intelligence feed retrieval with filtering, smart feed logic,
 and item management (ignore/unignore/delete).
 """
 
-import pytest
 from fastapi import status
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 class TestGetFeedEndpoint:
@@ -230,7 +229,7 @@ class TestSmartFeedMode:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         # Should include both primary and non-primary
-        primaries = [i for i in data["items"] if i["is_cluster_primary"]]
+        _primaries = [i for i in data["items"] if i["is_cluster_primary"]]
         non_primaries = [i for i in data["items"] if not i["is_cluster_primary"]]
         # At least the secondary we created should be there
         assert len(non_primaries) >= 1 or len(data["items"]) >= 2

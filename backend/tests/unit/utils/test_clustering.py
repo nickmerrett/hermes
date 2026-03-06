@@ -26,7 +26,6 @@ from app.utils.clustering import (
     assign_to_cluster,
     find_similar_cluster,
     cluster_item,
-    SOURCE_TIERS,
 )
 from app.models.database import IntelligenceItem, PlatformSettings
 
@@ -450,7 +449,7 @@ class TestAssignToCluster:
     def test_assigns_to_cluster(self, test_db, sample_customer):
         """Should assign item to existing cluster."""
         cluster_id = str(uuid.uuid4())
-        existing = self._make_item(test_db, sample_customer, "google_news", "Existing", cluster_id, True)
+        self._make_item(test_db, sample_customer, "google_news", "Existing", cluster_id, True)
 
         new_item = self._make_item(test_db, sample_customer, "google_news", "New Item")
 
@@ -552,7 +551,7 @@ class TestFindSimilarCluster:
         """Should find cluster when embedding similarity exceeds threshold."""
         cluster_id = str(uuid.uuid4())
         now = datetime.utcnow()
-        existing = self._make_clustered_item(
+        _ = self._make_clustered_item(
             test_db, sample_customer, "Glencore Rio Tinto Merger Talks",
             "google_news", cluster_id, now - timedelta(hours=2)
         )
@@ -791,7 +790,7 @@ class TestClusterItem:
         """LinkedIn company items should also get solo clusters."""
         item = self._make_item(test_db, sample_customer, "linkedin", "Company Update")
 
-        cluster_id = cluster_item(item, [1.0, 2.0], test_db)
+        _ = cluster_item(item, [1.0, 2.0], test_db)
 
         mock_find.assert_not_called()
         assert item.is_cluster_primary is True

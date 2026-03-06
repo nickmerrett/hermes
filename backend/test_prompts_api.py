@@ -514,7 +514,7 @@ def print_summary(results: List[Dict], verbose: bool = False):
         if all_pp_violations:
             print(f"    {Colors.RED}Violations: {len(all_pp_violations)} with {all_pp_violations} words{Colors.RESET}")
     else:
-        print(f"  Pain points: N/A")
+        print("  Pain points: N/A")
 
     if total_opp > 0:
         opp_compliance = (total_opp - len(all_opp_violations)) / total_opp * 100
@@ -522,7 +522,7 @@ def print_summary(results: List[Dict], verbose: bool = False):
         if all_opp_violations:
             print(f"    {Colors.RED}Violations: {len(all_opp_violations)} with {all_opp_violations} words{Colors.RESET}")
     else:
-        print(f"  Opportunities: N/A")
+        print("  Opportunities: N/A")
 
     # Print detailed comparisons if verbose
     if verbose:

@@ -72,7 +72,7 @@ def simulate_filtering(config, test_items):
         # Check high priority
         if pri >= high_priority:
             include = True
-            reasons.append(f"high priority")
+            reasons.append("high priority")
 
         # Check minimum priority
         if pri >= min_priority:
@@ -96,7 +96,7 @@ def run_scenario_test(scenario_name, config, test_items, expected_included_count
     print(f"{'='*80}")
 
     # Show configuration
-    print(f"\nConfiguration:")
+    print("\nConfiguration:")
     print(f"  Min Priority: {config.get('min_priority', 0.3)}")
     print(f"  High Priority Threshold: {config.get('high_priority_threshold', 0.7)}")
 
@@ -115,13 +115,13 @@ def run_scenario_test(scenario_name, config, test_items, expected_included_count
     included = [r for r in results if r['included']]
     filtered = [r for r in results if not r['included']]
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Included: {len(included)}/{len(test_items)}")
     print(f"  Filtered Out: {len(filtered)}/{len(test_items)}")
 
     # Show included items
     if included:
-        print(f"\n  Included Items:")
+        print("\n  Included Items:")
         for r in included:
             item = r['item']
             reasons = ', '.join(r['reasons'])
@@ -129,7 +129,7 @@ def run_scenario_test(scenario_name, config, test_items, expected_included_count
 
     # Show filtered items
     if filtered:
-        print(f"\n  Filtered Out:")
+        print("\n  Filtered Out:")
         for r in filtered:
             item = r['item']
             print(f"    • {item['source_type']:20} | {item['category']:15} | pri={item['priority']:.1f}")
@@ -157,7 +157,7 @@ def main():
 
         # Save original configuration
         original_config = get_smart_feed_config(db)
-        print(f"\n✓ Saved original configuration")
+        print("\n✓ Saved original configuration")
 
         # Define test items covering various scenarios
         test_items = [
@@ -363,9 +363,9 @@ def main():
         # Restore original configuration
         if original_config:
             save_smart_feed_config(db, original_config)
-            print(f"\n✓ Restored original configuration")
+            print("\n✓ Restored original configuration")
         else:
-            print(f"\n⚠️  No original configuration to restore")
+            print("\n⚠️  No original configuration to restore")
 
     except Exception as e:
         print(f"\nERROR: {e}")

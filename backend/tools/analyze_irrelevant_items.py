@@ -11,7 +11,6 @@ This helps identify:
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add parent directory to path
@@ -43,7 +42,7 @@ def analyze_irrelevant_items(days: int = 30, limit: int = 50, customer_id: int =
         since_date = datetime.utcnow() - timedelta(days=days)
 
         print(f"\n{'='*80}")
-        print(f"IRRELEVANT ITEMS ANALYSIS")
+        print("IRRELEVANT ITEMS ANALYSIS")
         print(f"{'='*80}")
         print(f"Period: Last {days} days (since {since_date.strftime('%Y-%m-%d')})")
 
@@ -150,7 +149,7 @@ def analyze_irrelevant_items(days: int = 30, limit: int = 50, customer_id: int =
         analyze_category_items(db, advertisement_items, "advertisement")
 
         # Source analysis
-        print(f"\n\n📡 SOURCE ANALYSIS FOR PROBLEMATIC ITEMS")
+        print("\n\n📡 SOURCE ANALYSIS FOR PROBLEMATIC ITEMS")
         print("-" * 80)
 
         source_counts = db.query(
@@ -177,7 +176,7 @@ def analyze_irrelevant_items(days: int = 30, limit: int = 50, customer_id: int =
             print(f"{source:25s}: {count:5d} problematic items")
 
         # Priority score analysis
-        print(f"\n\n📈 PRIORITY SCORE ANALYSIS FOR PROBLEMATIC ITEMS")
+        print("\n\n📈 PRIORITY SCORE ANALYSIS FOR PROBLEMATIC ITEMS")
         print("-" * 80)
 
         problematic_with_scores = query.filter(
@@ -203,7 +202,7 @@ def analyze_irrelevant_items(days: int = 30, limit: int = 50, customer_id: int =
                 medium = sum(1 for s in scores if 0.5 <= s < 0.7)
                 low = sum(1 for s in scores if s < 0.5)
 
-                print(f"\nScore distribution:")
+                print("\nScore distribution:")
                 print(f"  High (≥0.7):   {high:5d} ({high/len(scores)*100:5.1f}%)")
                 print(f"  Medium (≥0.5): {medium:5d} ({medium/len(scores)*100:5.1f}%)")
                 print(f"  Low (<0.5):    {low:5d} ({low/len(scores)*100:5.1f}%)")
@@ -263,7 +262,7 @@ def analyze_category_items(db, items, category_name):
         print(f"  {word:15s}: {count:3d}")
 
     # Sample items
-    print(f"\nSample items (first 10):\n")
+    print("\nSample items (first 10):\n")
 
     for idx, item in enumerate(items[:10], 1):
         customer = db.query(Customer).filter(Customer.id == item.customer_id).first()

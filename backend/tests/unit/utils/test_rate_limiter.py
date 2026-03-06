@@ -7,8 +7,7 @@ coordinate collection across all sources and customers.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, AsyncMock, patch
+from datetime import datetime
 
 from app.utils.rate_limiter import GlobalRateLimiter, TaskQueue
 
@@ -531,11 +530,11 @@ class TestRateLimiterIntegration:
         for _ in range(4):
             await queue.add_task(rate_limited_task)
 
-        start = datetime.now()
+
         await queue.start_workers()
         await queue.wait_completion()
         await queue.stop_workers()
-        end = datetime.now()
+
 
         # 4 requests at 2/second should take at least 1 second
         # (first 2 immediate, wait ~1s, next 2)

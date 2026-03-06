@@ -140,7 +140,7 @@ def main():
         # Check for violations
         print("\n" + "="*80)
         if violations:
-            print(f"❌ FILTERING IS BROKEN!")
+            print("❌ FILTERING IS BROKEN!")
             print("="*80)
             print(f"\n{len(violations)} items with priority < 0.8 were returned!")
             print("\nThese items should have been filtered out:")

@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.core.database import SessionLocal, engine
+from app.core.database import SessionLocal
 from sqlalchemy import text
 import logging
 

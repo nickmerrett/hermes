@@ -37,13 +37,13 @@ try:
 
     print("\nAttempting to initialize AIProcessor (economy model)...")
     processor = AIProcessor()
-    print(f"✓ AIProcessor initialized successfully!")
+    print("✓ AIProcessor initialized successfully!")
     print(f"  Provider: {processor.provider}")
     print(f"  Model: {processor.model}")
     print(f"  Client Type: {processor.client_type}")
 
 except Exception as e:
-    print(f"\n✗ FAILED to initialize AIProcessor!")
+    print("\n✗ FAILED to initialize AIProcessor!")
     print(f"  Error: {e}")
     import traceback
     traceback.print_exc()
@@ -62,14 +62,14 @@ try:
     ).first()
 
     if ai_config:
-        print(f"\n✓ Platform AI config found in database:")
+        print("\n✓ Platform AI config found in database:")
         print(f"  {ai_config.value}")
     else:
-        print(f"\n⚠ No ai_config found in database")
-        print(f"  This is OK - will use environment defaults")
+        print("\n⚠ No ai_config found in database")
+        print("  This is OK - will use environment defaults")
 
 except Exception as e:
-    print(f"\n✗ Failed to check database config")
+    print("\n✗ Failed to check database config")
     print(f"  Error: {e}")
 
 print("\n" + "=" * 80)

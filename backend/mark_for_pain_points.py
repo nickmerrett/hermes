@@ -14,7 +14,7 @@ db = SessionLocal()
 try:
     # Find items with empty or NULL pain points
     items = db.query(ProcessedIntelligence).filter(
-        (ProcessedIntelligence.pain_points_opportunities == None) |
+        (ProcessedIntelligence.pain_points_opportunities.is_(None)) |
         (ProcessedIntelligence.pain_points_opportunities == '') |
         (ProcessedIntelligence.pain_points_opportunities == '{"pain_points": [], "opportunities": []}')
     ).all()
@@ -47,8 +47,8 @@ try:
     db.commit()
 
     print(f"\n✓ Successfully marked {count} items for reprocessing")
-    print(f"Run this to reprocess them:")
-    print(f"  curl -X POST 'http://localhost:8000/api/jobs/reprocess-incomplete?max_items=100'")
+    print("Run this to reprocess them:")
+    print("  curl -X POST 'http://localhost:8000/api/jobs/reprocess-incomplete?max_items=100'")
 
 except Exception as e:
     print(f"Error: {e}")

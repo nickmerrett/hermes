@@ -9,15 +9,14 @@ Usage:
 """
 import sys
 import argparse
-import re
 sys.path.insert(0, 'backend')
 
 from app.core.database import SessionLocal
 from app.core.vector_store import get_vector_store
-from app.models.database import IntelligenceItem, PlatformSettings
+from app.models.database import IntelligenceItem
 from app.utils.clustering import get_clustering_settings, title_similarity
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 def cosine_similarity(a, b):
     """Calculate cosine similarity between two vectors"""
@@ -36,7 +35,7 @@ def debug_clustering(search_term=None, limit=10):
     try:
         # Load current clustering settings
         settings = get_clustering_settings(db)
-        print(f"\n⚙️  Current clustering settings:")
+        print("\n⚙️  Current clustering settings:")
         print(f"   Embedding threshold: {settings.get('similarity_threshold', 0.80)}")
         print(f"   Title similarity enabled: {settings.get('title_similarity_enabled', True)}")
         print(f"   Title similarity threshold: {settings.get('title_similarity_threshold', 0.40)}")
@@ -127,9 +126,9 @@ def debug_clustering(search_term=None, limit=10):
 
                         print(f"   Result: {status}")
                         if same_cluster:
-                            print(f"   Currently: ✅ Same cluster")
+                            print("   Currently: ✅ Same cluster")
                         else:
-                            print(f"   Currently: Different clusters")
+                            print("   Currently: Different clusters")
                         print()
 
             # Check time windows

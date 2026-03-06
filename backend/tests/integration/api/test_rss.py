@@ -4,7 +4,6 @@ Integration tests for app/api/rss.py
 Tests RSS feed generation and token management endpoints.
 """
 
-import pytest
 from fastapi import status
 
 

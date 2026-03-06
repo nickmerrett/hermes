@@ -199,12 +199,12 @@ def debug_smart_feed():
             # Check source preference
             if src_prefs.get(src, False):
                 include = True
-                reasons.append(f"preferred source")
+                reasons.append("preferred source")
 
             # Check category preference
             if cat_prefs.get(cat, False):
                 include = True
-                reasons.append(f"preferred category")
+                reasons.append("preferred category")
 
             # Check high priority
             if pri >= high_priority:

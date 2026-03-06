@@ -47,7 +47,7 @@ def clean_urls():
             if not feeds:
                 continue
 
-            source_cleaned = False
+
             cleaned_feeds = []
 
             for feed_url in feeds:
@@ -65,7 +65,7 @@ def clean_urls():
                     print(f"   Before: '{feed_url}'")
                     print(f"   After:  '{clean_url}'")
                     cleaned_count += 1
-                    source_cleaned = True
+
 
                 cleaned_feeds.append(clean_url)
 
@@ -79,11 +79,11 @@ def clean_urls():
 
             print("=" * 60)
             print(f"✅ Cleaned {cleaned_count} URLs out of {total_feeds} total feeds")
-            print(f"✅ Updated database successfully")
+            print("✅ Updated database successfully")
         else:
             print("=" * 60)
             print(f"✅ All {total_feeds} feed URLs are already clean")
-            print(f"✅ No changes needed")
+            print("✅ No changes needed")
 
     except Exception as e:
         print(f"❌ Error cleaning URLs: {e}")

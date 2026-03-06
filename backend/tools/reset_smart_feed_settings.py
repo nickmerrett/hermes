@@ -19,7 +19,7 @@ def reset_smart_feed_settings():
         ).first()
 
         if setting:
-            print(f"Found existing smart_feed_config, deleting...")
+            print("Found existing smart_feed_config, deleting...")
             db.delete(setting)
             db.commit()
             print("✓ Smart feed settings reset successfully!")

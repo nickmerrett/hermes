@@ -37,6 +37,7 @@ def get_engine():
         settings.database_url,
         connect_args={"check_same_thread": False},  # Needed for SQLite
         echo=settings.sql_echo,  # Log SQL only when SQL_ECHO=true
+        pool_pre_ping=True,  # Verify connection health before use
     )
     return engine
 
@@ -116,6 +117,9 @@ def get_db() -> Generator[Session, None, None]:
     db = session_local()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

@@ -34,7 +34,7 @@ def migrate():
             CollectionStatus.source_type == 'stock'
         ).count()
 
-        print(f"Found:")
+        print("Found:")
         print(f"  • {stock_items_count} intelligence items with source_type='stock'")
         print(f"  • {stock_status_count} collection status records with source_type='stock'")
         print()
@@ -54,7 +54,7 @@ def migrate():
 
         # Migrate intelligence_items
         if stock_items_count > 0:
-            result = db.execute(
+            db.execute(
                 update(IntelligenceItem)
                 .where(IntelligenceItem.source_type == 'stock')
                 .values(source_type='yahoo_finance_news')
@@ -64,7 +64,7 @@ def migrate():
 
         # Migrate collection_status
         if stock_status_count > 0:
-            result = db.execute(
+            db.execute(
                 update(CollectionStatus)
                 .where(CollectionStatus.source_type == 'stock')
                 .values(source_type='yahoo_finance_news')

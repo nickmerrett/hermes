@@ -20,7 +20,6 @@ import json
 import asyncio
 from typing import List, Dict, Any
 import argparse
-from datetime import datetime
 
 # Color codes for terminal output
 class Colors:
@@ -220,7 +219,7 @@ def print_summary(results: List[Dict[str, Any]]):
         if all_pp_violations:
             print(f"    {Colors.RED}Violations: {len(all_pp_violations)} items with {all_pp_violations} words{Colors.RESET}")
     else:
-        print(f"  Pain points: N/A (none generated)")
+        print("  Pain points: N/A (none generated)")
 
     if total_opp > 0:
         opp_compliance = (total_opp - len(all_opp_violations)) / total_opp * 100
@@ -228,7 +227,7 @@ def print_summary(results: List[Dict[str, Any]]):
         if all_opp_violations:
             print(f"    {Colors.RED}Violations: {len(all_opp_violations)} items with {all_opp_violations} words{Colors.RESET}")
     else:
-        print(f"  Opportunities: N/A (none generated)")
+        print("  Opportunities: N/A (none generated)")
 
 
 def print_detailed_result(item_num: int, item: IntelligenceItem, baseline: ProcessedIntelligence,

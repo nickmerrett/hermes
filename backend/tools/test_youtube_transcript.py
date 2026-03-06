@@ -28,15 +28,15 @@ for video_id in test_videos:
         print(f"First 200 chars: {transcript_text[:200]}...")
 
     except TranscriptsDisabled:
-        print(f"❌ FAILED: Transcripts are disabled for this video")
+        print("❌ FAILED: Transcripts are disabled for this video")
 
     except NoTranscriptFound:
-        print(f"❌ FAILED: No transcript found in requested language")
+        print("❌ FAILED: No transcript found in requested language")
 
         # Try to list available languages
         try:
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            print(f"Available transcripts:")
+            print("Available transcripts:")
             for transcript in transcript_list:
                 print(f"  - {transcript.language} ({transcript.language_code}) - Generated: {transcript.is_generated}")
         except Exception as e:
@@ -48,7 +48,7 @@ for video_id in test_videos:
         # Try to get more info about available transcripts
         try:
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            print(f"Available transcripts:")
+            print("Available transcripts:")
             for transcript in transcript_list:
                 print(f"  - {transcript.language} ({transcript.language_code}) - Generated: {transcript.is_generated}")
         except Exception as list_error:

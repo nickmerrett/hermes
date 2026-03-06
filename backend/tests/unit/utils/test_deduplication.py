@@ -5,7 +5,6 @@ Tests URL normalization and title similarity functions used for
 detecting duplicate intelligence items across sources.
 """
 
-import pytest
 from app.utils.deduplication import (
     normalize_url,
     calculate_title_similarity,

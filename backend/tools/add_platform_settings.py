@@ -6,7 +6,7 @@ Run this script to create the platform_settings table
 """
 
 from app.core.database import SessionLocal, engine
-from app.models.database import Base, PlatformSettings
+from app.models.database import PlatformSettings
 from sqlalchemy import inspect
 
 def migrate():

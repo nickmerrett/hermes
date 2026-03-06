@@ -5,7 +5,6 @@ Tests authentication endpoints including login, token refresh,
 user management, and access control.
 """
 
-import pytest
 from fastapi import status
 
 

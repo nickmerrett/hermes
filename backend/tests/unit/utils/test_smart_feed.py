@@ -10,7 +10,7 @@ Tests smart feed filtering logic including:
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.utils.smart_feed import (
     get_default_smart_feed_settings,

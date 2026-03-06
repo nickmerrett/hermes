@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.core.database import get_db
-from app.models.database import PlatformSettings, IntelligenceItem, ProcessedIntelligence
+from app.models.database import PlatformSettings
 from datetime import datetime
 import requests
 import time
@@ -35,7 +35,7 @@ def save_smart_feed_config(db, config):
         db.add(setting)
 
     db.commit()
-    print(f"  ✓ Saved configuration to database")
+    print("  ✓ Saved configuration to database")
 
 
 def get_smart_feed_config(db):
@@ -72,7 +72,7 @@ def analyze_feed_results(feed_data, db):
     items = feed_data.get('items', [])
 
     # Get processed intelligence for analysis
-    item_ids = [item['id'] for item in items]
+
 
     stats = {
         'total_count': len(items),
@@ -119,16 +119,16 @@ def print_stats(stats, title="Feed Statistics"):
     print(f"    Total Items: {stats['total_count']}")
 
     if stats['by_source']:
-        print(f"\n    By Source:")
+        print("\n    By Source:")
         for source, count in sorted(stats['by_source'].items(), key=lambda x: -x[1])[:10]:
             print(f"      {source:25} {count:3} items")
 
     if stats['by_category']:
-        print(f"\n    By Category:")
+        print("\n    By Category:")
         for category, count in sorted(stats['by_category'].items(), key=lambda x: -x[1]):
             print(f"      {category:25} {count:3} items")
 
-    print(f"\n    By Priority:")
+    print("\n    By Priority:")
     for range_name, count in stats['by_priority_range'].items():
         if count > 0:
             print(f"      {range_name:25} {count:3} items")
@@ -141,7 +141,7 @@ def run_api_scenario_test(scenario_name, config, db, validation_func):
     print(f"{'='*80}")
 
     # Show configuration
-    print(f"\nConfiguration:")
+    print("\nConfiguration:")
     print(f"  Min Priority: {config.get('min_priority', 0.3)}")
     print(f"  High Priority Threshold: {config.get('high_priority_threshold', 0.7)}")
 
@@ -160,20 +160,20 @@ def run_api_scenario_test(scenario_name, config, db, validation_func):
     time.sleep(0.5)
 
     # Get baseline (Full Feed)
-    print(f"\n  Fetching Full Feed (clustered=False)...")
+    print("\n  Fetching Full Feed (clustered=False)...")
     full_feed = get_feed_from_api(clustered=False, limit=200)
     if not full_feed:
-        print(f"  ✗ Failed to fetch full feed")
+        print("  ✗ Failed to fetch full feed")
         return False
 
     full_stats = analyze_feed_results(full_feed, db)
     print_stats(full_stats, "Full Feed (No Filtering)")
 
     # Get Smart Feed
-    print(f"\n  Fetching Smart Feed (clustered=True)...")
+    print("\n  Fetching Smart Feed (clustered=True)...")
     smart_feed = get_feed_from_api(clustered=True, limit=200)
     if not smart_feed:
-        print(f"  ✗ Failed to fetch smart feed")
+        print("  ✗ Failed to fetch smart feed")
         return False
 
     smart_stats = analyze_feed_results(smart_feed, db)
@@ -185,19 +185,19 @@ def run_api_scenario_test(scenario_name, config, db, validation_func):
     filtered_count = full_count - smart_count
     filter_percentage = (filtered_count / full_count * 100) if full_count > 0 else 0
 
-    print(f"\n  Filtering Results:")
+    print("\n  Filtering Results:")
     print(f"    Full Feed Items:    {full_count}")
     print(f"    Smart Feed Items:   {smart_count}")
     print(f"    Filtered Out:       {filtered_count} ({filter_percentage:.1f}%)")
 
     # Run validation
-    print(f"\n  Validation:")
+    print("\n  Validation:")
     passed = validation_func(config, full_stats, smart_stats, db)
 
     if passed:
-        print(f"\n  ✓ TEST PASSED")
+        print("\n  ✓ TEST PASSED")
     else:
-        print(f"\n  ✗ TEST FAILED")
+        print("\n  ✗ TEST FAILED")
 
     return passed
 
@@ -255,10 +255,10 @@ def validate_source_focused(config, full_stats, smart_stats, db):
     # Should have preferred sources OR meet priority threshold
     # This is additive, so we expect both
     if preferred_count > 0:
-        print(f"    ✓ Preferred sources are present in smart feed")
+        print("    ✓ Preferred sources are present in smart feed")
         return True
     else:
-        print(f"    ✗ No items from preferred sources found")
+        print("    ✗ No items from preferred sources found")
         return False
 
 
@@ -276,10 +276,10 @@ def validate_category_focused(config, full_stats, smart_stats, db):
 
     # Should have items from preferred categories
     if preferred_count > 0:
-        print(f"    ✓ Preferred categories are present in smart feed")
+        print("    ✓ Preferred categories are present in smart feed")
         return True
     else:
-        print(f"    ✗ No items from preferred categories found")
+        print("    ✗ No items from preferred categories found")
         return False
 
 
@@ -304,7 +304,7 @@ def validate_priority_only(config, full_stats, smart_stats, db):
     print(f"    Smart feed items: {smart_count}")
 
     if lower_bound <= smart_count <= upper_bound:
-        print(f"    ✓ Smart feed count is within expected range")
+        print("    ✓ Smart feed count is within expected range")
         return True
     else:
         print(f"    ✗ Smart feed count outside expected range ({lower_bound:.0f}-{upper_bound:.0f})")
@@ -330,12 +330,12 @@ def main():
         except requests.exceptions.RequestException as e:
             print(f"\n✗ Cannot reach API at {API_URL}")
             print(f"  Error: {e}")
-            print(f"\n  Make sure the backend server is running!")
+            print("\n  Make sure the backend server is running!")
             return
 
         # Save original configuration
         original_config = get_smart_feed_config(db)
-        print(f"✓ Saved original configuration")
+        print("✓ Saved original configuration")
 
         # Define test scenarios
         scenarios = []
@@ -477,7 +477,7 @@ def main():
         # Restore original configuration
         if original_config:
             save_smart_feed_config(db, original_config)
-            print(f"\n✓ Restored original configuration")
+            print("\n✓ Restored original configuration")
 
     except Exception as e:
         print(f"\nERROR: {e}")

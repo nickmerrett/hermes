@@ -25,9 +25,9 @@ async def reprocess_all_incomplete_items():
 
     # Find items with missing AI processing data
     query = db.query(ProcessedIntelligence).filter(
-        (ProcessedIntelligence.summary == None) |
+        (ProcessedIntelligence.summary.is_(None)) |
         (ProcessedIntelligence.summary == '') |
-        (ProcessedIntelligence.entities == None) |
+        (ProcessedIntelligence.entities.is_(None)) |
         (ProcessedIntelligence.entities == '{}') |
         (ProcessedIntelligence.entities == '{"companies": [], "technologies": [], "people": []}')
     )
