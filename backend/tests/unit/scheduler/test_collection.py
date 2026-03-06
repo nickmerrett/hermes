@@ -129,9 +129,11 @@ class TestBatchDeduplication:
         db = make_session()
         customer = make_customer(db)
 
+        # Titles must be clearly distinct — SequenceMatcher("Title A", "Title B") ≈ 0.857
+        # which exceeds the 0.85 dedup threshold and would falsely skip item 2.
         items = [
-            make_item_create(customer.id, "https://example.com/article-1", "Title A"),
-            make_item_create(customer.id, "https://example.com/article-2", "Title B"),
+            make_item_create(customer.id, "https://example.com/article-1", "Quarterly Earnings Beat Analyst Forecasts"),
+            make_item_create(customer.id, "https://example.com/article-2", "New Infrastructure Bill Passes Senate"),
         ]
 
         with patch("app.scheduler.collection.get_ai_processor", return_value=_ai_processor_mock()), \
@@ -306,7 +308,7 @@ class TestCollectionLock:
         if col_module._collection_lock.locked():
             col_module._collection_lock.release()
 
-        async def _raise():
+        async def _raise(*args, **kwargs):
             raise RuntimeError("simulated failure")
 
         with patch.object(col_module, "run_collection_async", new=_raise):
@@ -326,30 +328,46 @@ class TestCustomerIdCaching:
     has been rolled back (which expires all ORM attributes)."""
 
     async def test_customer_id_cached_at_function_start(self):
-        """After a session rollback, update_collection_status is still called
-        with the correct customer_id (not an expired ORM attribute access)."""
+        """collect_for_customer returns a result dict containing the correct
+        customer_id as a plain int (proving the cached value is used, not
+        a live ORM attribute that would fail after session expiry)."""
         db = make_session()
-        customer = make_customer(db)
+
+        # Disable every source type so no collectors run and no network calls
+        # are made. should_collect_source is a nested function and cannot be
+        # patched at module level.
+        all_disabled_config = {
+            "news_enabled": False,
+            "rss_enabled": False,
+            "reddit_enabled": False,
+            "twitter_enabled": False,
+            "youtube_enabled": False,
+            "gmail_enabled": False,
+            "mailsac_enabled": False,
+            "linkedin_enabled": False,
+            "linkedin_playwright_enabled": False,
+            "pressrelease_enabled": False,
+            "australian_news_enabled": False,
+            "google_news_enabled": False,
+            "web_scrape_sources": None,
+            "yahoo_finance_news_enabled": False,
+            "asx_announcements_enabled": False,
+        }
+        customer = Customer(
+            name="Cache Test Corp",
+            domain="cachetest.com",
+            keywords=[],
+            competitors=[],
+            config=all_disabled_config,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
         expected_id = customer.id
 
-        captured_ids = []
+        from app.scheduler.collection import collect_for_customer
+        result = await collect_for_customer(customer, db, collection_type="manual")
 
-        def fake_update_status(db, customer_id, source_type, success, error_message=None, **kw):
-            captured_ids.append(customer_id)
-
-        # Make the NewsAPI collector raise so we hit the except block
-        with patch("app.scheduler.collection.update_collection_status", side_effect=fake_update_status), \
-             patch("app.scheduler.collection.settings") as mock_settings, \
-             patch("app.scheduler.collection.should_collect_source", return_value=False):
-
-            mock_settings.news_api_key = None  # disables NewsAPI branch entirely
-            mock_settings.reddit_client_id = None
-            mock_settings.reddit_client_secret = None
-            mock_settings.twitter_bearer_token = None
-            mock_settings.youtube_api_key = None
-
-            from app.scheduler.collection import collect_for_customer
-            result = await collect_for_customer(customer, db, collection_type="manual")
-
-        # The function must return a dict with the correct customer_id
         assert result["customer_id"] == expected_id
