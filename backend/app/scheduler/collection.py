@@ -1258,7 +1258,6 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
             try:
                 # Exponential backoff: wait 2^attempt seconds between retries
                 if attempt > 0:
-                    import asyncio
                     wait_time = 2 ** attempt
                     logger.info(f"Retrying AI processing for item {db_item.id} (attempt {attempt + 1}/{max_retries}) after {wait_time}s...")
                     await asyncio.sleep(wait_time)
@@ -1600,8 +1599,6 @@ def run_collection(customer_id: Optional[int] = None, collection_type: str = 'ma
     Note: Database is the source of truth. Customers are managed via UI.
           Use './hermes-diag sync-config' to import from YAML if needed.
     """
-    import asyncio
-
     if not _collection_lock.acquire(blocking=False):
         logger.warning(
             f"Skipping {collection_type} collection run — another collection is already in progress"

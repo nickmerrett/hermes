@@ -11,6 +11,11 @@ from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Configure HuggingFace Hub with longer timeout to prevent hangs
+# Default is 10s which can timeout on slow connections
+os.environ['HF_HUB_DOWNLOAD_TIMEOUT'] = '60'  # 60 second timeout for downloads
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'  # Disable telemetry to reduce network calls
+
 
 class VectorStore:
     """Manages vector embeddings and semantic search using ChromaDB"""
