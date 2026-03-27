@@ -3,6 +3,8 @@
 from typing import Dict, Any, List, Optional, Tuple
 import json
 import logging
+import asyncio
+import time
 from anthropic import Anthropic
 import re
 from sqlalchemy.orm import Session
@@ -13,6 +15,10 @@ from app.models.database import PlatformSettings
 from app.core.prompt_loader import load_prompt_template, PromptTemplate, ModelConfig
 
 logger = logging.getLogger(__name__)
+
+# Timeout configuration for AI API calls
+AI_API_TIMEOUT = 60.0  # 60 seconds per API call
+AI_PROCESSING_TIMEOUT = 120.0  # 120 seconds total including retries
 
 # Import OpenAI (will be optional)
 try:
@@ -80,7 +86,8 @@ class AIProcessor:
                 raise ValueError("ANTHROPIC_API_KEY not configured")
             self.client = Anthropic(
                 api_key=settings.anthropic_api_key,
-                base_url=settings.anthropic_api_base_url
+                base_url=settings.anthropic_api_base_url,
+                timeout=AI_API_TIMEOUT  # Add timeout to prevent hanging
             )
             self.client_type = 'anthropic'
         elif self.provider == 'openai':
@@ -90,13 +97,21 @@ class AIProcessor:
                 raise ValueError("OPENAI_API_KEY not configured")
             self.client = OpenAI(
                 api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url
+                base_url=settings.openai_base_url,
+                timeout=AI_API_TIMEOUT  # Add timeout to prevent hanging
             )
             self.client_type = 'openai'
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}. Set AI_PROVIDER_CHEAP to 'anthropic' or 'openai'")
 
         self.max_tokens = settings.max_tokens_summary
+
+        # Circuit breaker for handling consecutive failures
+        self.consecutive_failures = 0
+        self.max_failures_before_circuit_break = 5
+        self.circuit_broken = False
+        self.circuit_break_time = None
+        self.circuit_break_reset_seconds = 300  # Reset after 5 minutes
 
     def _create_client(self, model_config: ModelConfig) -> Tuple[Any, str]:
         """
@@ -113,7 +128,8 @@ class AIProcessor:
                 raise ValueError(f"{model_config.api_key_env} not configured")
             client = Anthropic(
                 api_key=model_config.api_key,
-                base_url=model_config.api_base
+                base_url=model_config.api_base,
+                timeout=AI_API_TIMEOUT  # Add timeout to prevent hanging
             )
             return client, 'anthropic'
 
@@ -127,7 +143,8 @@ class AIProcessor:
 
             client = OpenAI(
                 api_key=api_key,
-                base_url=model_config.api_base
+                base_url=model_config.api_base,
+                timeout=AI_API_TIMEOUT  # Add timeout to prevent hanging
             )
             return client, 'openai'
 
@@ -136,7 +153,7 @@ class AIProcessor:
 
     def _call_ai(self, client: Any, client_type: str, model_name: str, prompt: str, max_tokens: int) -> str:
         """
-        Make an AI API call
+        Make an AI API call (synchronous - will be wrapped in async context)
 
         Args:
             client: AI client (Anthropic or OpenAI)
@@ -147,23 +164,72 @@ class AIProcessor:
 
         Returns:
             Response text from AI
+            
+        Note: This method is synchronous but will be called via asyncio.to_thread()
+              to prevent blocking the event loop. Timeouts are configured on the
+              client initialization.
         """
-        if client_type == 'anthropic':
-            response = client.messages.create(
-                model=model_name,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}]
+        start_time = time.time()
+        
+        try:
+            if client_type == 'anthropic':
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                result = response.content[0].text
+            elif client_type == 'openai':
+                response = client.chat.completions.create(
+                    model=model_name,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                result = response.choices[0].message.content
+            else:
+                raise ValueError(f"Unknown client type: {client_type}")
+            
+            duration = time.time() - start_time
+            logger.debug(f"AI API call completed in {duration:.2f}s (model: {model_name})")
+            return result
+            
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"AI API call failed after {duration:.2f}s: {e}")
+            raise
+
+    async def _call_ai_async(self, client: Any, client_type: str, model_name: str, prompt: str, max_tokens: int) -> str:
+        """
+        Async wrapper for AI API calls with timeout protection
+        
+        Runs the synchronous _call_ai in a thread pool to prevent blocking
+        the event loop, with an additional timeout layer for safety.
+        
+        Args:
+            client: AI client (Anthropic or OpenAI)
+            client_type: 'anthropic' or 'openai'
+            model_name: Model name to use
+            prompt: Prompt text
+            max_tokens: Max tokens in response
+            
+        Returns:
+            Response text from AI
+            
+        Raises:
+            asyncio.TimeoutError: If the call exceeds AI_PROCESSING_TIMEOUT
+        """
+        try:
+            # Run synchronous AI call in thread pool with timeout
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._call_ai, client, client_type, model_name, prompt, max_tokens
+                ),
+                timeout=AI_PROCESSING_TIMEOUT
             )
-            return response.content[0].text
-        elif client_type == 'openai':
-            response = client.chat.completions.create(
-                model=model_name,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.choices[0].message.content
-        else:
-            raise ValueError(f"Unknown client type: {client_type}")
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"AI processing timeout after {AI_PROCESSING_TIMEOUT}s for model {model_name}")
+            raise Exception(f"AI processing timeout after {AI_PROCESSING_TIMEOUT} seconds")
 
     def _extract_json_from_text(self, text: str) -> str:
         """
@@ -213,6 +279,18 @@ class AIProcessor:
         Returns:
             Dict with summary, category, sentiment, entities, tags, priority_score
         """
+        # Check circuit breaker
+        if self.circuit_broken:
+            # Check if enough time has passed to reset
+            if self.circuit_break_time and (time.time() - self.circuit_break_time) > self.circuit_break_reset_seconds:
+                logger.info("Circuit breaker RESET - attempting to resume AI processing")
+                self.circuit_broken = False
+                self.consecutive_failures = 0
+                self.circuit_break_time = None
+            else:
+                logger.warning("Circuit breaker OPEN - skipping AI processing, using defaults")
+                return self._default_result(title, content)
+        
         try:
             # MODE 1: Template system - 3-stage pipeline
             if self.template:
@@ -234,7 +312,7 @@ class AIProcessor:
                 )
 
                 relevance_client, relevance_client_type = self._create_client(relevance_model)
-                relevance_response = self._call_ai(
+                relevance_response = await self._call_ai_async(
                     relevance_client,
                     relevance_client_type,
                     relevance_model.model_name,
@@ -273,7 +351,7 @@ class AIProcessor:
                 )
 
                 core_client, core_client_type = self._create_client(core_model)
-                core_response = self._call_ai(
+                core_response = await self._call_ai_async(
                     core_client,
                     core_client_type,
                     core_model.model_name,
@@ -309,7 +387,7 @@ class AIProcessor:
                         )
 
                         insights_client, insights_client_type = self._create_client(insights_model)
-                        insights_response = self._call_ai(
+                        insights_response = await self._call_ai_async(
                             insights_client,
                             insights_client_type,
                             insights_model.model_name,
@@ -331,6 +409,10 @@ class AIProcessor:
                     logger.debug(f"Stage 3: Skipped (priority={result['priority_score']:.2f} < 0.6)")
 
                 logger.debug(f"3-stage pipeline completed for '{title[:50]}...'")
+                
+                # Reset failure counter on success
+                self.consecutive_failures = 0
+                
                 return result
 
             # MODE 2: Legacy configuration - use hardcoded prompts and pre-initialized client
@@ -345,32 +427,15 @@ class AIProcessor:
                     priority_keywords or [],
                     is_trusted_source
                 )
-                client = self.client
-                client_type = self.client_type
-                model_name = self.model
-                max_tokens = self.max_tokens
-
-            # Call AI API based on client type
-            if client_type == 'anthropic':
-                response = client.messages.create(
-                    model=model_name,
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
+                
+                # Use async wrapper for legacy mode too
+                response_text = await self._call_ai_async(
+                    self.client,
+                    self.client_type,
+                    self.model,
+                    prompt,
+                    self.max_tokens
                 )
-                response_text = response.content[0].text
-            elif client_type == 'openai':
-                response = client.chat.completions.create(
-                    model=model_name,
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                response_text = response.choices[0].message.content
-            else:
-                raise ValueError(f"Unknown client type: {client_type}")
 
             # Parse response
             result = self._parse_response(response_text)
@@ -386,10 +451,34 @@ class AIProcessor:
                 )
 
             logger.debug(f"Processed item: {title[:50]}...")
+            
+            # Reset failure counter on success
+            self.consecutive_failures = 0
+            
             return result
 
+        except asyncio.TimeoutError:
+            # Handle timeout specifically
+            self.consecutive_failures += 1
+            logger.error(f"AI processing timeout (failure {self.consecutive_failures}/{self.max_failures_before_circuit_break})")
+            
+            if self.consecutive_failures >= self.max_failures_before_circuit_break:
+                self.circuit_broken = True
+                self.circuit_break_time = time.time()
+                logger.error(f"Circuit breaker OPENED after {self.consecutive_failures} consecutive failures")
+            
+            # Return default values on timeout
+            return self._default_result(title, content)
+            
         except Exception as e:
-            logger.error(f"Error processing item with AI: {e}")
+            self.consecutive_failures += 1
+            logger.error(f"Error processing item with AI (failure {self.consecutive_failures}/{self.max_failures_before_circuit_break}): {e}")
+            
+            if self.consecutive_failures >= self.max_failures_before_circuit_break:
+                self.circuit_broken = True
+                self.circuit_break_time = time.time()
+                logger.error(f"Circuit breaker OPENED after {self.consecutive_failures} consecutive failures")
+            
             # Return default values on error
             return self._default_result(title, content)
 
@@ -964,3 +1053,4 @@ def get_ai_processor(db: Optional[Session] = None) -> AIProcessor:
     if _ai_processor is None:
         _ai_processor = AIProcessor()
     return _ai_processor
+

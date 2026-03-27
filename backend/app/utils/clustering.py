@@ -68,7 +68,8 @@ def _get_llm_client(provider: str):
                 raise ValueError("ANTHROPIC_API_KEY not configured for LLM tiebreaker")
             _anthropic_client = Anthropic(
                 api_key=settings.anthropic_api_key,
-                base_url=settings.anthropic_api_base_url
+                base_url=settings.anthropic_api_base_url,
+                timeout=60.0  # Add 60 second timeout to prevent hanging
             )
         return _anthropic_client, 'anthropic'
 
@@ -79,7 +80,8 @@ def _get_llm_client(provider: str):
                 raise ValueError("OPENAI_API_KEY not configured for LLM tiebreaker")
             _openai_client = OpenAI(
                 api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url
+                base_url=settings.openai_base_url,
+                timeout=60.0  # Add 60 second timeout to prevent hanging
             )
         return _openai_client, 'openai'
 
