@@ -47,6 +47,13 @@ class AIProcessor:
         and their individual model configurations. Otherwise, use legacy
         individual model settings from environment variables.
         """
+        # Initialize circuit breaker for all modes (must be before early return)
+        self.consecutive_failures = 0
+        self.max_failures_before_circuit_break = 5
+        self.circuit_broken = False
+        self.circuit_break_time = None
+        self.circuit_break_reset_seconds = 300  # Reset after 5 minutes
+        
         # Try to load prompt template if configured
         self.template: Optional[PromptTemplate] = None
         if settings.ai_prompt_template:
@@ -105,13 +112,7 @@ class AIProcessor:
             raise ValueError(f"Unknown AI provider: {self.provider}. Set AI_PROVIDER_CHEAP to 'anthropic' or 'openai'")
 
         self.max_tokens = settings.max_tokens_summary
-
-        # Circuit breaker for handling consecutive failures
-        self.consecutive_failures = 0
-        self.max_failures_before_circuit_break = 5
-        self.circuit_broken = False
-        self.circuit_break_time = None
-        self.circuit_break_reset_seconds = 300  # Reset after 5 minutes
+        # Circuit breaker already initialized at start of __init__
 
     def _create_client(self, model_config: ModelConfig) -> Tuple[Any, str]:
         """
