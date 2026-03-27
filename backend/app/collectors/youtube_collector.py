@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import time
 import random
+import asyncio
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -291,9 +292,14 @@ class YouTubeCollector(RateLimitedCollector):
 
             try:
                 # Fetch transcript using new API (v1.2+)
-                transcript_list = self.transcript_api.fetch(
-                    video_id,
-                    languages=[self.transcript_language, 'en']  # Fallback to English
+                # Wrap in asyncio.to_thread with timeout to prevent hanging
+                transcript_list = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.transcript_api.fetch,
+                        video_id,
+                        [self.transcript_language, 'en']  # Fallback to English
+                    ),
+                    timeout=15.0  # 15 second timeout for transcript fetch
                 )
 
                 # Combine transcript segments
@@ -303,6 +309,10 @@ class YouTubeCollector(RateLimitedCollector):
 
                 self.logger.debug(f"Transcript fetched for video: {title} ({len(transcript_text)} chars)")
 
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Timeout fetching transcript for {video_id} (15s limit)")
+                self.transcript_fail_count += 1
+                # Continue without transcript - will use description
             except NoTranscriptFound:
                 self.logger.debug(f"No transcript available for video: {title}")
                 self.transcript_fail_count += 1
@@ -323,8 +333,8 @@ class YouTubeCollector(RateLimitedCollector):
                     self.transcript_fail_count += 1
 
             # Add delay between transcript requests to avoid rate limiting
-            # Random delay between 1-3 seconds
-            time.sleep(random.uniform(1.0, 3.0))
+            # Use asyncio.sleep instead of time.sleep to avoid blocking
+            await asyncio.sleep(random.uniform(1.0, 3.0))
 
             # Determine content
             if transcript_text:

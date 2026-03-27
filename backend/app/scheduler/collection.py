@@ -1332,37 +1332,57 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                 continue
 
             # Add to vector store for semantic search
+            # Wrap in asyncio.to_thread to prevent blocking on ChromaDB operations
             embedding_added = False
             item_embedding = None
             try:
                 text_for_embedding = clean_text_for_embedding(db_item.title, db_item.content)
-                vector_store.add_item(
-                    item_id=db_item.id,
-                    text=text_for_embedding,
-                    metadata={
-                        'customer_id': db_item.customer_id,
-                        'source_type': db_item.source_type,
-                        'category': processed_data['category'],
-                        'priority': processed_data['priority_score']
-                    }
+                
+                # Run synchronous vector store operation in thread pool with timeout
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        vector_store.add_item,
+                        item_id=db_item.id,
+                        text=text_for_embedding,
+                        metadata={
+                            'customer_id': db_item.customer_id,
+                            'source_type': db_item.source_type,
+                            'category': processed_data['category'],
+                            'priority': processed_data['priority_score']
+                        }
+                    ),
+                    timeout=30.0  # 30 second timeout for vector store operations
                 )
                 embedding_added = True
 
                 # Get the embedding we just created for clustering
-                item_embedding = vector_store.get_embedding(db_item.id)
+                item_embedding = await asyncio.wait_for(
+                    asyncio.to_thread(vector_store.get_embedding, db_item.id),
+                    timeout=10.0  # 10 second timeout for getting embedding
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout adding item {db_item.id} to vector store (30s limit)")
             except Exception as e:
                 logger.error(f"Error adding item {db_item.id} to vector store: {e}")
 
             # Story clustering - group similar items from different sources
             # Settings (threshold, time window, enabled) are loaded from database
+            # Wrap in asyncio.to_thread to prevent blocking on database queries
             if embedding_added and item_embedding:
                 try:
-                    cluster_id = cluster_item(
-                        item=db_item,
-                        item_embedding=item_embedding,
-                        db=db
+                    # Run synchronous clustering operation in thread pool with timeout
+                    cluster_id = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            cluster_item,
+                            item=db_item,
+                            item_embedding=item_embedding,
+                            db=db
+                        ),
+                        timeout=30.0  # 30 second timeout for clustering operations
                     )
                     logger.debug(f"Item {db_item.id} assigned to cluster {cluster_id}")
+                except asyncio.TimeoutError:
+                    logger.error(f"Timeout clustering item {db_item.id} (30s limit)")
                 except Exception as e:
                     logger.error(f"Error clustering item {db_item.id}: {e}")
 
