@@ -558,7 +558,7 @@ class TestFindSimilarCluster:
 
         # Mock vector store to return a very similar embedding
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [1.0, 2.0, 3.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [1.0, 2.0, 3.0] for id in ids}
         mock_vs.return_value = mock_store
 
         result = find_similar_cluster(
@@ -584,7 +584,7 @@ class TestFindSimilarCluster:
 
         # Mock vector store to return an orthogonal embedding
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [0.0, 0.0, 1.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [0.0, 0.0, 1.0] for id in ids}
         mock_vs.return_value = mock_store
 
         result = find_similar_cluster(
@@ -608,7 +608,7 @@ class TestFindSimilarCluster:
         )
 
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [1.0, 2.0, 3.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [1.0, 2.0, 3.0] for id in ids}
         mock_vs.return_value = mock_store
 
         result = find_similar_cluster(
@@ -634,7 +634,7 @@ class TestFindSimilarCluster:
         )
 
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [1.0, 2.0, 3.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [1.0, 2.0, 3.0] for id in ids}
         mock_vs.return_value = mock_store
 
         result = find_similar_cluster(
@@ -660,7 +660,7 @@ class TestFindSimilarCluster:
         )
 
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [1.0, 2.0, 3.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [1.0, 2.0, 3.0] for id in ids}
         mock_vs.return_value = mock_store
 
         # Mock cluster info to show it's full
@@ -694,7 +694,7 @@ class TestFindSimilarCluster:
         )
 
         mock_store = MagicMock()
-        mock_store.get_embedding.return_value = [1.0, 2.0, 3.0]
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [1.0, 2.0, 3.0] for id in ids}
         mock_vs.return_value = mock_store
 
         # Mock cluster info to show it's very old
@@ -747,6 +747,38 @@ class TestFindSimilarCluster:
         )
         # Should not match because LinkedIn items are excluded
         assert result is None
+
+    @patch('app.utils.clustering.get_vector_store')
+    def test_embeddings_fetched_in_single_batch_call(self, mock_vs, test_db, sample_customer):
+        """
+        get_embeddings_batch must be called exactly ONCE regardless of how many
+        recent items exist. This guards against the N-individual-query regression
+        that caused thread-pool exhaustion and pod hangs.
+        """
+        now = datetime.utcnow()
+        # Create three distinct clustered items
+        for i in range(3):
+            self._make_clustered_item(
+                test_db, sample_customer, f"Story {i}",
+                "rss", str(uuid.uuid4()), now - timedelta(hours=i + 1)
+            )
+
+        mock_store = MagicMock()
+        mock_store.get_embeddings_batch.side_effect = lambda ids: {id: [0.0, 0.0, 1.0] for id in ids}
+        mock_vs.return_value = mock_store
+
+        find_similar_cluster(
+            item_embedding=[1.0, 0.0, 0.0],
+            item_title="New Article",
+            customer_id=sample_customer.id,
+            published_date=now,
+            db=test_db,
+        )
+
+        # Regardless of item count, only one batch call should have been made
+        mock_store.get_embeddings_batch.assert_called_once()
+        # And the individual get_embedding method should never be called
+        mock_store.get_embedding.assert_not_called()
 
 
 # ============================================================================

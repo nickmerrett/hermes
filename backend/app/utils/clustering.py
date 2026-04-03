@@ -302,10 +302,15 @@ def find_similar_cluster(
         # Get vector store
         vector_store = get_vector_store()
 
+        # Batch-fetch all embeddings in a single ChromaDB query (avoids N individual queries)
+        all_ids = [item.id for item in recent_items]
+        logger.info(f"Clustering: scanning {len(recent_items)} recent items for customer {customer_id} (batch fetch)")
+        embeddings_map = vector_store.get_embeddings_batch(all_ids)
+
         # Track cluster info to avoid repeated lookups
         cluster_info_cache = {}
 
-        # Get embeddings for recent items from vector store
+        # Compare embeddings for recent items
         best_similarity = 0.0
         best_title_sim = 0.0
         best_cluster_id = None
@@ -332,8 +337,8 @@ def find_similar_cluster(
                         logger.debug(f"Skipping cluster {cluster_id}: age {cluster_age.total_seconds()/3600:.1f}h > max {max_cluster_age_hours}h")
                         continue
 
-                # Get embedding from vector store
-                existing_embedding = vector_store.get_embedding(existing_item.id)
+                # Get pre-fetched embedding
+                existing_embedding = embeddings_map.get(existing_item.id)
 
                 if existing_embedding is None:
                     continue

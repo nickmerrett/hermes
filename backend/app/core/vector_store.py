@@ -176,6 +176,34 @@ class VectorStore:
             logger.error(f"Error getting embedding for item {item_id}: {e}")
             return None
 
+    def get_embeddings_batch(self, item_ids: List[int]) -> Dict[int, List[float]]:
+        """
+        Get embedding vectors for multiple items in a single query.
+
+        Args:
+            item_ids: List of intelligence item IDs
+
+        Returns:
+            Dict mapping item_id -> embedding vector (missing items are omitted)
+        """
+        if not item_ids:
+            return {}
+        try:
+            result = self.collection.get(
+                ids=[str(id) for id in item_ids],
+                include=['embeddings']
+            )
+            if not result or not result['embeddings']:
+                return {}
+            return {
+                int(id_str): emb
+                for id_str, emb in zip(result['ids'], result['embeddings'])
+                if emb is not None
+            }
+        except Exception as e:
+            logger.error(f"Error batch-fetching embeddings: {e}")
+            return {}
+
     def delete_item(self, item_id: int) -> None:
         """Delete an item from the vector store"""
         try:

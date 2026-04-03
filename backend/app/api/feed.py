@@ -1,5 +1,6 @@
 """Intelligence feed API endpoints"""
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
@@ -340,13 +341,16 @@ async def debug_clustering(
     # Get vector store for embeddings
     vector_store = get_vector_store()
 
+    # Batch-fetch all embeddings in one ChromaDB query
+    embeddings_map = vector_store.get_embeddings_batch([item.id for item in items])
+
     # Build item info
     items_info = []
     items_with_embeddings = []
     embeddings = []
 
     for item in items:
-        emb = vector_store.get_embedding(item.id)
+        emb = embeddings_map.get(item.id)
         has_embedding = emb is not None
 
         item_info = {
@@ -457,12 +461,15 @@ async def debug_clustering(
     }
 
 
+RECLUSTER_MAX_ITEMS = 500
+
 @router.post("/debug/recluster")
 async def recluster_items(
     customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
     search: Optional[str] = Query(None, description="Search term to find items to recluster"),
     item_ids: Optional[List[int]] = Query(None, description="Specific item IDs to recluster"),
     hours: int = Query(48, ge=1, le=168, description="Recluster items from the last N hours"),
+    limit: int = Query(500, ge=1, le=RECLUSTER_MAX_ITEMS, description="Max items to recluster in one call"),
     dry_run: bool = Query(False, description="If true, only show what would happen without making changes"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -478,6 +485,7 @@ async def recluster_items(
     - search: Recluster items matching a search term (e.g., "Rio Tinto")
     - item_ids: Recluster specific items by ID
     - hours: Recluster all items from the last N hours (default: 48)
+    - limit: Max items to process in one call (default: 500, max: 500)
     - dry_run: Preview what would happen without making changes
     """
     vector_store = get_vector_store()
@@ -494,17 +502,17 @@ async def recluster_items(
     if item_ids:
         items = query.filter(
             IntelligenceItem.id.in_(item_ids)
-        ).order_by(IntelligenceItem.published_date.asc()).all()
+        ).order_by(IntelligenceItem.published_date.asc()).limit(limit).all()
     elif search:
         items = query.filter(
             IntelligenceItem.title.ilike(f'%{search}%')
-        ).order_by(IntelligenceItem.published_date.asc()).all()
+        ).order_by(IntelligenceItem.published_date.asc()).limit(limit).all()
     else:
-        # Default: last N hours
+        # Default: last N hours, oldest-first so newer items cluster with older
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         items = query.filter(
             IntelligenceItem.collected_date >= cutoff
-        ).order_by(IntelligenceItem.published_date.asc()).all()
+        ).order_by(IntelligenceItem.published_date.asc()).limit(limit).all()
 
     if not items:
         return {
@@ -512,15 +520,19 @@ async def recluster_items(
             "settings": clustering_settings
         }
 
+    # Batch-fetch all embeddings in one ChromaDB query instead of N individual calls
+    all_ids = [item.id for item in items]
+    embeddings_map = vector_store.get_embeddings_batch(all_ids)
+    logger.info(f"Recluster: {len(items)} items, {len(embeddings_map)} have embeddings")
+
     results = []
     reclustered = 0
     errors = 0
 
     for item in items:
         old_cluster = item.cluster_id
+        embedding = embeddings_map.get(item.id)
 
-        # Get embedding
-        embedding = vector_store.get_embedding(item.id)
         if not embedding:
             results.append({
                 "id": item.id,
@@ -548,8 +560,11 @@ async def recluster_items(
             item.cluster_member_count = None
             db.flush()
 
-            # Re-cluster with current settings
-            new_cluster = cluster_item(item, embedding, db)
+            # Re-cluster in a thread to avoid blocking the event loop
+            new_cluster = await asyncio.wait_for(
+                asyncio.to_thread(cluster_item, item, embedding, db),
+                timeout=30.0
+            )
 
             results.append({
                 "id": item.id,
@@ -562,6 +577,16 @@ async def recluster_items(
             })
             reclustered += 1
 
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout reclustering item {item.id}")
+            db.rollback()
+            results.append({
+                "id": item.id,
+                "title": item.title[:60],
+                "status": "error",
+                "error": "timeout"
+            })
+            errors += 1
         except Exception as e:
             logger.error(f"Error reclustering item {item.id}: {e}")
             db.rollback()
