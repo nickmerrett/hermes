@@ -259,7 +259,9 @@ def find_similar_cluster(
     max_cluster_size: int = 25,
     max_cluster_age_hours: int = 168,
     llm_tiebreaker_enabled: bool = False,
-    llm_tiebreaker_embedding_min: float = 0.50
+    llm_tiebreaker_embedding_min: float = 0.50,
+    cached_items: Optional[List] = None,
+    cached_embeddings: Optional[Dict[int, List[float]]] = None,
 ) -> Optional[str]:
     """
     Find existing cluster for a new item based on embedding similarity
@@ -278,6 +280,8 @@ def find_similar_cluster(
         max_cluster_age_hours: Don't add to clusters older than this
         llm_tiebreaker_enabled: Use LLM when embedding passes but title fails
         llm_tiebreaker_embedding_min: Min embedding similarity to invoke LLM
+        cached_items: Pre-fetched list of candidate items (skips DB query when provided)
+        cached_embeddings: Pre-fetched {item_id: embedding} dict (skips ChromaDB when provided)
 
     Returns:
         cluster_id if similar cluster found, None otherwise
@@ -285,27 +289,77 @@ def find_similar_cluster(
     try:
         # Define time window
         time_cutoff = published_date - timedelta(hours=time_window_hours)
+        future_cutoff = published_date + timedelta(hours=2)
 
-        # Get recent items from same customer
-        # Exclude LinkedIn items - they don't cluster with other sources
-        recent_items = db.query(IntelligenceItem).filter(
-            IntelligenceItem.customer_id == customer_id,
-            IntelligenceItem.published_date >= time_cutoff,
-            IntelligenceItem.published_date <= published_date + timedelta(hours=2),  # Allow slight future dates
-            IntelligenceItem.cluster_id.isnot(None),  # Only items already in clusters
-            ~IntelligenceItem.source_type.in_(['linkedin', 'linkedin_user'])  # Exclude LinkedIn
-        ).all()
+        # similarity_map holds pre-computed scores from HNSW (non-cache path only)
+        similarity_map: Dict[int, float] = {}
 
-        if not recent_items:
-            return None
+        if cached_items is not None:
+            # Batch-collection path: use pre-fetched cache (O(1) per batch)
+            recent_items = [
+                i for i in cached_items
+                if i.published_date
+                and time_cutoff <= i.published_date <= future_cutoff
+                and i.cluster_id is not None
+                and i.source_type not in ('linkedin', 'linkedin_user')
+            ]
+            if not recent_items:
+                return None
+            embeddings_map = cached_embeddings
+            logger.debug(
+                f"Clustering: scanning {len(recent_items)} recent items for customer {customer_id} (from cache)"
+            )
+        else:
+            # Non-batch path (e.g. recluster API): use HNSW ANN search
+            vector_store = get_vector_store()
+            similarity_map = vector_store.query_similar_in_window(
+                embedding=item_embedding,
+                customer_id=customer_id,
+                time_cutoff=time_cutoff,
+                future_cutoff=future_cutoff,
+                n_results=50,
+            )
 
-        # Get vector store
-        vector_store = get_vector_store()
+            if similarity_map:
+                # Fetch only the candidate items from DB (single IN query)
+                candidate_ids = list(similarity_map.keys())
+                recent_items = db.query(IntelligenceItem).filter(
+                    IntelligenceItem.id.in_(candidate_ids),
+                    IntelligenceItem.cluster_id.isnot(None),
+                    ~IntelligenceItem.source_type.in_(['linkedin', 'linkedin_user'])
+                ).all()
+                logger.info(
+                    f"Clustering: {len(recent_items)} HNSW candidates for customer {customer_id}"
+                )
+            else:
+                recent_items = []
 
-        # Batch-fetch all embeddings in a single ChromaDB query (avoids N individual queries)
-        all_ids = [item.id for item in recent_items]
-        logger.info(f"Clustering: scanning {len(recent_items)} recent items for customer {customer_id} (batch fetch)")
-        embeddings_map = vector_store.get_embeddings_batch(all_ids)
+            if not recent_items:
+                # HNSW returned nothing — items may predate published_timestamp metadata.
+                # Fall back to DB query + batch fetch so old items still cluster.
+                logger.debug(
+                    "HNSW returned no candidates; falling back to DB scan "
+                    "(run rebuild_vector_store.py to backfill metadata)"
+                )
+                recent_items = db.query(IntelligenceItem).filter(
+                    IntelligenceItem.customer_id == customer_id,
+                    IntelligenceItem.published_date >= time_cutoff,
+                    IntelligenceItem.published_date <= future_cutoff,
+                    IntelligenceItem.cluster_id.isnot(None),
+                    ~IntelligenceItem.source_type.in_(['linkedin', 'linkedin_user'])
+                ).all()
+                if not recent_items:
+                    return None
+                all_ids = [item.id for item in recent_items]
+                logger.info(
+                    f"Clustering: scanning {len(recent_items)} recent items for customer {customer_id} (fallback batch fetch)"
+                )
+                embeddings_map = vector_store.get_embeddings_batch(all_ids)
+            else:
+                # Build a pseudo embeddings_map from the HNSW similarity scores.
+                # We don't need actual vectors — we already have the similarity.
+                # We store the score as a sentinel so the per-item loop can use it.
+                embeddings_map = None  # handled below via similarity_map
 
         # Track cluster info to avoid repeated lookups
         cluster_info_cache = {}
@@ -337,14 +391,15 @@ def find_similar_cluster(
                         logger.debug(f"Skipping cluster {cluster_id}: age {cluster_age.total_seconds()/3600:.1f}h > max {max_cluster_age_hours}h")
                         continue
 
-                # Get pre-fetched embedding
-                existing_embedding = embeddings_map.get(existing_item.id)
-
-                if existing_embedding is None:
-                    continue
-
-                # Calculate cosine similarity
-                embedding_sim = cosine_similarity(item_embedding, existing_embedding)
+                # Get similarity — either from HNSW results or by computing it
+                if embeddings_map is None:
+                    # HNSW path: similarity already computed by ChromaDB
+                    embedding_sim = similarity_map.get(existing_item.id, 0.0)
+                else:
+                    existing_embedding = embeddings_map.get(existing_item.id)
+                    if existing_embedding is None:
+                        continue
+                    embedding_sim = cosine_similarity(item_embedding, existing_embedding)
 
                 if embedding_sim < similarity_threshold:
                     continue
@@ -599,7 +654,9 @@ def cluster_item(
     item: IntelligenceItem,
     item_embedding: List[float],
     db: Session,
-    similarity_threshold: Optional[float] = None
+    similarity_threshold: Optional[float] = None,
+    cached_items: Optional[List] = None,
+    cached_embeddings: Optional[Dict[int, List[float]]] = None,
 ) -> str:
     """
     Main clustering function - finds or creates cluster for an item
@@ -658,7 +715,9 @@ def cluster_item(
             max_cluster_size=max_cluster_size,
             max_cluster_age_hours=max_cluster_age_hours,
             llm_tiebreaker_enabled=llm_tiebreaker_enabled,
-            llm_tiebreaker_embedding_min=llm_tiebreaker_embedding_min
+            llm_tiebreaker_embedding_min=llm_tiebreaker_embedding_min,
+            cached_items=cached_items,
+            cached_embeddings=cached_embeddings,
         )
 
         if cluster_id:

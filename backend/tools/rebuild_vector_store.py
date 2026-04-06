@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.core.vector_store import get_vector_store
 from app.models.database import IntelligenceItem
 from app.utils.text_cleaning import clean_text_for_embedding
+from datetime import datetime
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +50,9 @@ def rebuild_vector_store():
             metadatas.append({
                 'customer_id': item.customer_id,
                 'source_type': item.source_type,
+                'published_timestamp': int(
+                    (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                ),
             })
 
         # Add in batches

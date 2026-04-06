@@ -5,7 +5,7 @@ import logging
 import random
 import threading
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict
 import yaml
 import os
 
@@ -1142,6 +1142,31 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
     vector_store = get_vector_store()
     failed_processing_count = 0
 
+    # Pre-fetch recent clustered items + embeddings once for the whole batch.
+    # clustering uses a 96h window so we fetch slightly wider (100h) to be safe.
+    # The cache is updated incrementally as items are clustered so items within
+    # the same batch can cluster with each other.
+    _cluster_cache_window_hours = 100
+    _cluster_cache_cutoff = datetime.utcnow() - timedelta(hours=_cluster_cache_window_hours)
+    try:
+        cluster_cache_items: List[IntelligenceItem] = db.query(IntelligenceItem).filter(
+            IntelligenceItem.customer_id == customer.id,
+            IntelligenceItem.published_date >= _cluster_cache_cutoff,
+            IntelligenceItem.cluster_id.isnot(None),
+            ~IntelligenceItem.source_type.in_(['linkedin', 'linkedin_user'])
+        ).all()
+        cluster_cache_embeddings: Dict[int, List[float]] = vector_store.get_embeddings_batch(
+            [i.id for i in cluster_cache_items]
+        )
+        logger.info(
+            f"Clustering cache pre-fetched: {len(cluster_cache_items)} items, "
+            f"{len(cluster_cache_embeddings)} embeddings for customer {customer.id}"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to pre-fetch clustering cache, will query per-item: {e}")
+        cluster_cache_items = None
+        cluster_cache_embeddings = None
+
     # Load collection config for blacklist
     collection_config = {}
     try:
@@ -1348,7 +1373,10 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
                             'customer_id': db_item.customer_id,
                             'source_type': db_item.source_type,
                             'category': processed_data['category'],
-                            'priority': processed_data['priority_score']
+                            'priority': processed_data['priority_score'],
+                            'published_timestamp': int(
+                                (db_item.published_date or db_item.collected_date or datetime.now()).timestamp()
+                            ),
                         }
                     ),
                     timeout=30.0  # 30 second timeout for vector store operations
@@ -1370,17 +1398,28 @@ async def save_and_process_items(items: List, customer: Customer, db: Session) -
             # Wrap in asyncio.to_thread to prevent blocking on database queries
             if embedding_added and item_embedding:
                 try:
-                    # Run synchronous clustering operation in thread pool with timeout
+                    # Run synchronous clustering operation in thread pool with timeout.
+                    # Pass pre-fetched cache to avoid N×(DB query + ChromaDB fetch).
                     cluster_id = await asyncio.wait_for(
                         asyncio.to_thread(
                             cluster_item,
                             item=db_item,
                             item_embedding=item_embedding,
-                            db=db
+                            db=db,
+                            cached_items=cluster_cache_items,
+                            cached_embeddings=cluster_cache_embeddings,
                         ),
                         timeout=30.0  # 30 second timeout for clustering operations
                     )
                     logger.debug(f"Item {db_item.id} assigned to cluster {cluster_id}")
+
+                    # Incrementally update the cache so subsequent items in this
+                    # batch can cluster with the item we just processed.
+                    if cluster_cache_items is not None and db_item.source_type not in ('linkedin', 'linkedin_user'):
+                        cluster_cache_items.append(db_item)
+                        if item_embedding:
+                            cluster_cache_embeddings[db_item.id] = item_embedding
+
                 except asyncio.TimeoutError:
                     logger.error(f"Timeout clustering item {db_item.id} (30s limit)")
                 except Exception as e:

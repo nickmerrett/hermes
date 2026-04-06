@@ -320,7 +320,10 @@ async def reprocess_failed_items(
                                     'customer_id': customer.id,
                                     'source_type': item.source_type,
                                     'category': processed_data['category'],
-                                    'priority': processed_data['priority_score']
+                                    'priority': processed_data['priority_score'],
+                                    'published_timestamp': int(
+                                        (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                                    ),
                                 }
                             )
                         except Exception as e:
@@ -621,7 +624,10 @@ async def reprocess_incomplete_items(
                                     'customer_id': customer.id,
                                     'source_type': item.source_type,
                                     'category': processed_data['category'],
-                                    'priority': processed_data['priority_score']
+                                    'priority': processed_data['priority_score'],
+                                    'published_timestamp': int(
+                                        (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                                    ),
                                 }
                             )
                         except Exception as e:

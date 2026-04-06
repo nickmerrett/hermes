@@ -4,6 +4,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 import os
 import logging
 
@@ -175,6 +176,69 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error getting embedding for item {item_id}: {e}")
             return None
+
+    def query_similar_in_window(
+        self,
+        embedding: List[float],
+        customer_id: int,
+        time_cutoff: datetime,
+        future_cutoff: datetime,
+        n_results: int = 50,
+    ) -> Dict[int, float]:
+        """
+        Find the most similar items within a time window using HNSW ANN search.
+
+        Requires items to have `published_timestamp` and `customer_id` in their
+        ChromaDB metadata (stored on upsert). Items without these fields are
+        excluded by the where-filter — run rebuild_vector_store.py to backfill.
+
+        Args:
+            embedding: Query embedding vector
+            customer_id: Filter to this customer only
+            time_cutoff: Earliest published_timestamp to include
+            future_cutoff: Latest published_timestamp to include
+            n_results: Maximum candidates to return
+
+        Returns:
+            Dict mapping item_id -> cosine similarity score (0.0-1.0)
+        """
+        try:
+            cutoff_ts = int(time_cutoff.timestamp())
+            future_ts = int(future_cutoff.timestamp())
+
+            where = {
+                "$and": [
+                    {"customer_id": {"$eq": int(customer_id)}},
+                    {"published_timestamp": {"$gte": cutoff_ts}},
+                    {"published_timestamp": {"$lte": future_ts}},
+                ]
+            }
+
+            # n_results must not exceed the collection size
+            total = self.collection.count()
+            if total == 0:
+                return {}
+            actual_n = min(n_results, total)
+
+            results = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=actual_n,
+                where=where,
+                include=["distances"],
+            )
+
+            if not results or not results["ids"] or not results["ids"][0]:
+                return {}
+
+            # ChromaDB cosine distance is 1 - similarity
+            return {
+                int(id_str): max(0.0, 1.0 - dist)
+                for id_str, dist in zip(results["ids"][0], results["distances"][0])
+            }
+
+        except Exception as e:
+            logger.error(f"Error querying similar items in window: {e}")
+            return {}
 
     def get_embeddings_batch(self, item_ids: List[int]) -> Dict[int, List[float]]:
         """

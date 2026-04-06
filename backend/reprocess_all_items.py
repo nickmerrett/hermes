@@ -126,7 +126,10 @@ async def reprocess_all_incomplete_items():
                         'customer_id': item.customer_id,
                         'source_type': item.source_type,
                         'category': proc_item.category,
-                        'sentiment': proc_item.sentiment
+                        'sentiment': proc_item.sentiment,
+                        'published_timestamp': int(
+                            (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                        ),
                     }
                 )
             except Exception as ve:
