@@ -162,6 +162,14 @@ class GoogleNewsCollector(RateLimitedCollector):
                         title = entry.get('title', 'No title')
                         description = entry.get('summary', entry.get('description', ''))
 
+                        # Title-only relevance check — Google News descriptions are
+                        # often HTML/base64 noise, so we only trust the title here.
+                        # This prevents unrelated articles (sports scores, etc.) from
+                        # burning AI API calls just to be marked as unrelated.
+                        if not self._should_collect_item(title, title_only=True):
+                            self.logger.debug(f"Skipping (title filter): {title[:80]}")
+                            continue
+
                         # Parse published date
                         published_date = None
                         if hasattr(entry, 'published_parsed') and entry.published_parsed:

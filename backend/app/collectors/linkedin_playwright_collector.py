@@ -49,13 +49,13 @@ def get_linkedin_settings(db: Session = None) -> Dict[str, Any]:
             # Database might not be available during initialization
             pass
 
-    # Return conservative defaults (1 hour per customer)
+    # Return default delays - conservative enough to avoid LinkedIn rate limiting
     return {
         'scraping_strategy': 'conservative',
-        'delay_between_profiles_min': 60.0,  # 1 minute
-        'delay_between_profiles_max': 120.0,  # 2 minutes
-        'delay_between_customers_min': 300.0,  # 5 minutes
-        'delay_between_customers_max': 600.0   # 10 minutes
+        'delay_between_profiles_min': 15.0,   # 15 seconds
+        'delay_between_profiles_max': 30.0,   # 30 seconds
+        'delay_between_customers_min': 60.0,  # 1 minute
+        'delay_between_customers_max': 120.0  # 2 minutes
     }
 
 

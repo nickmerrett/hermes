@@ -415,6 +415,7 @@ async def collect_for_customer(customer: Customer, db: Session, collection_type:
         'domain': customer.domain,
         'keywords': customer.keywords,
         'competitors': customer.competitors,
+        'excluded_keywords': (customer.config or {}).get('excluded_keywords', []),
         'stock_symbol': customer.stock_symbol,
         'config': customer.config or {}
     }
@@ -1613,6 +1614,66 @@ def run_collection(customer_id: Optional[int] = None, collection_type: str = 'ma
         asyncio.run(run_collection_async(customer_id, max_concurrent, collection_type))
     finally:
         _collection_lock.release()
+
+
+def purge_unrelated_items(retention_days: int = None):
+    """
+    Purge intelligence items categorised as 'unrelated' that are older than
+    retention_days.  Unrelated content has no long-term value so we discard it
+    much sooner than regular content to keep the DB and vector store lean.
+    """
+    if retention_days is None:
+        retention_days = settings.unrelated_retention_days
+
+    db = SessionLocal()
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+
+        logger.info(
+            f"Starting purge of unrelated items older than {retention_days} days "
+            f"(before {cutoff_date})"
+        )
+
+        # Join through ProcessedIntelligence to find unrelated items
+        unrelated_items = (
+            db.query(IntelligenceItem)
+            .join(ProcessedIntelligence, ProcessedIntelligence.item_id == IntelligenceItem.id)
+            .filter(
+                ProcessedIntelligence.category == 'unrelated',
+                IntelligenceItem.collected_date < cutoff_date
+            )
+            .all()
+        )
+
+        if not unrelated_items:
+            logger.info("No unrelated items to purge")
+            return
+
+        logger.info(f"Found {len(unrelated_items)} unrelated items to purge")
+
+        vector_store = get_vector_store()
+        deleted_count = 0
+
+        for item in unrelated_items:
+            try:
+                try:
+                    vector_store.delete_item(item.id)
+                except Exception as e:
+                    logger.debug(f"Error deleting item {item.id} from vector store: {e}")
+                db.delete(item)
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Error deleting unrelated item {item.id}: {e}")
+                continue
+
+        db.commit()
+        logger.info(f"Successfully purged {deleted_count} unrelated items")
+
+    except Exception as e:
+        logger.error(f"Unrelated purge job failed: {e}", exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
 
 
 def purge_old_items(retention_days: int = None):

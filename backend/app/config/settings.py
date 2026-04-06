@@ -105,6 +105,7 @@ class Settings(BaseSettings):
 
     # Data Retention
     intelligence_retention_days: int = 90
+    unrelated_retention_days: int = 7  # Purge unrelated/filtered items much sooner
 
     # Customer Config
     customers_config_path: str = "config/customers.yaml"

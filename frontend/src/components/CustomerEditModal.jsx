@@ -83,6 +83,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
           rss_feeds: config.rss_feeds || [],
           linkedin_user_profiles: config.linkedin_user_profiles || [],
           collection_config: {
+            excluded_keywords: collectionConfig.excluded_keywords || [],
             news_enabled: collectionConfig.news_enabled !== undefined ? collectionConfig.news_enabled : true,
             yahoo_finance_news_enabled: collectionConfig.yahoo_finance_news_enabled || collectionConfig.stock_enabled || false,
             asx_announcements_enabled: collectionConfig.asx_announcements_enabled || false,
@@ -602,6 +603,72 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                   <button
                     type="button"
                     onClick={() => removeArrayItem('competitors', idx)}
+                    className="tag-remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="section-header">
+              <h3>Excluded Keywords</h3>
+              <button type="button" onClick={() => {
+                const newKeywords = [...formData.config.collection_config.excluded_keywords, ''];
+                setFormData({
+                  ...formData,
+                  config: {
+                    ...formData.config,
+                    collection_config: {
+                      ...formData.config.collection_config,
+                      excluded_keywords: newKeywords
+                    }
+                  }
+                });
+              }} className="btn-add-small">
+                + Add
+              </button>
+            </div>
+            <p className="section-description">Articles with these words in the title will be dropped before AI processing (e.g. NRL, AFL, lottery).</p>
+            <div className="tag-list">
+              {formData.config.collection_config.excluded_keywords.map((keyword, idx) => (
+                <div key={idx} className="tag-item">
+                  <input
+                    type="text"
+                    value={keyword}
+                    onChange={(e) => {
+                      const newKeywords = [...formData.config.collection_config.excluded_keywords];
+                      newKeywords[idx] = e.target.value;
+                      setFormData({
+                        ...formData,
+                        config: {
+                          ...formData.config,
+                          collection_config: {
+                            ...formData.config.collection_config,
+                            excluded_keywords: newKeywords
+                          }
+                        }
+                      });
+                    }}
+                    placeholder="e.g. NRL"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newKeywords = formData.config.collection_config.excluded_keywords.filter((_, i) => i !== idx);
+                      setFormData({
+                        ...formData,
+                        config: {
+                          ...formData.config,
+                          collection_config: {
+                            ...formData.config.collection_config,
+                            excluded_keywords: newKeywords
+                          }
+                        }
+                      });
+                    }}
                     className="tag-remove"
                   >
                     ✕

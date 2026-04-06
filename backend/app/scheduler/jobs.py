@@ -6,7 +6,7 @@ import logging
 import pytz
 import os
 
-from app.scheduler.collection import run_collection, purge_old_items
+from app.scheduler.collection import run_collection, purge_old_items, purge_unrelated_items
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -192,9 +192,10 @@ def periodic_collection_job():
 
 
 def daily_purge_job():
-    """Daily purge job - removes old intelligence items"""
+    """Daily purge job - removes old intelligence items and stale unrelated content"""
     logger.info(f"Running daily purge job (retention: {settings.intelligence_retention_days} days)")
     try:
+        purge_unrelated_items()
         purge_old_items()
     except Exception as e:
         logger.error(f"Daily purge job failed: {e}", exc_info=True)

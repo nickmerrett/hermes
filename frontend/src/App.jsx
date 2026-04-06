@@ -80,6 +80,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [dailySummary, setDailySummary] = useState(null)
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [searchLoading, setSearchLoading] = useState(false)
@@ -1005,7 +1006,7 @@ function App() {
         {/* Right Side - Daily Summary Panel */}
         {selectedCustomer && (
           <aside className="daily-summary-panel">
-            <div className="panel-header">
+            <div className={`panel-header${!summaryCollapsed ? ' panel-header--expanded' : ''}`} onClick={() => setSummaryCollapsed(c => !c)} style={{cursor: 'pointer'}}>
               <div>
                 <h3>Daily Briefing</h3>
                 {dailySummary?.cached && dailySummary?.generated_at && (
@@ -1016,7 +1017,7 @@ function App() {
               </div>
               <div className="panel-actions">
                 <button
-                  onClick={() => fetchDailySummary(true)}
+                  onClick={(e) => { e.stopPropagation(); fetchDailySummary(true); }}
                   className={`btn-refresh ${dailySummary?.loading ? 'loading' : ''}`}
                   title="Regenerate summary"
                   disabled={dailySummary?.loading}
@@ -1024,9 +1025,11 @@ function App() {
                   ↻
                 </button>
                 <span className="period-badge">Last 24 Hours</span>
+                <span className="summary-collapse-toggle">{summaryCollapsed ? '▼' : '▲'}</span>
               </div>
             </div>
 
+            <div className={`summary-panel-body${summaryCollapsed ? ' summary-panel-body--collapsed' : ''}`}>
             {!dailySummary || dailySummary.loading ? (
               <div className="summary-placeholder">
                 <div className="placeholder-icon">📊</div>
@@ -1109,6 +1112,7 @@ function App() {
                 )}
               </>
             )}
+            </div>
           </aside>
         )}
 

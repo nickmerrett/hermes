@@ -458,7 +458,7 @@
     grid-template-columns: 1fr;
   }
 
-  /* Show main feed first on mobile, summary second */
+  /* Show main feed first on tablet, summary second */
   .main-content {
     order: 1;
   }
@@ -468,6 +468,50 @@
     position: static;
     max-height: none;
     margin-top: 24px;
+  }
+}
+
+/* Mobile: daily summary above feed, collapsed by default */
+@media (max-width: 768px) {
+  .daily-summary-panel {
+    order: 0;
+    margin-top: 0;
+    margin-bottom: 16px;
+  }
+
+  .main-content {
+    order: 1;
+  }
+
+  .summary-collapse-toggle {
+    font-size: 12px;
+    color: #6b7280;
+    margin-left: 4px;
+  }
+
+  .panel-header {
+    margin-bottom: 0;
+    border-bottom-color: transparent;
+    user-select: none;
+  }
+
+  .panel-header.panel-header--expanded {
+    border-bottom-color: #e5e7eb;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+  }
+
+  .summary-panel-body {
+    overflow: hidden;
+    max-height: 2000px;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 1;
+  }
+
+  .summary-panel-body--collapsed {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
@@ -1058,6 +1102,14 @@
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 2px solid #e5e7eb;
+}
+
+.summary-collapse-toggle {
+  display: none;
+}
+
+.summary-panel-body {
+  /* no overflow hidden on desktop - let content flow naturally */
 }
 
 .panel-header h3 {

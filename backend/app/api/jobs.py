@@ -70,26 +70,33 @@ async def trigger_collection(
 async def trigger_purge(
     background_tasks: BackgroundTasks,
     retention_days: int = None,
+    unrelated_retention_days: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Manually trigger a data purge job
+    """Manually trigger a data purge job.
 
-    Args:
-        retention_days: Number of days to retain items. If not provided, uses default from settings.
+    Runs two passes:
+    1. Purge unrelated/filtered items older than unrelated_retention_days (default: 7)
+    2. Purge all items older than retention_days (default: 90)
     """
-    from app.scheduler.collection import purge_old_items
+    from app.scheduler.collection import purge_old_items, purge_unrelated_items
     from app.config.settings import settings
 
     if retention_days is None:
         retention_days = settings.intelligence_retention_days
+    if unrelated_retention_days is None:
+        unrelated_retention_days = settings.unrelated_retention_days
 
-    # Trigger purge in background
+    background_tasks.add_task(purge_unrelated_items, unrelated_retention_days)
     background_tasks.add_task(purge_old_items, retention_days)
 
     return {
         "status": "triggered",
-        "message": f"Purge job triggered (retention: {retention_days} days)"
+        "message": (
+            f"Purge job triggered — unrelated items older than {unrelated_retention_days} days, "
+            f"all items older than {retention_days} days"
+        )
     }
 
 

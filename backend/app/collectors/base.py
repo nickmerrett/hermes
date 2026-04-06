@@ -33,6 +33,7 @@ class BaseCollector(ABC):
         self.customer_name = customer_config.get('name')
         self.keywords = customer_config.get('keywords', [])
         self.domain = customer_config.get('domain')
+        self.excluded_keywords = customer_config.get('excluded_keywords', [])
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     @staticmethod
@@ -114,24 +115,33 @@ class BaseCollector(ABC):
             raw_data=raw_data or {}
         )
 
-    def _should_collect_item(self, title: str, content: str = "") -> bool:
+    def _should_collect_item(self, title: str, content: str = "", title_only: bool = False) -> bool:
         """
-        Check if an item is relevant based on keywords
+        Check if an item is relevant based on keywords and excluded_keywords.
 
         Args:
             title: Item title
             content: Item content
+            title_only: If True, only check the title (ignores content).
+                        Use this for sources like Google News where the
+                        description is often HTML noise or untrustworthy.
 
         Returns:
             True if item should be collected
         """
+        title_lower = title.lower()
+        text = title_lower if title_only else f"{title_lower} {content.lower()}"
+
+        # Negative keyword check — runs regardless of positive keyword config
+        for excluded in self.excluded_keywords:
+            if excluded.lower() in title_lower:
+                self.logger.debug(f"Excluded by negative keyword '{excluded}': {title[:80]}")
+                return False
+
+        # Positive keyword check — if no keywords configured, allow everything
         if not self.keywords:
             return True
 
-        # Combine title and content for searching
-        text = f"{title} {content}".lower()
-
-        # Check if any keyword appears in the text
         for keyword in self.keywords:
             if keyword.lower() in text:
                 return True
