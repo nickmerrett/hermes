@@ -1,12 +1,13 @@
 """APScheduler job definitions and management"""
 
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import asyncio
 import logging
 import pytz
 import os
 
-from app.scheduler.collection import run_collection, purge_old_items, purge_unrelated_items
+from app.scheduler.collection import purge_old_items, purge_unrelated_items
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ def generate_daily_summaries():
         db.close()
 
 # Global scheduler instance
-scheduler: BackgroundScheduler = None
+scheduler: AsyncIOScheduler = None
 
 
 def start_scheduler():
@@ -70,11 +71,11 @@ def start_scheduler():
         logger.warning(f"Unknown timezone '{tz_name}', falling back to UTC")
         scheduler_timezone = pytz.UTC
 
-    scheduler = BackgroundScheduler(
+    scheduler = AsyncIOScheduler(
         timezone=scheduler_timezone,
         job_defaults={
-            'coalesce': True,  # Combine multiple pending executions into one
-            'max_instances': 1,  # Only one instance of each job at a time
+            'coalesce': True,       # Combine multiple pending executions into one
+            'max_instances': 1,     # Only one instance of each job at a time
             'misfire_grace_time': 300  # 5 minutes grace period for misfired jobs
         }
     )
@@ -176,27 +177,43 @@ def shutdown_scheduler():
         logger.info("Scheduler shutdown complete")
 
 
-def periodic_collection_job():
+def _sync_run_collection(collection_type: str = 'periodic', customer_id=None) -> None:
     """
-    Periodic collection job - runs every hour and checks which sources are due
+    Synchronous wrapper that runs run_collection_async in its own event loop.
+    Called via asyncio.to_thread so it doesn't block the uvicorn event loop.
+    Collectors (feedparser, requests, etc.) contain blocking network I/O that
+    cannot be trivially made async, so we isolate them in a worker thread.
+    """
+    from app.scheduler.collection import run_collection_async
+    asyncio.run(run_collection_async(customer_id=customer_id, collection_type=collection_type))
 
-    This job checks all sources and only collects from those where enough time
-    has elapsed since their last collection based on their configured interval.
-    Replaces the old hourly/daily job pattern with a unified time-based approach.
+
+async def periodic_collection_job():
     """
+    Periodic collection job — runs every hour and checks which sources are due.
+
+    Uses asyncio.to_thread so the blocking collector I/O runs in a thread pool
+    while the uvicorn event loop remains free to serve API requests.
+    """
+    from app.scheduler.collection import _collection_lock
+    if not _collection_lock.acquire(blocking=False):
+        logger.warning("Skipping periodic collection — another collection is already in progress")
+        return
     logger.info("Running periodic collection check")
     try:
-        run_collection(collection_type='periodic')
+        await asyncio.to_thread(_sync_run_collection, 'periodic')
     except Exception as e:
         logger.error(f"Periodic collection job failed: {e}", exc_info=True)
+    finally:
+        _collection_lock.release()
 
 
-def daily_purge_job():
-    """Daily purge job - removes old intelligence items and stale unrelated content"""
+async def daily_purge_job():
+    """Daily purge job — removes stale unrelated content then applies general retention."""
     logger.info(f"Running daily purge job (retention: {settings.intelligence_retention_days} days)")
     try:
-        purge_unrelated_items()
-        purge_old_items()
+        await asyncio.to_thread(purge_unrelated_items)
+        await asyncio.to_thread(purge_old_items)
     except Exception as e:
         logger.error(f"Daily purge job failed: {e}", exc_info=True)
 

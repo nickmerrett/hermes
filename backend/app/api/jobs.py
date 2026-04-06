@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List
+import asyncio
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -49,16 +50,27 @@ async def get_job(
 
 @router.post("/trigger")
 async def trigger_collection(
-    background_tasks: BackgroundTasks,
     customer_id: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Manually trigger a collection job"""
-    from app.scheduler.collection import run_collection
+    from app.scheduler.collection import _collection_lock
+    from app.scheduler.jobs import _sync_run_collection
 
-    # Trigger collection in background
-    background_tasks.add_task(run_collection, customer_id)
+    if not _collection_lock.acquire(blocking=False):
+        return {
+            "status": "skipped",
+            "message": "A collection is already in progress"
+        }
+
+    async def _run():
+        try:
+            await asyncio.to_thread(_sync_run_collection, 'manual', customer_id)
+        finally:
+            _collection_lock.release()
+
+    asyncio.create_task(_run())
 
     return {
         "status": "triggered",
@@ -68,7 +80,6 @@ async def trigger_collection(
 
 @router.post("/purge")
 async def trigger_purge(
-    background_tasks: BackgroundTasks,
     retention_days: int = None,
     unrelated_retention_days: int = None,
     db: Session = Depends(get_db),
@@ -79,6 +90,9 @@ async def trigger_purge(
     Runs two passes:
     1. Purge unrelated/filtered items older than unrelated_retention_days (default: 7)
     2. Purge all items older than retention_days (default: 90)
+
+    Runs as a proper async task so it doesn't block the event loop or
+    contend with other jobs on ChromaDB/SQLite locks.
     """
     from app.scheduler.collection import purge_old_items, purge_unrelated_items
     from app.config.settings import settings
@@ -88,8 +102,14 @@ async def trigger_purge(
     if unrelated_retention_days is None:
         unrelated_retention_days = settings.unrelated_retention_days
 
-    background_tasks.add_task(purge_unrelated_items, unrelated_retention_days)
-    background_tasks.add_task(purge_old_items, retention_days)
+    _unrelated_days = unrelated_retention_days
+    _all_days = retention_days
+
+    async def _run_purge():
+        await asyncio.to_thread(purge_unrelated_items, _unrelated_days)
+        await asyncio.to_thread(purge_old_items, _all_days)
+
+    asyncio.create_task(_run_purge())
 
     return {
         "status": "triggered",
