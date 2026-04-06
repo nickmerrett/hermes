@@ -70,5 +70,7 @@ RUN mkdir -p /app/data/db /app/data/chroma /app/data/linkedin_sessions
 # Expose API port
 EXPOSE 8000
 
-# Run the application with multiple workers for concurrent request handling
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--timeout-keep-alive", "75"]
+# Single worker: FastAPI is async so one uvicorn process handles concurrent requests fine.
+# Multiple workers would each start their own BackgroundScheduler, causing duplicate
+# collection jobs and write contention on the shared SQLite + ChromaDB data.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-keep-alive", "75"]
