@@ -12,8 +12,8 @@ RUN npm ci
 # Copy source code (only this layer invalidates on code changes)
 COPY . .
 
-# Build the app
-RUN npm run build
+# Build the app (--force clears Vite's dep cache)
+RUN npm run build -- --force
 
 # Production stage
 FROM docker.io/library/nginx:alpine
