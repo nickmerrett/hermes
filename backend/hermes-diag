@@ -1286,6 +1286,9 @@ def cmd_rebuild_vectors(args):
             metadatas.append({
                 'customer_id': item.customer_id,
                 'source_type': item.source_type,
+                'published_timestamp': int(
+                    (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                ),
             })
 
         # Add in batches
