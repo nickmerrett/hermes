@@ -292,17 +292,166 @@ def cmd_config(args):
 
 def cmd_irrelevant(args):
     """Analyze items marked as unrelated/other/advertisement"""
-    import sys
-    import os
-    # Add tools directory to path
-    tools_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools')
-    sys.path.insert(0, tools_dir)
-    from analyze_irrelevant_items import analyze_irrelevant_items
-    analyze_irrelevant_items(
-        days=args.days,
-        limit=args.limit,
-        customer_id=getattr(args, 'customer_id', None)
-    )
+    from sqlalchemy import func as sqlfunc
+    from sqlalchemy.orm import joinedload
+    from collections import Counter
+    import re as _re
+
+    days = args.days
+    limit = args.limit
+    customer_id = getattr(args, 'customer_id', None)
+    since_date = datetime.utcnow() - timedelta(days=days)
+
+    print(f"\n{'='*80}")
+    print("IRRELEVANT ITEMS ANALYSIS")
+    print(f"{'='*80}")
+    print(f"Period: Last {days} days (since {since_date.strftime('%Y-%m-%d')})")
+
+    db = SessionLocal()
+    try:
+        if customer_id:
+            customer = db.query(Customer).filter(Customer.id == customer_id).first()
+            if customer:
+                print(f"Customer: {customer.name}")
+            else:
+                print_error(f"Customer ID {customer_id} not found")
+                return
+        else:
+            print("Customer: All customers")
+        print(f"{'='*80}\n")
+
+        # Category distribution
+        cat_q = db.query(
+            ProcessedIntelligence.category,
+            sqlfunc.count(ProcessedIntelligence.id)
+        ).join(IntelligenceItem, IntelligenceItem.id == ProcessedIntelligence.item_id
+        ).filter(IntelligenceItem.collected_date >= since_date)
+        if customer_id:
+            cat_q = cat_q.filter(IntelligenceItem.customer_id == customer_id)
+        cat_counts = cat_q.group_by(ProcessedIntelligence.category).all()
+
+        total_items = sum(c for _, c in cat_counts)
+        cat_dict = {cat: cnt for cat, cnt in cat_counts if cat}
+
+        print("📊 CATEGORY DISTRIBUTION")
+        print("-" * 80)
+        for cat, cnt in sorted(cat_dict.items(), key=lambda x: x[1], reverse=True):
+            pct = (cnt / total_items * 100) if total_items > 0 else 0
+            flag = "⚠️ " if cat in ('unrelated', 'other', 'advertisement') else "   "
+            print(f"{flag}{cat:20s}: {cnt:5d} ({pct:5.1f}%)")
+        print(f"\nTotal items: {total_items}")
+        problematic = sum(cat_dict.get(c, 0) for c in ('unrelated', 'other', 'advertisement'))
+        print(f"Potentially problematic: {problematic} ({problematic/total_items*100:.1f}%)" if total_items else "Potentially problematic: 0")
+
+        def _show_category(category_name):
+            print(f"\n\n🔍 ITEMS MARKED AS '{category_name.upper()}' (up to {limit})")
+            print("-" * 80)
+            base_q = db.query(IntelligenceItem).join(
+                ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id
+            ).filter(
+                IntelligenceItem.collected_date >= since_date,
+                ProcessedIntelligence.category == category_name
+            )
+            if customer_id:
+                base_q = base_q.filter(IntelligenceItem.customer_id == customer_id)
+            items = base_q.options(
+                joinedload(IntelligenceItem.processed)
+            ).order_by(IntelligenceItem.collected_date.desc()).limit(limit).all()
+
+            if not items:
+                print(f"No items in '{category_name}'")
+                return
+
+            print(f"Found {len(items)} items\n")
+            sources = Counter(i.source_type for i in items)
+            print("Sources:")
+            for src, cnt in sources.most_common():
+                print(f"  {src:20s}: {cnt:3d}")
+
+            all_words = []
+            stop = {'the','and','for','with','from','that','this','are','was','has','have',
+                    'but','not','can','will','more','about','than','been','how','what',
+                    'when','where','who','why','their','said'}
+            for item in items:
+                all_words.extend(w for w in _re.findall(r'\b[a-zA-Z]{3,}\b', item.title.lower()) if w not in stop)
+            print("\nCommon words in titles:")
+            for word, cnt in Counter(all_words).most_common(15):
+                print(f"  {word:15s}: {cnt:3d}")
+
+            print(f"\nSample items (first 10):\n")
+            for idx, item in enumerate(items[:10], 1):
+                cust = db.query(Customer).filter(Customer.id == item.customer_id).first()
+                print(f"{idx}. {item.title}")
+                print(f"   Customer: {cust.name if cust else 'Unknown'}")
+                print(f"   Source: {item.source_type}")
+                print(f"   Date: {item.published_date or item.collected_date}")
+                if item.processed:
+                    print(f"   Priority: {item.processed.priority_score:.3f}")
+                    print(f"   Sentiment: {item.processed.sentiment}")
+                    if item.processed.summary:
+                        print(f"   Summary: {item.processed.summary[:150].replace(chr(10), ' ')}...")
+                if item.content:
+                    print(f"   Content: {item.content[:200].replace(chr(10), ' ')}...")
+                print(f"   URL: {item.url}")
+                print()
+
+        _show_category('unrelated')
+        _show_category('other')
+        _show_category('advertisement')
+
+        # Source analysis
+        print("\n\n📡 SOURCE ANALYSIS FOR PROBLEMATIC ITEMS")
+        print("-" * 80)
+        src_q = db.query(
+            IntelligenceItem.source_type,
+            sqlfunc.count(IntelligenceItem.id)
+        ).join(ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id
+        ).filter(
+            IntelligenceItem.collected_date >= since_date,
+            ProcessedIntelligence.category.in_(['unrelated', 'other', 'advertisement'])
+        )
+        if customer_id:
+            src_q = src_q.filter(IntelligenceItem.customer_id == customer_id)
+        for src, cnt in src_q.group_by(IntelligenceItem.source_type).order_by(sqlfunc.count(IntelligenceItem.id).desc()).all():
+            print(f"  {src:25s}: {cnt:5d} problematic items")
+
+        # Priority score analysis
+        print("\n\n📈 PRIORITY SCORE ANALYSIS FOR PROBLEMATIC ITEMS")
+        print("-" * 80)
+        prob_q = db.query(IntelligenceItem).join(
+            ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id
+        ).filter(
+            IntelligenceItem.collected_date >= since_date,
+            ProcessedIntelligence.category.in_(['unrelated', 'other', 'advertisement'])
+        )
+        if customer_id:
+            prob_q = prob_q.filter(IntelligenceItem.customer_id == customer_id)
+        prob_items = prob_q.options(joinedload(IntelligenceItem.processed)).all()
+
+        if prob_items:
+            scores = [i.processed.priority_score for i in prob_items if i.processed]
+            if scores:
+                avg = sum(scores) / len(scores)
+                print(f"Average priority score: {avg:.3f}")
+                print(f"Min: {min(scores):.3f}  Max: {max(scores):.3f}")
+                high = sum(1 for s in scores if s >= 0.7)
+                med  = sum(1 for s in scores if 0.5 <= s < 0.7)
+                low  = sum(1 for s in scores if s < 0.5)
+                print(f"\nScore distribution:")
+                print(f"  High (≥0.7):   {high:5d} ({high/len(scores)*100:5.1f}%)")
+                print(f"  Medium (≥0.5): {med:5d}  ({med/len(scores)*100:5.1f}%)")
+                print(f"  Low (<0.5):    {low:5d}  ({low/len(scores)*100:5.1f}%)")
+
+                false_pos = [i for i in prob_items if i.processed and i.processed.priority_score >= 0.7]
+                if false_pos:
+                    print(f"\n⚠️  HIGH PRIORITY BUT MARKED PROBLEMATIC ({len(false_pos)}) — possible false positives:")
+                    for item in false_pos[:10]:
+                        cust = db.query(Customer).filter(Customer.id == item.customer_id).first()
+                        print(f"\n  • {item.title[:80]}")
+                        print(f"    Customer: {cust.name if cust else 'Unknown'}")
+                        print(f"    Source: {item.source_type}  Priority: {item.processed.priority_score:.3f}  Category: {item.processed.category}")
+    finally:
+        db.close()
 
 
 def cmd_ai_config(args):
