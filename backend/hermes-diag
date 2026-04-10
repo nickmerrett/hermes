@@ -11,6 +11,9 @@ Usage:
     ./hermes-diag status config              # Check customer configuration
     ./hermes-diag status irrelevant          # Analyze unrelated/filtered items
     ./hermes-diag status irrelevant --days 7 --customer-id 1  # Filter by days/customer
+    ./hermes-diag status ai-config           # Check AI provider/model configuration
+    ./hermes-diag status australian-news     # Check Australian news source configuration
+    ./hermes-diag status executives          # Check executive data and LinkedIn profiles
 
     # Reddit Tools
     ./hermes-diag reddit check               # Check Reddit items and clustering
@@ -38,6 +41,8 @@ Usage:
 
     # Testing & Debugging
     ./hermes-diag test api-feed [customer]   # Test API feed endpoint
+    ./hermes-diag test smart-feed            # Test smart feed filtering logic
+    ./hermes-diag test blacklist             # Test domain blacklist functionality
     ./hermes-diag --debug <command>          # Show SQL queries (debug mode)
 
     # Legacy Commands (still supported)
@@ -298,6 +303,364 @@ def cmd_irrelevant(args):
         limit=args.limit,
         customer_id=getattr(args, 'customer_id', None)
     )
+
+
+def cmd_ai_config(args):
+    """Check AI provider/model configuration"""
+    print_header("AI Configuration Diagnostic")
+
+    from app.config.settings import settings
+
+    print("\n📋 ENVIRONMENT VARIABLES:")
+    print(f"  AI_PROVIDER:       {settings.ai_provider}")
+    print(f"  AI_PROVIDER_CHEAP: {settings.ai_provider_cheap}")
+    print(f"  AI_MODEL:          {settings.ai_model}")
+    print(f"  AI_MODEL_CHEAP:    {settings.ai_model_cheap}")
+
+    print("\n🔑 API KEYS:")
+    print(f"  ANTHROPIC_API_KEY: {'✓ Set' if settings.anthropic_api_key else '✗ NOT SET'}")
+    print(f"  OPENAI_API_KEY:    {'✓ Set' if settings.openai_api_key else '✗ NOT SET'}")
+
+    print("\n🌐 API BASE URLS:")
+    print(f"  ANTHROPIC_API_BASE_URL: {settings.anthropic_api_base_url}")
+    print(f"  OPENAI_BASE_URL:        {settings.openai_base_url}")
+
+    print("\n" + "-"*60)
+    print("Testing AIProcessor initialization...")
+
+    try:
+        from app.processors.ai_processor import AIProcessor
+        processor = AIProcessor()
+        print_success(f"AIProcessor initialized: {processor.provider} / {processor.model}")
+        print(f"  Client Type: {processor.client_type}")
+    except Exception as e:
+        print_error(f"Failed to initialize AIProcessor: {e}")
+
+    print("\nChecking database AI config...")
+    db = SessionLocal()
+    try:
+        from app.models.database import PlatformSettings
+        ai_config = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'ai_config'
+        ).first()
+        if ai_config:
+            print_success(f"Platform AI config found: {ai_config.value}")
+        else:
+            print_warning("No ai_config in database (using environment defaults)")
+    finally:
+        db.close()
+
+    issues = []
+    if settings.ai_provider == 'anthropic' and not settings.anthropic_api_key:
+        issues.append("ANTHROPIC_API_KEY not set but AI_PROVIDER=anthropic")
+    if settings.ai_provider_cheap == 'anthropic' and not settings.anthropic_api_key:
+        issues.append("ANTHROPIC_API_KEY not set but AI_PROVIDER_CHEAP=anthropic")
+    if settings.ai_provider == 'openai' and not settings.openai_api_key:
+        issues.append("OPENAI_API_KEY not set but AI_PROVIDER=openai")
+
+    if issues:
+        print("\n")
+        for issue in issues:
+            print_error(issue)
+    else:
+        print_success("Configuration looks good!")
+
+
+def cmd_australian_news(args):
+    """Check Australian news source configuration"""
+    print_header("Australian News Source Configuration")
+
+    import json
+    db = SessionLocal()
+    try:
+        from app.models.database import PlatformSettings
+        setting = db.query(PlatformSettings).filter(
+            PlatformSettings.key == 'australian_news_sources'
+        ).first()
+
+        if not setting:
+            print_error("No australian_news_sources found in database")
+            print("   Run: python tools/init_australian_news_settings.py")
+            return
+
+        print_success("Found australian_news_sources in database")
+        sources = setting.value.get('sources', [])
+        enabled = sum(1 for s in sources if s.get('enabled', True))
+        print(f"\nTotal sources: {len(sources)}  |  Enabled: {enabled}\n")
+
+        for source in sources:
+            name = source.get('name', 'Unknown')
+            is_enabled = source.get('enabled', True)
+            feeds = source.get('feeds', [])
+            status = "✓" if is_enabled else "✗"
+            color = Colors.GREEN if is_enabled else Colors.RED
+            print(f"  {color}{status}{Colors.ENDC} {name} ({len(feeds)} feed{'s' if len(feeds) != 1 else ''})")
+            for feed in feeds:
+                print(f"       {feed}")
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_executives(args):
+    """Check executive data and LinkedIn profile coverage"""
+    print_header("Executive Dashboard Data Diagnostic")
+
+    from sqlalchemy import func, or_
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        print("\n── CUSTOMERS & CONFIGURED EXECUTIVES ──")
+        customers = db.query(Customer).all()
+        if not customers:
+            print_error("No customers found!")
+            return
+
+        for c in customers:
+            config = c.config or {}
+            profiles = config.get('linkedin_user_profiles', [])
+            print(f"\n  Customer #{c.id}: {Colors.BOLD}{c.name}{Colors.ENDC}")
+            if profiles:
+                for p in profiles:
+                    print(f"    • {p.get('name', '?')} | {p.get('role', '?')}")
+                    print(f"      {p.get('profile_url', 'no URL')}")
+            else:
+                print_warning("  No linkedin_user_profiles configured")
+
+        print("\n── INTELLIGENCE ITEMS BY SOURCE TYPE ──")
+        counts = db.query(
+            Customer.name,
+            IntelligenceItem.source_type,
+            func.count(IntelligenceItem.id)
+        ).join(Customer).group_by(
+            Customer.name, IntelligenceItem.source_type
+        ).order_by(Customer.name, IntelligenceItem.source_type).all()
+
+        for cust_name, src_type, cnt in counts:
+            print(f"  {cust_name:30s} | {src_type:20s} | {cnt:5d} items")
+
+        cutoff = datetime.utcnow() - timedelta(days=90)
+        recent_count = db.query(func.count(IntelligenceItem.id)).filter(
+            IntelligenceItem.published_date >= cutoff
+        ).scalar()
+        total_count = db.query(func.count(IntelligenceItem.id)).scalar()
+
+        print(f"\n── ITEM FRESHNESS ──")
+        print(f"  Total items:          {total_count}")
+        print(f"  Items in last 90 days: {recent_count}")
+
+        print("\n── EXECUTIVE NAME MENTIONS (last 90 days) ──")
+        for c in customers:
+            config = c.config or {}
+            for p in config.get('linkedin_user_profiles', []):
+                name = p.get('name', '')
+                if not name:
+                    continue
+                count = db.query(func.count(IntelligenceItem.id)).filter(
+                    IntelligenceItem.customer_id == c.id,
+                    IntelligenceItem.published_date >= cutoff,
+                    or_(
+                        IntelligenceItem.title.ilike(f'%{name}%'),
+                        IntelligenceItem.content.ilike(f'%{name}%'),
+                    )
+                ).scalar()
+                status = f"{count} mentions" if count else "0 mentions"
+                indicator = Colors.GREEN if count else Colors.YELLOW
+                print(f"  {indicator}{name:30s}{Colors.ENDC} @ {c.name} → {status}")
+
+        print("\n── RECENT LINKEDIN_USER ITEMS ──")
+        li_items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.source_type == 'linkedin_user'
+        ).order_by(IntelligenceItem.published_date.desc()).limit(5).all()
+
+        if li_items:
+            for item in li_items:
+                print(f"  [{item.published_date}] {item.title[:70]}")
+        else:
+            print_warning("No linkedin_user items found")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_smart_feed(args):
+    """Test smart feed filtering logic"""
+    print_header("Smart Feed Filter Test")
+
+    from app.utils.smart_feed import (
+        get_smart_feed_settings,
+        calculate_effective_priority,
+        should_include_item,
+        apply_diversity_control
+    )
+    from sqlalchemy import desc
+
+    db = SessionLocal()
+    try:
+        smart_config = get_smart_feed_settings(db)
+
+        print("\n1. SMART FEED SETTINGS")
+        print("-"*60)
+        print(f"  Enabled:                {smart_config.get('enabled', True)}")
+        print(f"  Min Priority:           {smart_config.get('min_priority', 0.3):.2f}")
+        print(f"  High Priority Threshold:{smart_config.get('high_priority_threshold', 0.7):.2f}")
+
+        recency = smart_config.get('recency_boost', {})
+        print(f"  Recency Boost:          {recency.get('enabled', True)} (+{recency.get('boost_amount', 0.1):.2f} within {recency.get('time_threshold_hours', 24)}h)")
+
+        cat_prefs = smart_config.get('category_preferences', {})
+        src_prefs = smart_config.get('source_preferences', {})
+        always_show_cats = [k for k, v in cat_prefs.items() if v]
+        always_show_srcs = [k for k, v in src_prefs.items() if v]
+        print(f"  Always-show categories: {always_show_cats}")
+        print(f"  Always-show sources:    {always_show_srcs}")
+
+        diversity = smart_config.get('diversity', {})
+        print(f"  Diversity control:      {diversity.get('enabled', True)} (max {diversity.get('max_consecutive_same_source', 3)} consecutive same source)")
+
+        print("\n2. QUERYING DATABASE")
+        print("-"*60)
+        all_items = db.query(IntelligenceItem).filter(
+            IntelligenceItem.is_cluster_primary.is_(True)
+        ).order_by(desc(IntelligenceItem.published_date)).limit(100).all()
+        print(f"  Found {len(all_items)} primary items")
+
+        item_ids = [item.id for item in all_items]
+        processed_map = {}
+        if item_ids:
+            from app.models.database import ProcessedIntelligence
+            processed_list = db.query(ProcessedIntelligence).filter(
+                ProcessedIntelligence.item_id.in_(item_ids)
+            ).all()
+            processed_map = {p.item_id: p for p in processed_list}
+        print(f"  Processed data for {len(processed_map)} items")
+
+        print("\n3. APPLYING SMART FEED FILTERING")
+        print("-"*60)
+        filtered_in, filtered_out = [], []
+        for item in all_items:
+            processed = processed_map.get(item.id)
+            base = processed.priority_score if processed else 0.0
+            effective = calculate_effective_priority(item, processed, smart_config)
+            include = should_include_item(item, processed, effective, smart_config)
+            info = {'item': item, 'processed': processed, 'base': base, 'effective': effective, 'boost': effective - base}
+            (filtered_in if include else filtered_out).append(info)
+
+        total = len(all_items)
+        print(f"  Included:     {len(filtered_in)} ({len(filtered_in)/total*100:.1f}%)")
+        print(f"  Filtered out: {len(filtered_out)} ({len(filtered_out)/total*100:.1f}%)")
+
+        if filtered_out:
+            print(f"\n4. SAMPLE FILTERED-OUT ITEMS (first 5)")
+            print("-"*60)
+            for info in filtered_out[:5]:
+                item = info['item']
+                processed = info['processed']
+                cat = processed.category if processed else 'N/A'
+                print(f"\n  {item.title[:70]}")
+                print(f"    Source: {item.source_type}  Category: {cat}  Priority: {info['effective']:.2f}")
+
+        print("\n5. BREAKDOWN OF INCLUDED ITEMS")
+        print("-"*60)
+        src_counts = {}
+        cat_counts = {}
+        for info in filtered_in:
+            src = info['item'].source_type
+            cat = info['processed'].category if info['processed'] else 'Unknown'
+            src_counts[src] = src_counts.get(src, 0) + 1
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+        print("  By Source:")
+        for src, cnt in sorted(src_counts.items(), key=lambda x: -x[1]):
+            print(f"    {src}: {cnt}")
+        print("  By Category:")
+        for cat, cnt in sorted(cat_counts.items(), key=lambda x: -x[1]):
+            print(f"    {cat}: {cnt}")
+
+        if total == 0:
+            pass
+        elif len(filtered_in) == total:
+            print_warning("No items filtered out — settings may be too permissive")
+        elif len(filtered_out) > total * 0.7:
+            print_warning("More than 70% filtered out — settings may be too strict")
+        else:
+            print_success("Smart feed filtering is working as expected!")
+
+    except Exception as e:
+        print_error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def cmd_blacklist(args):
+    """Test domain blacklist functionality"""
+    print_header("Domain Blacklist Test")
+
+    from app.collectors.base import BaseCollector
+
+    blacklist_config = {
+        'enabled': True,
+        'domains': ['yahoo.com', 'msn.com', 'aol.com', 'bing.com', 'pinterest.com', 'tumblr.com']
+    }
+
+    blocked_urls = [
+        'https://www.yahoo.com/news/article',
+        'https://finance.yahoo.com/quote/AAPL',
+        'http://msn.com/article',
+        'https://www.MSN.COM/news',
+        'https://pinterest.com/pin/123456',
+    ]
+    allowed_urls = [
+        'https://techcrunch.com/article',
+        'https://www.reuters.com/business',
+        'https://www.bloomberg.com/news',
+        None,
+    ]
+
+    print("\nTest domains:", blacklist_config['domains'])
+    print("\n1. URLs that SHOULD be blocked:")
+    all_pass = True
+    for url in blocked_urls:
+        blocked = BaseCollector.is_url_blacklisted(url, blacklist_config)
+        ok = blocked
+        all_pass = all_pass and ok
+        icon = "✓" if ok else "✗ FAILED"
+        color = Colors.GREEN if ok else Colors.RED
+        print(f"  {color}{icon}{Colors.ENDC} {url}")
+
+    print("\n2. URLs that should NOT be blocked:")
+    for url in allowed_urls:
+        blocked = BaseCollector.is_url_blacklisted(url, blacklist_config)
+        ok = not blocked
+        all_pass = all_pass and ok
+        icon = "✓" if ok else "✗ FAILED"
+        color = Colors.GREEN if ok else Colors.RED
+        print(f"  {color}{icon}{Colors.ENDC} {url or 'None'}")
+
+    print("\n3. Blacklist DISABLED — should allow blocked domains:")
+    disabled = {'enabled': False, 'domains': blacklist_config['domains']}
+    blocked = BaseCollector.is_url_blacklisted('https://yahoo.com/article', disabled)
+    ok = not blocked
+    all_pass = all_pass and ok
+    icon = "✓" if ok else "✗ FAILED"
+    color = Colors.GREEN if ok else Colors.RED
+    print(f"  {color}{icon}{Colors.ENDC} yahoo.com allowed when disabled")
+
+    print()
+    if all_pass:
+        print_success("All blacklist tests passed!")
+    else:
+        print_error("Some tests failed — check blacklist implementation")
 
 
 def cmd_reddit(args):
@@ -1329,6 +1692,9 @@ Examples:
     irrelevant_cmd.add_argument('--days', type=int, default=30, help='Days to look back (default: 30)')
     irrelevant_cmd.add_argument('--limit', type=int, default=50, help='Max items per category (default: 50)')
     irrelevant_cmd.add_argument('--customer-id', type=int, dest='customer_id', help='Filter to specific customer ID')
+    status_subs.add_parser('ai-config', help='Check AI provider/model configuration')
+    status_subs.add_parser('australian-news', help='Check Australian news source configuration')
+    status_subs.add_parser('executives', help='Check executive data and LinkedIn profiles')
 
     # ========== REDDIT GROUP ==========
     reddit_parser = subparsers.add_parser('reddit', help='Reddit tools')
@@ -1373,6 +1739,8 @@ Examples:
     test_subs = test_parser.add_subparsers(dest='subcommand')
     test_api = test_subs.add_parser('api-feed', help='Test API feed endpoint')
     test_api.add_argument('customer', nargs='?', help='Customer name (optional)')
+    test_subs.add_parser('smart-feed', help='Test smart feed filtering logic')
+    test_subs.add_parser('blacklist', help='Test domain blacklist functionality')
 
     # ========== LEGACY COMMANDS (flat, for backwards compatibility) ==========
     subparsers.add_parser('sources', help='[Legacy] Show collection statistics')
@@ -1420,6 +1788,12 @@ Examples:
                 cmd_config(args)
             elif args.subcommand == 'irrelevant':
                 cmd_irrelevant(args)
+            elif args.subcommand == 'ai-config':
+                cmd_ai_config(args)
+            elif args.subcommand == 'australian-news':
+                cmd_australian_news(args)
+            elif args.subcommand == 'executives':
+                cmd_executives(args)
 
         elif args.group == 'reddit':
             if not hasattr(args, 'subcommand') or not args.subcommand:
@@ -1467,10 +1841,14 @@ Examples:
 
         elif args.group == 'test':
             if not hasattr(args, 'subcommand') or not args.subcommand:
-                print_error("Missing subcommand. Try: test api-feed")
+                print_error("Missing subcommand. Try: test api-feed, test smart-feed, or test blacklist")
                 sys.exit(1)
             elif args.subcommand == 'api-feed':
                 cmd_api_feed(args)
+            elif args.subcommand == 'smart-feed':
+                cmd_smart_feed(args)
+            elif args.subcommand == 'blacklist':
+                cmd_blacklist(args)
 
         # Legacy flat commands
         elif args.group == 'sources':
