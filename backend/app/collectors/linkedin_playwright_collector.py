@@ -486,6 +486,18 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                 self.logger.warning(f"Activity page requires login: {activity_url}")
                 return items
 
+            # LinkedIn may render inside an interop iframe — resolve the right query context
+            query_context = page
+            try:
+                iframe_elem = await page.query_selector('iframe[data-testid="interop-iframe"]')
+                if iframe_elem:
+                    frame = await iframe_elem.content_frame()
+                    if frame:
+                        self.logger.info("Switching query context to interop iframe")
+                        query_context = frame
+            except Exception as e:
+                self.logger.debug(f"iframe detection failed, using page context: {e}")
+
             # Find post containers
             post_selectors = [
                 'div.feed-shared-update-v2',
@@ -496,7 +508,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
             posts = []
             for selector in post_selectors:
                 try:
-                    posts = await page.query_selector_all(selector)
+                    posts = await query_context.query_selector_all(selector)
                     if posts:
                         break
                 except Exception:
@@ -519,60 +531,33 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                         post_text = post_text.strip() if post_text else None
 
                         if post_text and len(post_text) > 20:
-                            # Try to get post URL
-                            # On recent-activity pages, posts have direct links like:
-                            # https://www.linkedin.com/posts/username_activity-id-hash
+                            # Extract post URL from data-urn attribute on the article container
+                            # e.g. data-urn="urn:li:activity:7430196401612992512"
                             post_url = None
+                            try:
+                                urn = await post.get_attribute('data-urn')
+                                if urn and urn.startswith('urn:li:activity:'):
+                                    post_url = f"https://www.linkedin.com/feed/update/{urn}/"
+                                    self.logger.info(f"✓ Found post URL via data-urn: {post_url}")
+                            except Exception as e:
+                                self.logger.debug(f"data-urn extraction failed: {e}")
 
-                            # Look for the timestamp/date link which is the permalink to the post
-                            # This is the most reliable way to get the actual post URL
-                            link_selectors = [
-                                'a.app-aware-link[href*="/posts/"]',  # Main post permalink (most reliable)
-                                'a[href*="/posts/"]',  # Direct post links
-                                'span.update-components-actor__sub-description a',  # Date link
-                                'a.feed-shared-actor__sub-description-link',  # Actor description link
-                            ]
-
-                            for selector in link_selectors:
+                            if not post_url:
+                                # Fallback: look for /feed/update/ links inside the post
                                 try:
-                                    link_elem = await post.query_selector(selector)
+                                    link_elem = await post.query_selector('a[href*="/feed/update/"]')
                                     if link_elem:
                                         href = await link_elem.get_attribute('href')
-                                        if href and '/posts/' in href:
-                                            # Convert relative URLs to absolute
-                                            if href.startswith('/'):
-                                                post_url = f"https://www.linkedin.com{href}"
-                                            elif href.startswith('http'):
-                                                post_url = href
-                                            else:
-                                                post_url = f"https://www.linkedin.com/{href}"
-
-                                            # Clean up URL (remove query params, tracking)
+                                        if href:
+                                            post_url = f"https://www.linkedin.com{href}" if href.startswith('/') else href
                                             if '?' in post_url:
                                                 post_url = post_url.split('?')[0]
-
-                                            self.logger.info(f"✓ Found post URL via '{selector}': {post_url}")
-                                            break
+                                            self.logger.info(f"✓ Found post URL via /feed/update/ link: {post_url}")
                                 except Exception as e:
-                                    self.logger.debug(f"Selector '{selector}' failed: {e}")
-                                    continue
+                                    self.logger.debug(f"feed/update link extraction failed: {e}")
 
-                            # If still no URL, log detailed info for debugging
                             if not post_url:
                                 self.logger.warning(f"Could not find post URL for {profile_name}")
-
-                                # Try to get any link from the post for debugging
-                                try:
-                                    all_links = await post.query_selector_all('a[href]')
-                                    if all_links:
-                                        self.logger.debug(f"Available links in post: {len(all_links)}")
-                                        for link in all_links[:3]:  # Log first 3 links
-                                            href = await link.get_attribute('href')
-                                            self.logger.debug(f"  Link: {href}")
-                                except Exception:
-                                    pass
-
-                                # Use profile URL with content hash as fallback
                                 content_hash = hashlib.md5(post_text.encode()).hexdigest()[:12]
                                 post_url = f"{profile_url}#post-{content_hash}"
                                 self.logger.warning(f"Using fallback URL: {post_url}")
@@ -610,6 +595,13 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
 
                             if not date_found:
                                 self.logger.warning("Could not extract date for post, using current time")
+
+                            # Skip posts older than 30 days; posts are newest-first so break early
+                            max_age_days = 30
+                            cutoff = datetime.now() - timedelta(days=max_age_days)
+                            if post_date < cutoff:
+                                self.logger.info(f"Stopping: post from {post_date.strftime('%Y-%m-%d')} is older than {max_age_days} days")
+                                break
 
                             # Create post item
                             item = self._create_item(
@@ -674,6 +666,18 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                 self.logger.warning(f"Company posts require login: {posts_url}")
                 return items
 
+            # LinkedIn may render inside an interop iframe — resolve the right query context
+            query_context = page
+            try:
+                iframe_elem = await page.query_selector('iframe[data-testid="interop-iframe"]')
+                if iframe_elem:
+                    frame = await iframe_elem.content_frame()
+                    if frame:
+                        self.logger.info("Switching query context to interop iframe")
+                        query_context = frame
+            except Exception as e:
+                self.logger.debug(f"iframe detection failed, using page context: {e}")
+
             # Find post containers (same selectors as user profiles)
             post_selectors = [
                 'div.feed-shared-update-v2',
@@ -684,7 +688,7 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
             posts = []
             for selector in post_selectors:
                 try:
-                    posts = await page.query_selector_all(selector)
+                    posts = await query_context.query_selector_all(selector)
                     if posts:
                         self.logger.info(f"Found posts using selector: {selector}")
                         break
@@ -709,42 +713,29 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
                         post_text = post_text.strip() if post_text else None
 
                         if post_text and len(post_text) > 20:
-                            # Try to get post URL
+                            # Extract post URL from data-urn attribute on the article container
                             post_url = None
+                            try:
+                                urn = await post.get_attribute('data-urn')
+                                if urn and urn.startswith('urn:li:activity:'):
+                                    post_url = f"https://www.linkedin.com/feed/update/{urn}/"
+                                    self.logger.info(f"✓ Found post URL via data-urn: {post_url}")
+                            except Exception as e:
+                                self.logger.debug(f"data-urn extraction failed: {e}")
 
-                            # Look for the timestamp/date link which is the permalink to the post
-                            link_selectors = [
-                                'a.app-aware-link[href*="/posts/"]',  # Main post permalink (most reliable)
-                                'a[href*="/posts/"]',  # Direct post links
-                                'span.update-components-actor__sub-description a',  # Date link
-                                'a.feed-shared-actor__sub-description-link',  # Actor description link
-                            ]
-
-                            for selector in link_selectors:
+                            if not post_url:
                                 try:
-                                    link_elem = await post.query_selector(selector)
+                                    link_elem = await post.query_selector('a[href*="/feed/update/"]')
                                     if link_elem:
                                         href = await link_elem.get_attribute('href')
-                                        if href and '/posts/' in href:
-                                            # Convert relative URLs to absolute
-                                            if href.startswith('/'):
-                                                post_url = f"https://www.linkedin.com{href}"
-                                            elif href.startswith('http'):
-                                                post_url = href
-                                            else:
-                                                post_url = f"https://www.linkedin.com/{href}"
-
-                                            # Clean up URL (remove query params, tracking)
+                                        if href:
+                                            post_url = f"https://www.linkedin.com{href}" if href.startswith('/') else href
                                             if '?' in post_url:
                                                 post_url = post_url.split('?')[0]
-
-                                            self.logger.info(f"✓ Found post URL via '{selector}': {post_url}")
-                                            break
+                                            self.logger.info(f"✓ Found post URL via /feed/update/ link: {post_url}")
                                 except Exception as e:
-                                    self.logger.debug(f"Selector '{selector}' failed: {e}")
-                                    continue
+                                    self.logger.debug(f"feed/update link extraction failed: {e}")
 
-                            # If still no URL, use company URL with content hash as fallback
                             if not post_url:
                                 self.logger.warning(f"Could not find post URL for {company_name}")
                                 content_hash = hashlib.md5(post_text.encode()).hexdigest()[:12]
@@ -784,6 +775,13 @@ class PlaywrightLinkedInCollector(RateLimitedCollector):
 
                             if not date_found:
                                 self.logger.warning("Could not extract date for post, using current time")
+
+                            # Skip posts older than 30 days; posts are newest-first so break early
+                            max_age_days = 30
+                            cutoff = datetime.now() - timedelta(days=max_age_days)
+                            if post_date < cutoff:
+                                self.logger.info(f"Stopping: post from {post_date.strftime('%Y-%m-%d')} is older than {max_age_days} days")
+                                break
 
                             # Create post item with linkedin_company source type
                             item = self._create_item(

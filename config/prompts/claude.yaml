@@ -105,7 +105,7 @@ prompts:
   core_analysis:
     model: claude-haiku
     template: |
-      Analyze this article about {customer_name} for a technical sales team.
+      Analyze this article about {customer_name}.
 
       Source Type: {source_type}
       Title: {title}
@@ -117,10 +117,10 @@ prompts:
 
       Return JSON with:
 
-      1. SUMMARY (2-4 sentences): What happened and why it matters to sales
-         - WHAT happened?
-         - WHY does this matter to a sales professional?
-         - WHAT are the implications?
+      1. SUMMARY (2-4 sentences): What happened and what it means
+         - WHAT happened? (be specific — names, numbers, context)
+         - WHAT are the broader business or industry implications?
+         - Keep sales framing minimal; focus on the news itself
 
       2. CATEGORY (pick ONE):
          product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other

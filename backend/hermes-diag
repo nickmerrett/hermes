@@ -9,6 +9,8 @@ Usage:
     ./hermes-diag status                     # Run all diagnostics
     ./hermes-diag status sources             # Show collection statistics by source
     ./hermes-diag status config              # Check customer configuration
+    ./hermes-diag status irrelevant          # Analyze unrelated/filtered items
+    ./hermes-diag status irrelevant --days 7 --customer-id 1  # Filter by days/customer
 
     # Reddit Tools
     ./hermes-diag reddit check               # Check Reddit items and clustering
@@ -41,6 +43,7 @@ Usage:
     # Legacy Commands (still supported)
     ./hermes-diag sources                    # Alias for: status sources
     ./hermes-diag all                        # Alias for: status
+    ./hermes-diag analyze-irrelevant         # Alias for: status irrelevant
 """
 
 import sys
@@ -280,6 +283,21 @@ def cmd_config(args):
         traceback.print_exc()
     finally:
         db.close()
+
+
+def cmd_irrelevant(args):
+    """Analyze items marked as unrelated/other/advertisement"""
+    import sys
+    import os
+    # Add tools directory to path
+    tools_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools')
+    sys.path.insert(0, tools_dir)
+    from analyze_irrelevant_items import analyze_irrelevant_items
+    analyze_irrelevant_items(
+        days=args.days,
+        limit=args.limit,
+        customer_id=getattr(args, 'customer_id', None)
+    )
 
 
 def cmd_reddit(args):
@@ -1307,6 +1325,10 @@ Examples:
     status_subs = status_parser.add_subparsers(dest='subcommand')
     status_subs.add_parser('sources', help='Show collection statistics by source')
     status_subs.add_parser('config', help='Check customer configuration')
+    irrelevant_cmd = status_subs.add_parser('irrelevant', help='Analyze unrelated/filtered items')
+    irrelevant_cmd.add_argument('--days', type=int, default=30, help='Days to look back (default: 30)')
+    irrelevant_cmd.add_argument('--limit', type=int, default=50, help='Max items per category (default: 50)')
+    irrelevant_cmd.add_argument('--customer-id', type=int, dest='customer_id', help='Filter to specific customer ID')
 
     # ========== REDDIT GROUP ==========
     reddit_parser = subparsers.add_parser('reddit', help='Reddit tools')
@@ -1374,6 +1396,10 @@ Examples:
     legacy_del_posts.add_argument('--force', action='store_true', help='Skip confirmation')
     legacy_del_profiles = subparsers.add_parser('delete-linkedin-profiles', help='[Legacy] Delete LinkedIn profiles')
     legacy_del_profiles.add_argument('--force', action='store_true', help='Skip confirmation')
+    legacy_irrelevant = subparsers.add_parser('analyze-irrelevant', help='[Legacy] Analyze unrelated/filtered items')
+    legacy_irrelevant.add_argument('--days', type=int, default=30, help='Days to look back (default: 30)')
+    legacy_irrelevant.add_argument('--limit', type=int, default=50, help='Max items per category (default: 50)')
+    legacy_irrelevant.add_argument('--customer-id', type=int, dest='customer_id', help='Filter to specific customer ID')
 
     args = full_parser.parse_args()
 
@@ -1392,6 +1418,8 @@ Examples:
                 cmd_sources(args)
             elif args.subcommand == 'config':
                 cmd_config(args)
+            elif args.subcommand == 'irrelevant':
+                cmd_irrelevant(args)
 
         elif args.group == 'reddit':
             if not hasattr(args, 'subcommand') or not args.subcommand:
@@ -1469,6 +1497,8 @@ Examples:
             cmd_delete_linkedin_posts(args)
         elif args.group == 'delete-linkedin-profiles':
             cmd_delete_linkedin_profiles(args)
+        elif args.group == 'analyze-irrelevant':
+            cmd_irrelevant(args)
 
         else:
             full_parser.print_help()
