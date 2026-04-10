@@ -19,6 +19,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
       rss_feeds: [],
       linkedin_user_profiles: [],
       collection_config: {
+        excluded_keywords: [],
         news_enabled: true,
         yahoo_finance_news_enabled: false,
         asx_announcements_enabled: false,
