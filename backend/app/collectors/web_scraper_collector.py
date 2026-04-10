@@ -201,7 +201,13 @@ class WebScraperCollector(RateLimitedCollector):
                 link_elem = article_elem.select_one(link_selector)
                 if link_elem:
                     url = link_elem.get('href', '')
-                    if url and not url.startswith('http'):
+                elif article_elem.name == 'a':
+                    # article_elem itself is the <a> — href on container directly
+                    url = article_elem.get('href', '')
+                else:
+                    url = ''
+                if url:
+                    if not url.startswith('http'):
                         from urllib.parse import urljoin
                         url = urljoin(base_url, url)
                     article_data['url'] = url
