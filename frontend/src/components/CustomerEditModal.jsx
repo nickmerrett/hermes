@@ -1199,7 +1199,7 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
                       />
                       <span>Trusted Source</span>
                       <small style={{ display: 'block', marginLeft: '24px', color: '#6b7280', marginTop: '4px' }}>
-                        Official newsroom/press releases - never marked as irrelevant
+                        Official newsroom/press releases - skips keyword filtering and is never marked as irrelevant
                       </small>
                     </label>
                   </div>

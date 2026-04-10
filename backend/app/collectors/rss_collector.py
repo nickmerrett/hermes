@@ -29,6 +29,7 @@ class RSSCollector(BaseCollector):
         self.feed_url = feed_config.get('url')
         self.feed_name = feed_config.get('name', 'RSS Feed')
         self.source_id = feed_config.get('source_id')  # Database source ID
+        self.is_trusted = feed_config.get('trusted', False)
 
         if not self.feed_url:
             raise ValueError("RSS feed URL is required")
@@ -104,10 +105,9 @@ class RSSCollector(BaseCollector):
             # Extract published date
             published_date = self._extract_date(entry)
 
-            # Since this is from the company's own feed, we generally want all items
-            # But we can still apply keyword filtering if needed
-            # if not self._should_collect_item(title, content):
-            #     return None
+            # Trusted/official feeds skip keyword filtering (company's own channels)
+            if not self.is_trusted and not self._should_collect_item(title, content, title_only=True):
+                return None
 
             # Create item
             return self._create_item(
