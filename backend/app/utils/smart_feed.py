@@ -26,6 +26,7 @@ def get_default_smart_feed_settings() -> Dict[str, Any]:
             'product_update': False,
             'financial': True,
             'market_news': False,
+            'industry_trend': True,
             'competitor': True,
             'challenge': True,
             'opportunity': True,

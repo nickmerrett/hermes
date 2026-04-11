@@ -614,7 +614,8 @@ Content:
 3. CATEGORY: Choose ONE from:
    - product_update: New products, features, releases, product announcements FROM {customer_name}
    - financial: Earnings, funding, revenue, financial performance, budget changes
-   - market_news: Market trends, industry analysis, market position, general industry spending/adoption trends relevant to customer's sector (even without direct customer mention)
+   - market_news: Market trends, market position, analyst reports directly about customer or their market segment
+   - industry_trend: Broader industry-wide trends, technology adoption, spending patterns, regulatory shifts — relevant to customer's sector even without direct customer mention
    - competitor: Competitor actions, competitive wins/losses, comparisons, regulatory/ESG/financial pressure on competitors, strategic moves by companies in the same space
    - challenge: Problems, outages, issues, criticisms, negative press
    - opportunity: Expansion, partnerships, growth areas, new markets
@@ -685,9 +686,9 @@ CRITICAL FILTERING EXAMPLES:
 - ❌ "How to choose the right NBN speed tier" → is_relevant: false, category: unrelated
 - ✅ "NBN Co announces major network upgrade rollout" → is_relevant: true, category: product_update
 - ✅ "NBN Co CEO discusses infrastructure challenges" → is_relevant: true, category: leadership
-- ✅ "Enterprises won't quit AI spending even without proven ROI" → is_relevant: true, category: market_news (industry trend relevant to tech/AI companies)
+- ✅ "Enterprises won't quit AI spending even without proven ROI" → is_relevant: true, category: industry_trend (sector-wide spending pattern)
 - ✅ "AWS faces shareholder pressure over carbon disclosure" → is_relevant: true, category: competitor (regulatory/ESG pressure on a direct competitor)
-- ✅ "Cloud spending up 30% as enterprises accelerate migration" → is_relevant: true, category: market_news (relevant sector trend even without customer mention)
+- ✅ "Cloud spending up 30% as enterprises accelerate migration" → is_relevant: true, category: industry_trend (broad adoption trend relevant to sector)
 
 CRITICAL: If any known competitors are mentioned, ALWAYS include them in entities.companies and consider setting category to "competitor" if they're a focus of the content.
 
@@ -746,7 +747,7 @@ TASK: Output JSON ONLY with these fields:
 2. "summary": 2-3 sentences explaining what happened and why it matters
 
 3. "category": ONE of these:
-   product_update, financial, market_news, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
+   product_update, financial, market_news, industry_trend, competitor, challenge, opportunity, leadership, partnership, advertisement, unrelated, other
 
 4. "sentiment": positive, negative, neutral, or mixed
 
