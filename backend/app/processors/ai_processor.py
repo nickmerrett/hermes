@@ -540,7 +540,11 @@ class AIProcessor:
         # Build competitor context
         competitor_context = ""
         if competitors:
-            competitor_context = f"\nKNOWN COMPETITORS: {', '.join(competitors[:10])}"
+            competitor_context = (
+                f"\nKNOWN COMPETITORS/VENDORS: {', '.join(competitors[:10])}"
+                f"\n⚠️  Any content about these companies is ALWAYS relevant (is_relevant: true) — "
+                f"use category 'competitor', 'market_news', or 'opportunity' as appropriate."
+            )
 
         # Build keyword context
         keyword_context = ""
@@ -689,7 +693,7 @@ CRITICAL FILTERING EXAMPLES:
 - ✅ "AWS faces shareholder pressure over carbon disclosure" → is_relevant: true, category: competitor (regulatory/ESG pressure on a direct competitor)
 - ✅ "Cloud spending up 30% as enterprises accelerate migration" → is_relevant: true, category: market_news (broad adoption trend relevant to sector)
 
-CRITICAL: If any known competitors are mentioned, ALWAYS include them in entities.companies and consider setting category to "competitor" if they're a focus of the content.
+CRITICAL: If any known competitors/vendors are mentioned, ALWAYS include them in entities.companies, set is_relevant: true, and use category "competitor" if they're the focus of the content. NEVER mark content about a known competitor as "unrelated".
 
 Format response as JSON:
 {{

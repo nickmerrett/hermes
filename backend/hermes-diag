@@ -1523,6 +1523,12 @@ def cmd_reprocess_by_category(args):
             competitors = customer.competitors or []
             priority_keywords = customer_config.get('priority_keywords', [])
 
+            # Skip empty/date-only items — AI returns empty JSON and trips circuit breaker
+            title_stripped = (item.title or '').strip()
+            if not title_stripped or (not item.content and len(title_stripped) < 20):
+                print(f"  [{i}/{len(items)}] SKIP (no content): {title_stripped[:70]}")
+                continue
+
             old_category = processed.category
             processing_succeeded = False
             processed_data = None
