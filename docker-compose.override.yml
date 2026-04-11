@@ -1,0 +1,38 @@
+
+# Development overrides — applied automatically by docker compose.
+# Production compose.yml is unchanged; this file adds hot-reload for both services.
+#
+# Backend: mounts ./backend/app into the container and enables uvicorn --reload
+#          so Python changes are picked up instantly without rebuilding.
+#
+# Frontend: replaces the nginx static build with Vite dev server on port 3001,
+#           with ./frontend/src mounted so component/CSS edits are hot-reloaded.
+#
+# Usage:
+#   docker compose up          # uses this override automatically
+#   docker compose -f docker-compose.yml up   # production only, no override
+
+version: '3.8'
+
+services:
+  hermes-backend:
+    volumes:
+      - ./backend/app:/app/app:z          # live-reload Python source
+      - ./backend/hermes-diag:/app/hermes-diag:z
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 1
+      --reload
+      --timeout-keep-alive 75
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend/src:/app/src:z
+      - ./frontend/public:/app/public:z
