@@ -33,7 +33,6 @@ class CategoryType(str, Enum):
     PRODUCT_UPDATE = "product_update"
     FINANCIAL = "financial"
     MARKET_NEWS = "market_news"
-    INDUSTRY_TREND = "industry_trend"
     COMPETITOR = "competitor"
     CHALLENGE = "challenge"
     OPPORTUNITY = "opportunity"
