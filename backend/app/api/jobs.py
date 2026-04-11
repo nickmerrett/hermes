@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List
+from datetime import datetime
 import asyncio
 
 from app.core.database import get_db
@@ -424,6 +425,60 @@ async def reprocess_failed_items(
         "count": len(processed_ids),
         "job_id": job_id,
         "details": f"Items are being reprocessed in the background. Use GET /api/jobs/{job_id} to check progress."
+    }
+
+
+@router.post("/reprocess-by-category")
+async def reprocess_by_category(
+    categories: List[str],
+    customer_id: int = None,
+    days: int = 30,
+    max_items: int = 500,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Flag items in specific categories for reprocessing.
+
+    Useful after changing AI prompt rules — marks existing items so the
+    reprocess-failed job will re-run AI analysis on them.
+
+    Args:
+        categories: List of category names to target (e.g. ["unrelated", "other"])
+        customer_id: Optional customer filter
+        days: Only flag items from the last N days
+        max_items: Cap on number of items to flag
+    """
+    from app.models.database import ProcessedIntelligence, IntelligenceItem
+    from datetime import timedelta
+
+    since = datetime.utcnow() - timedelta(days=days)
+
+    query = db.query(ProcessedIntelligence).join(
+        IntelligenceItem, ProcessedIntelligence.item_id == IntelligenceItem.id
+    ).filter(
+        ProcessedIntelligence.category.in_(categories),
+        IntelligenceItem.collected_date >= since,
+    )
+
+    if customer_id:
+        query = query.filter(IntelligenceItem.customer_id == customer_id)
+
+    items = query.limit(max_items).all()
+
+    count = 0
+    for item in items:
+        item.needs_reprocessing = True
+        item.last_processing_error = f"Flagged for reprocessing (category: {item.category})"
+        count += 1
+
+    db.commit()
+
+    return {
+        "status": "flagged",
+        "count": count,
+        "message": f"Flagged {count} items in categories {categories} for reprocessing. "
+                   f"Trigger /reprocess-failed to process them."
     }
 
 

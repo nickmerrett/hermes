@@ -614,14 +614,14 @@ Content:
 3. CATEGORY: Choose ONE from:
    - product_update: New products, features, releases, product announcements FROM {customer_name}
    - financial: Earnings, funding, revenue, financial performance, budget changes
-   - market_news: Market trends, industry analysis, market position
-   - competitor: Competitor actions, competitive wins/losses, comparisons
+   - market_news: Market trends, industry analysis, market position, general industry spending/adoption trends relevant to customer's sector (even without direct customer mention)
+   - competitor: Competitor actions, competitive wins/losses, comparisons, regulatory/ESG/financial pressure on competitors, strategic moves by companies in the same space
    - challenge: Problems, outages, issues, criticisms, negative press
    - opportunity: Expansion, partnerships, growth areas, new markets
    - leadership: Executive changes, org changes, strategic shifts
    - partnership: Partnerships, acquisitions, collaborations, alliances
    - advertisement: Retail ads, deals, discounts, promotions, price comparisons, consumer offers, affiliate content, "best deal" articles
-   - unrelated: Different company/entity, consumer advice, general tutorials, not relevant to company intelligence
+   - unrelated: Completely different industry/entity with no connection to customer, consumer advice, general tutorials, lifestyle content. Do NOT use for general industry trends or competitor news even if customer isn't mentioned.
    - other: Doesn't fit above categories
 
 4. SENTIMENT: positive, negative, neutral, or mixed
@@ -685,6 +685,9 @@ CRITICAL FILTERING EXAMPLES:
 - ❌ "How to choose the right NBN speed tier" → is_relevant: false, category: unrelated
 - ✅ "NBN Co announces major network upgrade rollout" → is_relevant: true, category: product_update
 - ✅ "NBN Co CEO discusses infrastructure challenges" → is_relevant: true, category: leadership
+- ✅ "Enterprises won't quit AI spending even without proven ROI" → is_relevant: true, category: market_news (industry trend relevant to tech/AI companies)
+- ✅ "AWS faces shareholder pressure over carbon disclosure" → is_relevant: true, category: competitor (regulatory/ESG pressure on a direct competitor)
+- ✅ "Cloud spending up 30% as enterprises accelerate migration" → is_relevant: true, category: market_news (relevant sector trend even without customer mention)
 
 CRITICAL: If any known competitors are mentioned, ALWAYS include them in entities.companies and consider setting category to "competitor" if they're a focus of the content.
 
