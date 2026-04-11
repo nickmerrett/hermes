@@ -79,6 +79,13 @@ else:
     logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
     logging.getLogger('sqlalchemy.engine').disabled = False
 
+# Silence ChromaDB 0.5.x broken posthog telemetry
+try:
+    import chromadb.telemetry.product.posthog as _chroma_ph
+    _chroma_ph.Posthog.capture = lambda *a, **kw: None
+except Exception:
+    pass
+
 # NOW import database modules
 from app.core.database import SessionLocal
 from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer
@@ -1440,6 +1447,57 @@ def cmd_delete_linkedin_profiles(args):
         db.close()
 
 
+def cmd_purge_empty(args):
+    """Delete items with no URL and no content"""
+    print_header("Purge Empty Items")
+
+    db = SessionLocal()
+    try:
+        query = db.query(IntelligenceItem).filter(
+            IntelligenceItem.url.is_(None),
+            (IntelligenceItem.content.is_(None) | (IntelligenceItem.content == ''))
+        )
+
+        if args.source:
+            query = query.filter(IntelligenceItem.source_type == args.source)
+
+        if args.customer:
+            customer = db.query(Customer).filter(
+                Customer.name.ilike(f"%{args.customer}%")
+            ).first()
+            if not customer:
+                print_error(f"Customer not found: {args.customer}")
+                return
+            query = query.filter(IntelligenceItem.customer_id == customer.id)
+            print(f"Customer: {Colors.BOLD}{customer.name}{Colors.ENDC}")
+
+        count = query.count()
+        if args.source:
+            print(f"Source:   {Colors.BOLD}{args.source}{Colors.ENDC}")
+        print(f"Found:    {Colors.BOLD}{Colors.RED}{count}{Colors.ENDC} items with no URL and no content\n")
+
+        if count == 0:
+            print_warning("Nothing to purge")
+            return
+
+        if not args.force:
+            print(f"{Colors.RED}{Colors.BOLD}⚠️  DESTRUCTIVE OPERATION ⚠️{Colors.ENDC}")
+            print(f"{Colors.RED}This will permanently delete {count} empty items.{Colors.ENDC}\n")
+            print(f"Type {Colors.BOLD}'DELETE'{Colors.ENDC} to confirm: ", end='')
+            if input() != 'DELETE':
+                print_error("Cancelled")
+                return
+
+        deleted = query.delete()
+        db.commit()
+        print_success(f"Deleted {deleted} empty items")
+
+    except Exception as e:
+        print_error(f"Purge failed: {e}")
+    finally:
+        db.close()
+
+
 def cmd_reprocess_by_category(args):
     """Flag items in specified categories for AI reprocessing"""
     print_header("Reprocess Items by Category")
@@ -2065,6 +2123,10 @@ Examples:
     maintenance_cluster.add_argument('--force', action='store_true', help='Skip confirmation')
     maintenance_vectors = maintenance_subs.add_parser('vectors', help='Rebuild vector store')
     maintenance_vectors.add_argument('--force', action='store_true', help='Skip confirmation')
+    maintenance_purge = maintenance_subs.add_parser('purge-empty', help='Delete items with no URL and no content')
+    maintenance_purge.add_argument('--source', metavar='TYPE', help='Filter by source type (e.g. web_scrape)')
+    maintenance_purge.add_argument('--customer', metavar='NAME', help='Filter to a specific customer')
+    maintenance_purge.add_argument('--force', action='store_true', help='Skip confirmation')
     maintenance_reprocess = maintenance_subs.add_parser('reprocess', help='Flag items by category for AI reprocessing')
     maintenance_reprocess.add_argument('--categories', nargs='+', default=['unrelated', 'other'], metavar='CAT',
                                        help='Categories to reprocess (default: unrelated other)')
@@ -2178,6 +2240,8 @@ Examples:
                 cmd_backfill_clustering(args)
             elif args.subcommand == 'vectors':
                 cmd_rebuild_vectors(args)
+            elif args.subcommand == 'purge-empty':
+                cmd_purge_empty(args)
             elif args.subcommand == 'reprocess':
                 cmd_reprocess_by_category(args)
 

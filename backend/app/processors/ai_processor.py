@@ -297,7 +297,10 @@ class AIProcessor:
             if self.template:
                 # Prepare template variables
                 keywords_text = f"Keywords: {', '.join(keywords or [])}" if keywords else ""
-                competitors_text = f"Competitors: {', '.join(competitors or [])}" if competitors else ""
+                competitors_text = (
+                    f"Competitors/Vendors: {', '.join(competitors or [])} "
+                    f"— content about ANY of these companies is ALWAYS relevant (is_relevant: true)"
+                ) if competitors else ""
                 content_truncated = content[:3500] if content else ""
 
                 # ===== STAGE 1: RELEVANCE CHECK (Fast Filter) =====
