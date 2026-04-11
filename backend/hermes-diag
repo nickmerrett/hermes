@@ -1527,6 +1527,13 @@ def cmd_reprocess_by_category(args):
             processing_succeeded = False
             processed_data = None
 
+            # Abort if circuit breaker is open — results would be wrong defaults
+            if ai_processor.circuit_broken:
+                print_error(f"Circuit breaker is open — aborting to avoid incorrect reclassification.")
+                print_warning(f"Committed {success_count} items so far. Re-run after 5 minutes.")
+                db.commit()
+                return
+
             for attempt in range(3):
                 try:
                     if attempt > 0:
@@ -1544,6 +1551,9 @@ def cmd_reprocess_by_category(args):
                     break
                 except Exception as e:
                     pass
+
+            # Throttle to avoid rate limiting the API
+            time.sleep(0.75)
 
             if processing_succeeded and processed_data:
                 if not processed_data.get('is_relevant', True):
