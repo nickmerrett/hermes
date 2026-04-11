@@ -234,10 +234,10 @@ class AustralianNewsCollector(BaseCollector):
 
                 # Check if entry is relevant to customer
                 title = entry.get('title', '')
-                summary = entry.get('summary', '') or entry.get('description', '')
 
-                # Track which keyword matched (if any)
-                matched_keyword = self._get_matching_keyword(title, summary)
+                # Title-only matching: general news sites have noisy bodies where
+                # broad keywords (e.g. "data", "network") produce false positives
+                matched_keyword = self._get_matching_keyword(title)
 
                 if not matched_keyword:
                     filtered_count += 1
