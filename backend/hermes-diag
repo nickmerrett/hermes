@@ -38,6 +38,9 @@ Usage:
     ./hermes-diag maintenance cluster --force # Skip confirmation
     ./hermes-diag maintenance vectors        # Rebuild vector store from scratch
     ./hermes-diag maintenance vectors --force # Skip confirmation
+    ./hermes-diag maintenance reprocess      # Flag unrelated/other items for AI reprocessing
+    ./hermes-diag maintenance reprocess --categories unrelated other --days 30
+    ./hermes-diag maintenance reprocess --customer "IBM" --force
 
     # Testing & Debugging
     ./hermes-diag test api-feed [customer]   # Test API feed endpoint
@@ -1437,6 +1440,167 @@ def cmd_delete_linkedin_profiles(args):
         db.close()
 
 
+def cmd_reprocess_by_category(args):
+    """Flag items in specified categories for AI reprocessing"""
+    print_header("Reprocess Items by Category")
+
+    from app.models.database import ProcessedIntelligence, Customer
+    from datetime import timedelta
+
+    categories = args.categories
+    days = args.days
+    max_items = args.limit
+    since = datetime.utcnow() - timedelta(days=days)
+
+    db = SessionLocal()
+    try:
+        query = db.query(ProcessedIntelligence).join(
+            IntelligenceItem, ProcessedIntelligence.item_id == IntelligenceItem.id
+        ).filter(
+            ProcessedIntelligence.category.in_(categories),
+            IntelligenceItem.collected_date >= since,
+        )
+
+        if args.customer:
+            customer = db.query(Customer).filter(
+                Customer.name.ilike(f"%{args.customer}%")
+            ).first()
+            if not customer:
+                print_error(f"Customer not found: {args.customer}")
+                return
+            query = query.filter(IntelligenceItem.customer_id == customer.id)
+            print(f"Customer:   {Colors.BOLD}{customer.name}{Colors.ENDC}")
+
+        total = query.count()
+        print(f"Categories: {Colors.BOLD}{', '.join(categories)}{Colors.ENDC}")
+        print(f"Period:     last {days} days")
+        print(f"Found:      {Colors.BOLD}{total}{Colors.ENDC} items\n")
+
+        if total == 0:
+            print_warning("No items found matching criteria")
+            return
+
+        if not args.force:
+            print(f"{Colors.YELLOW}⚠️  This will flag {min(total, max_items)} items for AI reprocessing.{Colors.ENDC}")
+            print("   Items will be re-analysed on the next reprocess-failed run.")
+            response = input("\nProceed? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print_error("Cancelled")
+                return
+
+        items = query.order_by(IntelligenceItem.collected_date.desc()).limit(max_items).all()
+
+        if not items:
+            print_warning("No items found matching criteria")
+            return
+
+        print(f"Processing {len(items)} items...\n")
+
+        from app.processors.ai_processor import get_ai_processor
+        from app.core.vector_store import get_vector_store
+        from app.utils.text_cleaning import clean_text_for_embedding
+        import asyncio
+        import time
+
+        ai_processor = get_ai_processor(db)
+        vector_store = get_vector_store()
+
+        success_count = 0
+        failed_count = 0
+        batch_size = 5
+
+        for i, processed in enumerate(items, 1):
+            item = db.query(IntelligenceItem).filter(IntelligenceItem.id == processed.item_id).first()
+            if not item:
+                continue
+
+            customer = db.query(Customer).filter(Customer.id == item.customer_id).first()
+            if not customer:
+                continue
+
+            customer_config = customer.config or {}
+            keywords = customer.keywords or []
+            competitors = customer.competitors or []
+            priority_keywords = customer_config.get('priority_keywords', [])
+
+            old_category = processed.category
+            processing_succeeded = False
+            processed_data = None
+
+            for attempt in range(3):
+                try:
+                    if attempt > 0:
+                        time.sleep(2 ** attempt)
+                    processed_data = asyncio.run(ai_processor.process_item(
+                        title=item.title,
+                        content=item.content or "",
+                        customer_name=customer.name,
+                        source_type=item.source_type,
+                        keywords=keywords,
+                        competitors=competitors,
+                        priority_keywords=priority_keywords
+                    ))
+                    processing_succeeded = True
+                    break
+                except Exception as e:
+                    pass
+
+            if processing_succeeded and processed_data:
+                if not processed_data.get('is_relevant', True):
+                    processed_data['category'] = 'unrelated'
+                    processed_data['priority_score'] = min(processed_data.get('priority_score', 0.1), 0.3)
+
+                new_category = processed_data['category']
+                processed.summary = processed_data['summary']
+                processed.category = new_category
+                processed.sentiment = processed_data['sentiment']
+                processed.priority_score = processed_data['priority_score']
+                processed.entities = processed_data['entities']
+                processed.tags = processed_data['tags']
+                processed.pain_points_opportunities = processed_data.get('pain_points_opportunities', {'pain_points': [], 'opportunities': []})
+                processed.needs_reprocessing = False
+                processed.last_processing_error = None
+
+                try:
+                    vector_store.delete_item(item.id)
+                except Exception:
+                    pass
+                try:
+                    text_for_embedding = clean_text_for_embedding(item.title, item.content)
+                    vector_store.add_item(
+                        item_id=item.id,
+                        text=text_for_embedding,
+                        metadata={
+                            'customer_id': customer.id,
+                            'source_type': item.source_type,
+                            'category': new_category,
+                            'priority': processed_data['priority_score'],
+                            'published_timestamp': int(
+                                (item.published_date or item.collected_date or datetime.utcnow()).timestamp()
+                            ),
+                        }
+                    )
+                except Exception:
+                    pass
+
+                changed = f"{Colors.YELLOW}{old_category}{Colors.ENDC} → {Colors.GREEN}{new_category}{Colors.ENDC}" if old_category != new_category else old_category
+                print(f"  [{i}/{len(items)}] {item.title[:70]} | {changed}")
+                success_count += 1
+            else:
+                print_warning(f"  [{i}/{len(items)}] Failed: {item.title[:70]}")
+                failed_count += 1
+
+            if i % batch_size == 0:
+                db.commit()
+
+        db.commit()
+        print()
+        print_success(f"Done: {success_count} reprocessed, {failed_count} failed")
+
+    finally:
+        db.close()
+
+
 def cmd_backfill_clustering(args):
     """Backfill clustering for existing unclustered items"""
     print_header("Story Clustering Backfill")
@@ -1885,6 +2049,14 @@ Examples:
     maintenance_cluster.add_argument('--force', action='store_true', help='Skip confirmation')
     maintenance_vectors = maintenance_subs.add_parser('vectors', help='Rebuild vector store')
     maintenance_vectors.add_argument('--force', action='store_true', help='Skip confirmation')
+    maintenance_reprocess = maintenance_subs.add_parser('reprocess', help='Flag items by category for AI reprocessing')
+    maintenance_reprocess.add_argument('--categories', nargs='+', default=['unrelated', 'other'], metavar='CAT',
+                                       help='Categories to reprocess (default: unrelated other)')
+    maintenance_reprocess.add_argument('--days', type=int, default=30, help='Only items from last N days (default: 30)')
+    maintenance_reprocess.add_argument('--limit', type=int, default=500, metavar='N',
+                                       help='Max items to flag (default: 500)')
+    maintenance_reprocess.add_argument('--customer', metavar='NAME', help='Filter to a specific customer')
+    maintenance_reprocess.add_argument('--force', action='store_true', help='Skip confirmation')
 
     # ========== TEST GROUP ==========
     test_parser = subparsers.add_parser('test', help='Testing and debugging')
@@ -1990,6 +2162,8 @@ Examples:
                 cmd_backfill_clustering(args)
             elif args.subcommand == 'vectors':
                 cmd_rebuild_vectors(args)
+            elif args.subcommand == 'reprocess':
+                cmd_reprocess_by_category(args)
 
         elif args.group == 'test':
             if not hasattr(args, 'subcommand') or not args.subcommand:
