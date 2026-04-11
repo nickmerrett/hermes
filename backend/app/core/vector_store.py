@@ -77,6 +77,10 @@ class VectorStore:
             )
             logger.debug(f"Upserted item {item_id} to vector store")
 
+        except StopIteration as e:
+            # StopIteration cannot be set on an asyncio Future (PEP 479).
+            # ChromaDB occasionally raises it internally during upsert.
+            raise RuntimeError(f"ChromaDB upsert raised StopIteration for item {item_id}") from e
         except Exception as e:
             logger.error(f"Error adding item {item_id} to vector store: {e}")
             raise
@@ -109,6 +113,8 @@ class VectorStore:
             )
             logger.info(f"Upserted {len(item_ids)} items to vector store")
 
+        except StopIteration as e:
+            raise RuntimeError("ChromaDB upsert raised StopIteration during batch add") from e
         except Exception as e:
             logger.error(f"Error adding batch to vector store: {e}")
             raise

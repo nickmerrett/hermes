@@ -108,3 +108,36 @@ class TestGetEmbeddingsBatch:
         result = vs.get_embeddings_batch([99, 100])
 
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# add_item / add_items_batch — StopIteration conversion
+# ---------------------------------------------------------------------------
+
+class TestAddItemStopIteration:
+    """StopIteration from ChromaDB must be re-raised as RuntimeError so it
+    can propagate safely through asyncio.to_thread futures (PEP 479)."""
+
+    def test_add_item_converts_stop_iteration(self):
+        vs = _make_vector_store()
+        vs.embedding_model.encode.return_value = MagicMock(tolist=lambda: [0.1, 0.2])
+        vs.collection.upsert.side_effect = StopIteration("internal chroma error")
+
+        with pytest.raises(RuntimeError, match="StopIteration"):
+            vs.add_item(item_id=1, text="test", metadata={})
+
+    def test_add_items_batch_converts_stop_iteration(self):
+        vs = _make_vector_store()
+        vs.embedding_model.encode.return_value = MagicMock(tolist=lambda: [[0.1, 0.2]])
+        vs.collection.upsert.side_effect = StopIteration("internal chroma error")
+
+        with pytest.raises(RuntimeError, match="StopIteration"):
+            vs.add_items_batch(item_ids=[1], texts=["test"])
+
+    def test_add_item_other_exceptions_propagate_unchanged(self):
+        vs = _make_vector_store()
+        vs.embedding_model.encode.return_value = MagicMock(tolist=lambda: [0.1, 0.2])
+        vs.collection.upsert.side_effect = ValueError("some other error")
+
+        with pytest.raises(ValueError):
+            vs.add_item(item_id=1, text="test", metadata={})
