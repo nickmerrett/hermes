@@ -617,13 +617,15 @@ function App() {
             >
               RSS
             </button>
-            <button
-              className="btn-settings-header"
-              onClick={() => setEditingCustomer(currentCustomer)}
-              title="Customer settings"
-            >
-              Settings
-            </button>
+            {(currentCustomer.is_owner || currentCustomer.can_admin) && (
+              <button
+                className="btn-settings-header"
+                onClick={() => setEditingCustomer(currentCustomer)}
+                title="Customer settings"
+              >
+                Settings
+              </button>
+            )}
           </div>
         </div>
       )}

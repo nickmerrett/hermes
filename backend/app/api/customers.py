@@ -9,7 +9,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.dependencies import (
     get_current_user, check_customer_access, check_customer_admin,
-    check_customer_reshare, get_customer_access
+    check_customer_reshare, get_customer_access, get_accessible_customer_ids
 )
 from app.models import schemas
 from app.models.database import Customer, CustomerAccess, User
@@ -44,7 +44,11 @@ async def list_customers(
     current_user: User = Depends(get_current_user)
 ):
     """Get list of all customers — returns only those owned by or shared with the current user."""
-    customers = db.query(Customer).order_by(Customer.sort_order, Customer.id).offset(skip).limit(limit).all()
+    accessible_ids = get_accessible_customer_ids(current_user, db)
+    query = db.query(Customer).order_by(Customer.sort_order, Customer.id)
+    if accessible_ids is not None:
+        query = query.filter(Customer.id.in_(accessible_ids))
+    customers = query.offset(skip).limit(limit).all()
     return [_enrich_customer(c, current_user, db) for c in customers]
 
 
@@ -78,7 +82,8 @@ async def get_customer(
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return customer
+    check_customer_access(customer_id, current_user, db)
+    return _enrich_customer(customer, current_user, db)
 
 
 @router.post("", response_model=schemas.CustomerResponse, status_code=201)
@@ -94,7 +99,8 @@ async def create_customer(
         keywords=customer.keywords,
         competitors=customer.competitors,
         stock_symbol=customer.stock_symbol,
-        config=customer.config or {}
+        config=customer.config or {},
+        owner_id=current_user.id if current_user.id != 0 else None
     )
     db.add(db_customer)
     db.commit()

@@ -1761,14 +1761,16 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
           )}
 
           <div className="modal-footer">
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="btn-delete-modal"
-              disabled={loading}
-            >
-              Delete Customer
-            </button>
+            {customer?.is_owner && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="btn-delete-modal"
+                disabled={loading}
+              >
+                Delete Customer
+              </button>
+            )}
             <div className="modal-footer-right">
               <button type="button" onClick={onClose} className="btn-cancel" disabled={loading}>
                 Cancel

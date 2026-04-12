@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 import json
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_access
 from app.models import schemas
 from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, User
 import logging
@@ -104,6 +104,7 @@ async def get_daily_summary(
     current_user: User = Depends(get_current_user)
 ):
     """Get daily summary of items collected in the last 24 hours for a specific customer"""
+    check_customer_access(customer_id, current_user, db)
 
     yesterday = datetime.utcnow() - timedelta(days=1)
 
@@ -189,6 +190,7 @@ async def get_daily_summary_ai(
     Returns:
         Daily summary data or None if no summary available
     """
+    check_customer_access(customer_id, current_user, db)
     from app.services.daily_summary import generate_daily_summary
 
     return generate_daily_summary(
@@ -208,6 +210,7 @@ async def get_analytics_dashboard(
     current_user: User = Depends(get_current_user)
 ):
     """Get full analytics dashboard data for a customer"""
+    check_customer_access(customer_id, current_user, db)
 
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:

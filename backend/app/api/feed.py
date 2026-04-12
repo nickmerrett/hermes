@@ -8,7 +8,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_access, get_accessible_customer_ids
 from app.models import schemas
 from app.models.database import IntelligenceItem, ProcessedIntelligence, CollectionStatus, User, PlatformSettings
 from app.utils.smart_feed import (
@@ -73,6 +73,10 @@ async def get_feed(
         isouter=True  # Left join to include unprocessed items
     )
 
+    # Enforce customer access
+    if customer_id:
+        check_customer_access(customer_id, current_user, db)
+
     # Apply filters
     filters = []
 
@@ -81,6 +85,10 @@ async def get_feed(
 
     if customer_id:
         filters.append(IntelligenceItem.customer_id == customer_id)
+    else:
+        accessible_ids = get_accessible_customer_ids(current_user, db)
+        if accessible_ids is not None:
+            filters.append(IntelligenceItem.customer_id.in_(accessible_ids))
 
     if source_type:
         filters.append(IntelligenceItem.source_type == source_type)
@@ -214,6 +222,9 @@ async def get_collection_errors(
     # Only show errors from the last 24 hours
     twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
 
+    if customer_id:
+        check_customer_access(customer_id, current_user, db)
+
     query = db.query(CollectionStatus).filter(
         and_(
             CollectionStatus.status.in_(['error', 'auth_required']),
@@ -224,6 +235,10 @@ async def get_collection_errors(
 
     if customer_id:
         query = query.filter(CollectionStatus.customer_id == customer_id)
+    else:
+        accessible_ids = get_accessible_customer_ids(current_user, db)
+        if accessible_ids is not None:
+            query = query.filter(CollectionStatus.customer_id.in_(accessible_ids))
 
     errors = query.all()
 
@@ -257,6 +272,7 @@ async def get_item(
     if not item:
         raise HTTPException(status_code=404, detail="Intelligence item not found")
 
+    check_customer_access(item.customer_id, current_user, db)
     return item
 
 
@@ -324,10 +340,14 @@ async def debug_clustering(
     if ai_config_row and isinstance(ai_config_row.value, dict):
         actual_model = ai_config_row.value.get('model_cheap', actual_model)
 
-    # Search for items
-    items = db.query(IntelligenceItem).filter(
+    # Search for items, scoped to accessible customers
+    accessible_ids = get_accessible_customer_ids(current_user, db)
+    debug_query = db.query(IntelligenceItem).filter(
         IntelligenceItem.title.ilike(f'%{search}%')
-    ).order_by(desc(IntelligenceItem.collected_date)).limit(limit).all()
+    )
+    if accessible_ids is not None:
+        debug_query = debug_query.filter(IntelligenceItem.customer_id.in_(accessible_ids))
+    items = debug_query.order_by(desc(IntelligenceItem.collected_date)).limit(limit).all()
 
     if not items:
         return {
@@ -488,6 +508,9 @@ async def recluster_items(
     - limit: Max items to process in one call (default: 500, max: 500)
     - dry_run: Preview what would happen without making changes
     """
+    if customer_id:
+        check_customer_access(customer_id, current_user, db)
+
     vector_store = get_vector_store()
     clustering_settings = get_clustering_settings(db)
 
@@ -497,6 +520,10 @@ async def recluster_items(
     # Apply customer filter if provided
     if customer_id:
         query = query.filter(IntelligenceItem.customer_id == customer_id)
+    else:
+        accessible_ids = get_accessible_customer_ids(current_user, db)
+        if accessible_ids is not None:
+            query = query.filter(IntelligenceItem.customer_id.in_(accessible_ids))
 
     # Find items to recluster
     if item_ids:

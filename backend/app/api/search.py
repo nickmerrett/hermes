@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_access, get_accessible_customer_ids
 from app.core.vector_store import get_vector_store
 from app.models import schemas
 from app.models.database import IntelligenceItem, User
@@ -27,6 +27,12 @@ async def semantic_search(
     Combines keyword matching (for names, exact phrases) with semantic search (for concepts)
     """
     try:
+        # Enforce customer access
+        if query.customer_id:
+            check_customer_access(query.customer_id, current_user, db)
+
+        accessible_ids = get_accessible_customer_ids(current_user, db)
+
         vector_store = get_vector_store()
 
         # Step 1: Keyword/Text Search
@@ -37,6 +43,8 @@ async def semantic_search(
         base_query = db.query(IntelligenceItem)
         if query.customer_id:
             base_query = base_query.filter(IntelligenceItem.customer_id == query.customer_id)
+        elif accessible_ids is not None:
+            base_query = base_query.filter(IntelligenceItem.customer_id.in_(accessible_ids))
 
         # Search in title and content
         search_pattern = f"%{query.query}%"
@@ -57,6 +65,8 @@ async def semantic_search(
         where = None
         if query.customer_id:
             where = {"customer_id": query.customer_id}
+        elif accessible_ids is not None:
+            where = {"customer_id": {"$in": accessible_ids}}
 
         results = vector_store.search(
             query=query.query,
