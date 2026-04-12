@@ -4,6 +4,7 @@ Gmail OAuth API endpoints for connecting customer Gmail accounts.
 Handles OAuth2 flow for Gmail API access (press release digest monitoring).
 """
 
+import html
 import logging
 from typing import Optional
 from datetime import datetime
@@ -17,6 +18,7 @@ from googleapiclient.errors import HttpError
 
 from app.models.database import Customer
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.config.settings import settings
 from app.utils.encryption import get_encryption_service
 
@@ -60,7 +62,8 @@ def _get_oauth_flow() -> Flow:
 @router.get("/oauth/start/{customer_id}")
 async def start_gmail_oauth(
     customer_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user)
 ):
     """
     Start Gmail OAuth flow for a customer.
@@ -130,7 +133,7 @@ async def gmail_oauth_callback(
                 <head><title>Gmail Connection Failed</title></head>
                 <body>
                     <h1>Gmail Connection Failed</h1>
-                    <p>Error: {error}</p>
+                    <p>Error: {html.escape(error)}</p>
                     <p><a href="javascript:window.close()">Close this window</a></p>
                 </body>
             </html>
@@ -247,7 +250,8 @@ async def gmail_oauth_callback(
 @router.post("/disconnect/{customer_id}")
 async def disconnect_gmail(
     customer_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user)
 ):
     """
     Disconnect Gmail for a customer.
@@ -290,7 +294,8 @@ async def disconnect_gmail(
 @router.get("/status/{customer_id}")
 async def get_gmail_status(
     customer_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user)
 ):
     """
     Check Gmail connection status for a customer.

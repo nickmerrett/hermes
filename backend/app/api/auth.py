@@ -1,10 +1,14 @@
 """Authentication API endpoints"""
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
+
+limiter = Limiter(key_func=get_remote_address)
 
 from app.core.database import get_db
 from app.core.auth import (
@@ -127,7 +131,9 @@ def ensure_bootstrap_admin(db: Session):
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     login_request: LoginRequest,
     db: Session = Depends(get_db)
 ):
@@ -148,6 +154,8 @@ async def login(
     # Find user by email
     user = db.query(User).filter(User.email == login_request.email).first()
     if not user:
+        # Always run bcrypt to prevent timing-based email enumeration
+        pwd_context.dummy_verify()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"

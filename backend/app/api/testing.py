@@ -6,9 +6,10 @@ from typing import List
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.dependencies import get_current_user
 from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class CustomerInfo(BaseModel):

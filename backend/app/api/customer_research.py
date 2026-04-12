@@ -4,15 +4,16 @@ Customer research API endpoints
 Provides endpoints for automated customer config generation
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import logging
 
+from app.core.dependencies import get_current_user
 from app.services.customer_research import get_research_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class ResearchRequest(BaseModel):

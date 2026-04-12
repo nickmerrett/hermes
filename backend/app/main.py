@@ -6,9 +6,19 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 # Disable ChromaDB telemetry to suppress posthog errors
 os.environ['ANONYMIZED_TELEMETRY'] = 'False'
 
-from fastapi import FastAPI, HTTPException, Depends
+# ChromaDB 0.5.x has a broken posthog capture() call — patch it out entirely
+try:
+    import chromadb.telemetry.product.posthog as _chroma_ph
+    _chroma_ph.Posthog.capture = lambda *a, **kw: None
+except Exception:
+    pass
+
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
@@ -18,6 +28,9 @@ import json
 
 from app.config.settings import settings
 from app.core.database import init_db, get_db
+
+# Rate limiter (keyed by client IP)
+limiter = Limiter(key_func=get_remote_address)
 from app.core.vector_store import get_vector_store
 from app.models import schemas
 from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing, gmail, executive_relationship, auth, rss
@@ -95,14 +108,21 @@ class CustomJSONResponse(JSONResponse):
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
-# Create FastAPI app
+# Create FastAPI app (docs disabled in production)
 app = FastAPI(
     title="Hermes",
     description="Automated customer intelligence aggregation and analysis platform",
     version=__version__,
     lifespan=lifespan,
-    default_response_class=CustomJSONResponse  # Use custom JSON response
+    default_response_class=CustomJSONResponse,  # Use custom JSON response
+    docs_url="/docs" if settings.is_development else None,
+    redoc_url="/redoc" if settings.is_development else None,
+    openapi_url="/openapi.json" if settings.is_development else None,
 )
+
+# Attach rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS
 app.add_middleware(

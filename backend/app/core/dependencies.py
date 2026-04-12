@@ -7,6 +7,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.auth import decode_token, is_jwt_configured
+from app.config.settings import settings
 from app.models.database import User
 from app.models.auth_schemas import UserRole
 
@@ -24,9 +25,14 @@ def get_current_user(
     This is the main dependency for protecting routes.
     Raises 401 if token is missing, invalid, or user not found.
     """
-    # If auth is not configured, allow access (development mode)
+    # If auth is not configured, allow access in development only
     if not is_jwt_configured():
-        # Return a mock admin user for development
+        if not settings.is_development:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication is not configured. Set JWT_SECRET_KEY environment variable.",
+            )
+        # Return a mock admin user for local development only
         return User(
             id=0,
             email="dev@localhost",
