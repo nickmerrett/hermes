@@ -52,6 +52,36 @@ if not settings.sql_echo:
     logging.getLogger('sqlalchemy.orm').setLevel(logging.WARNING)
 
 
+def _assign_legacy_customer_ownership():
+    """One-time idempotent migration: assign ownerless customers to the first platform admin."""
+    from app.models.database import Customer, User
+    from app.models.auth_schemas import UserRole
+    from app.core.database import _get_engine_and_session
+    _, session_local = _get_engine_and_session()
+    db = session_local()
+    try:
+        unowned_count = db.query(Customer).filter(Customer.owner_id.is_(None)).count()
+        if unowned_count == 0:
+            return
+        admin = db.query(User).filter(
+            User.role == UserRole.PLATFORM_ADMIN.value,
+            User.is_active.is_(True)
+        ).order_by(User.id).first()
+        if not admin:
+            logger.warning("No active platform admin found — skipping legacy ownership migration")
+            return
+        db.query(Customer).filter(Customer.owner_id.is_(None)).update(
+            {Customer.owner_id: admin.id}, synchronize_session=False
+        )
+        db.commit()
+        logger.info(f"Assigned {unowned_count} legacy customers to admin {admin.email} (id={admin.id})")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Legacy ownership migration failed: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
@@ -61,6 +91,10 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("Database initialized")
+
+    # Assign unowned customers to first platform admin (idempotent)
+    _assign_legacy_customer_ownership()
+    logger.info("Customer ownership migration complete")
 
     # Initialize vector store
     vector_store = get_vector_store()

@@ -24,10 +24,12 @@ class Customer(Base):
     tab_color = Column(String(7), default='#ffffff')  # Hex color for tab background
     sort_order = Column(Integer, default=0)
     config = Column(JSON)  # Additional configuration
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    owner = relationship("User", foreign_keys=[owner_id])
     sources = relationship("Source", back_populates="customer", cascade="all, delete-orphan")
     intelligence_items = relationship("IntelligenceItem", back_populates="customer", cascade="all, delete-orphan")
 
@@ -198,6 +200,27 @@ class User(Base):
 
     # Relationships
     rss_tokens = relationship("RSSFeedToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class CustomerAccess(Base):
+    """Granular per-user access to customers (read, admin, reshare)"""
+    __tablename__ = "customer_access"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    granted_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    granted_at = Column(DateTime, default=datetime.utcnow)
+    can_admin = Column(Boolean, default=False)    # edit config, sources, trigger jobs
+    can_reshare = Column(Boolean, default=False)  # view share list, add/revoke shares
+
+    customer = relationship("Customer")
+    user = relationship("User", foreign_keys=[user_id])
+    granted_by = relationship("User", foreign_keys=[granted_by_id])
+
+    __table_args__ = (
+        UniqueConstraint('customer_id', 'user_id', name='uix_customer_user_access'),
+    )
 
 
 class RSSFeedToken(Base):
