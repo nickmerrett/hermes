@@ -164,4 +164,20 @@ export const rssApi = {
   }
 }
 
+// Customer sharing API
+export const sharesApi = {
+  list: (customerId) =>
+    apiClient.get(`/customers/${customerId}/shares`),
+
+  add: (customerId, email, canAdmin = false, canReshare = false) =>
+    apiClient.post(`/customers/${customerId}/shares`, {
+      email,
+      can_admin: canAdmin,
+      can_reshare: canReshare,
+    }),
+
+  revoke: (customerId, userId) =>
+    apiClient.delete(`/customers/${customerId}/shares/${userId}`),
+}
+
 export default apiClient

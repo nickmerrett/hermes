@@ -85,10 +85,39 @@ class CustomerUpdate(BaseModel):
 class CustomerResponse(CustomerBase, BaseModelWithTimezone):
     """Schema for customer response"""
     id: int
+    owner_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Computed per-request based on current user — not stored in DB
+    is_owner: bool = False
+    can_admin: bool = False
+    can_reshare: bool = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ShareEntry(BaseModel):
+    """A single share grant on a customer"""
+    user_id: int
+    email: str
+    can_admin: bool
+    can_reshare: bool
+    granted_at: datetime
+    granted_by_email: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ShareRequest(BaseModel):
+    """Request to share a customer with a user"""
+    email: str
+    can_admin: bool = False
+    can_reshare: bool = False
+
+
+class ShareListResponse(BaseModel):
+    """List of shares for a customer"""
+    shares: List[ShareEntry]
 
 
 # Intelligence Item Schemas

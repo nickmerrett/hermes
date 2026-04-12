@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { apiClient } from '../api/auth';
+import { apiClient, sharesApi } from '../api/auth';
+import { useAuth } from '../contexts/AuthContext';
 import './CustomerEditModal.css';
 
 export default function CustomerEditModal({ customer, onClose, onSave, onDelete }) {
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     domain: '',
@@ -59,6 +61,16 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
   const [error, setError] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [gmailStatus, setGmailStatus] = useState({ connected: false, email: null, loading: true });
+
+  // Sharing state
+  const canReshare = customer?.can_reshare || customer?.is_owner;
+  const [shares, setShares] = useState([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareCanAdmin, setShareCanAdmin] = useState(false);
+  const [shareCanReshare, setShareCanReshare] = useState(false);
+  const [shareError, setShareError] = useState(null);
+  const [shareSuccess, setShareSuccess] = useState(null);
 
   useEffect(() => {
     if (customer) {
@@ -132,6 +144,10 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
 
       // Fetch Gmail connection status
       fetchGmailStatus();
+      // Fetch shares if user can manage them
+      if (customer?.can_reshare || customer?.is_owner) {
+        fetchShares();
+      }
     }
   }, [customer]);
 
@@ -148,6 +164,46 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
     } catch (err) {
       console.error('Error fetching Gmail status:', err);
       setGmailStatus({ connected: false, email: null, loading: false });
+    }
+  };
+
+  const fetchShares = async () => {
+    if (!customer?.id) return;
+    setSharesLoading(true);
+    try {
+      const res = await sharesApi.list(customer.id);
+      setShares(res.data.shares || []);
+    } catch (err) {
+      console.error('Error fetching shares:', err);
+    } finally {
+      setSharesLoading(false);
+    }
+  };
+
+  const handleAddShare = async (e) => {
+    e.preventDefault();
+    setShareError(null);
+    setShareSuccess(null);
+    try {
+      await sharesApi.add(customer.id, shareEmail, shareCanAdmin, shareCanReshare);
+      setShareEmail('');
+      setShareCanAdmin(false);
+      setShareCanReshare(false);
+      setShareSuccess(`Shared with ${shareEmail}`);
+      fetchShares();
+    } catch (err) {
+      setShareError(err.response?.data?.detail || 'Failed to share');
+    }
+  };
+
+  const handleRevoke = async (userId, email) => {
+    setShareError(null);
+    try {
+      await sharesApi.revoke(customer.id, userId);
+      setShareSuccess(`Removed ${email}`);
+      fetchShares();
+    } catch (err) {
+      setShareError(err.response?.data?.detail || 'Failed to revoke');
     }
   };
 
@@ -1618,6 +1674,91 @@ export default function CustomerEditModal({ customer, onClose, onSave, onDelete 
               </small>
             </div>
           </div>
+
+          {canReshare && customer?.id && (
+            <div className="form-section">
+              <h3>Sharing</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
+                Shared users can view this customer's feed. Grant additional permissions below.
+              </p>
+
+              {/* Current shares */}
+              {sharesLoading ? (
+                <p style={{ fontSize: '13px', color: '#6b7280' }}>Loading shares…</p>
+              ) : shares.length === 0 ? (
+                <p style={{ fontSize: '13px', color: '#6b7280' }}>Not shared with anyone yet.</p>
+              ) : (
+                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse', marginBottom: '16px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
+                      <th style={{ padding: '4px 8px' }}>User</th>
+                      <th style={{ padding: '4px 8px' }}>Can manage</th>
+                      <th style={{ padding: '4px 8px' }}>Can share</th>
+                      <th style={{ padding: '4px 8px' }}>Granted by</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shares.map(s => (
+                      <tr key={s.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '6px 8px' }}>{s.email}</td>
+                        <td style={{ padding: '6px 8px' }}>{s.can_admin ? '✓' : '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{s.can_reshare ? '✓' : '—'}</td>
+                        <td style={{ padding: '6px 8px', color: '#9ca3af' }}>{s.granted_by_email || '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleRevoke(s.user_id, s.email)}
+                            style={{ fontSize: '12px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}
+                          >
+                            Revoke
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {/* Add share form */}
+              <form onSubmit={handleAddShare} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    required
+                    style={{ flex: 1, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
+                  />
+                  <button type="submit" className="btn-save" style={{ padding: '6px 14px', fontSize: '13px' }}>
+                    Share
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={shareCanAdmin}
+                      onChange={e => setShareCanAdmin(e.target.checked)}
+                      disabled={customer?.can_admin === false}
+                    />
+                    Allow managing (edit config, sources)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={shareCanReshare}
+                      onChange={e => setShareCanReshare(e.target.checked)}
+                    />
+                    Allow sharing with others
+                  </label>
+                </div>
+                {shareError && <p style={{ color: '#ef4444', fontSize: '13px', margin: 0 }}>{shareError}</p>}
+                {shareSuccess && <p style={{ color: '#10b981', fontSize: '13px', margin: 0 }}>{shareSuccess}</p>}
+              </form>
+            </div>
+          )}
 
           <div className="modal-footer">
             <button
