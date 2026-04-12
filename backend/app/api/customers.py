@@ -8,8 +8,8 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.dependencies import (
-    get_current_user, check_customer_reshare,
-    get_customer_access
+    get_current_user, check_customer_access, check_customer_admin,
+    check_customer_reshare, get_customer_access
 )
 from app.models import schemas
 from app.models.database import Customer, CustomerAccess, User
@@ -111,12 +111,13 @@ async def update_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a customer"""
+    """Update a customer — requires owner or can_admin"""
+    check_customer_admin(customer_id, current_user, db)
+
     db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Update fields if provided
     update_data = customer_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_customer, field, value)
@@ -125,7 +126,7 @@ async def update_customer(
     db.refresh(db_customer)
 
     logger.info(f"Updated customer: {db_customer.name}")
-    return db_customer
+    return _enrich_customer(db_customer, current_user, db)
 
 
 @router.delete("/{customer_id}", status_code=204)
@@ -134,10 +135,15 @@ async def delete_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a customer"""
+    """Delete a customer — owner only"""
+    # Deletion is owner-only, not just can_admin
+    check_customer_access(customer_id, current_user, db)
     db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    from app.core.dependencies import _is_dev_mock
+    if not _is_dev_mock(current_user) and db_customer.owner_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="Only the owner can delete a customer")
 
     db.delete(db_customer)
     db.commit()

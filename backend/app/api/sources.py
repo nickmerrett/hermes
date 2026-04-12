@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_admin
 from app.models import schemas
 from app.models.database import Source, User
 import logging
@@ -46,7 +46,8 @@ async def create_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new data source"""
+    """Create a new data source — requires owner or can_admin"""
+    check_customer_admin(source.customer_id, current_user, db)
     db_source = Source(
         customer_id=source.customer_id,
         type=source.type,
@@ -69,10 +70,11 @@ async def enable_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Enable a data source"""
+    """Enable a data source — requires owner or can_admin"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+    check_customer_admin(source.customer_id, current_user, db)
 
     source.enabled = True
     db.commit()
@@ -88,10 +90,11 @@ async def disable_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Disable a data source"""
+    """Disable a data source — requires owner or can_admin"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+    check_customer_admin(source.customer_id, current_user, db)
 
     source.enabled = False
     db.commit()
@@ -107,10 +110,11 @@ async def delete_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a data source"""
+    """Delete a data source — requires owner or can_admin"""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+    check_customer_admin(source.customer_id, current_user, db)
 
     db.delete(source)
     db.commit()

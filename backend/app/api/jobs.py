@@ -8,7 +8,7 @@ from datetime import datetime
 import asyncio
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_admin, require_platform_admin
 from app.models import schemas
 from app.models.database import CollectionJob, User
 import logging
@@ -55,7 +55,15 @@ async def trigger_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Manually trigger a collection job"""
+    """Manually trigger a collection job.
+    Scoped to a customer: requires owner or can_admin.
+    System-wide (no customer_id): requires platform_admin.
+    """
+    if customer_id:
+        check_customer_admin(customer_id, current_user, db)
+    else:
+        require_platform_admin(current_user)
+
     from app.scheduler.collection import _collection_lock
     from app.scheduler.jobs import _sync_run_collection
 
@@ -84,7 +92,7 @@ async def trigger_purge(
     retention_days: int = None,
     unrelated_retention_days: int = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_platform_admin)
 ):
     """Manually trigger a data purge job.
 
@@ -137,22 +145,15 @@ async def reprocess_failed_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Find and reprocess items that failed AI processing.
+    Scoped to a customer: requires owner or can_admin.
+    System-wide: requires platform_admin.
     """
-    Find and reprocess items that failed AI processing
+    if customer_id:
+        check_customer_admin(customer_id, current_user, db)
+    else:
+        require_platform_admin(current_user)
 
-    This endpoint finds items that have:
-    - Processing errors (last_processing_error is not null)
-    - High processing attempts without success
-
-    And marks them for reprocessing, then processes them in the background.
-
-    Args:
-        customer_id: Optional - only reprocess items for this customer
-        max_items: Maximum number of items to reprocess (default: 100)
-
-    Returns:
-        Job ID to track reprocessing progress
-    """
     from app.models.database import ProcessedIntelligence, IntelligenceItem, CollectionJob
     from app.processors.ai_processor import get_ai_processor
     from app.models.database import Customer
@@ -437,18 +438,14 @@ async def reprocess_by_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Flag items in specific categories for reprocessing.
+    Scoped to a customer: requires owner or can_admin. System-wide: platform_admin.
     """
-    Flag items in specific categories for reprocessing.
+    if customer_id:
+        check_customer_admin(customer_id, current_user, db)
+    else:
+        require_platform_admin(current_user)
 
-    Useful after changing AI prompt rules — marks existing items so the
-    reprocess-failed job will re-run AI analysis on them.
-
-    Args:
-        categories: List of category names to target (e.g. ["unrelated", "other"])
-        customer_id: Optional customer filter
-        days: Only flag items from the last N days
-        max_items: Cap on number of items to flag
-    """
     from app.models.database import ProcessedIntelligence, IntelligenceItem
     from datetime import timedelta
 
@@ -490,24 +487,14 @@ async def reprocess_incomplete_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Find and reprocess items with missing/incomplete AI processing.
+    Scoped to a customer: requires owner or can_admin. System-wide: platform_admin.
     """
-    Find and reprocess items with missing/incomplete AI processing
+    if customer_id:
+        check_customer_admin(customer_id, current_user, db)
+    else:
+        require_platform_admin(current_user)
 
-    This endpoint finds items that have:
-    - No summary
-    - Empty entities
-    - Missing pain points/opportunities
-    - Missing tags or other AI-generated data
-
-    And marks them for reprocessing, then processes them in the background.
-
-    Args:
-        customer_id: Optional - only reprocess items for this customer
-        max_items: Optional - maximum number of items to reprocess (no limit if not specified)
-
-    Returns:
-        Job ID to track progress
-    """
     from app.models.database import ProcessedIntelligence, IntelligenceItem, CollectionJob
     from app.processors.ai_processor import get_ai_processor
     from app.models.database import Customer
