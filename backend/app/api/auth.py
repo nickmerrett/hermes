@@ -2,13 +2,11 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 
 from app.core.database import get_db
 from app.core.auth import (
@@ -155,7 +153,7 @@ async def login(
     user = db.query(User).filter(User.email == login_request.email).first()
     if not user:
         # Always run bcrypt to prevent timing-based email enumeration
-        pwd_context.dummy_verify()
+        password_verify("dummy", "$2b$12$KIXqFakeHashForTimingProtection")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
