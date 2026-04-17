@@ -80,7 +80,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [dailySummary, setDailySummary] = useState(null)
-  const [summaryCollapsed, setSummaryCollapsed] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [searchLoading, setSearchLoading] = useState(false)
@@ -640,6 +640,15 @@ function App() {
         {/* Left Side - Main Feed */}
         <div className="main-content">
 
+          <button
+            className="btn-filters-toggle"
+            onClick={() => setFiltersOpen(o => !o)}
+            aria-expanded={filtersOpen}
+          >
+            {filtersOpen ? '▲ Hide filters' : '▼ Search & filter'}
+          </button>
+
+          <div className={`filters-collapsible${filtersOpen ? ' filters-collapsible--open' : ''}`}>
           <div className="search-section">
             <form onSubmit={performSearch} className="search-form">
               <input
@@ -743,10 +752,95 @@ function App() {
               ↻ Refresh
             </button>
 
-
           </div>
+          </div>{/* end filters-collapsible */}
 
           <div className="feed">
+            {/* Daily Briefing Card */}
+            {selectedCustomer && !searchResults && (
+              <div className="briefing-card">
+                <div className="briefing-card-header">
+                  <div className="briefing-card-title">
+                    <span className="briefing-icon">📋</span>
+                    <h3>Daily Briefing</h3>
+                    <span className="period-badge">Last 24 Hours</span>
+                    {dailySummary?.cached && dailySummary?.generated_at && (
+                      <span className="cache-indicator">Cached • {formatDate(dailySummary.generated_at)}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => fetchDailySummary(true)}
+                    className={`btn-refresh ${dailySummary?.loading ? 'loading' : ''}`}
+                    title="Regenerate summary"
+                    disabled={dailySummary?.loading}
+                  >↻</button>
+                </div>
+
+                <div className="briefing-card-body">
+                  {!dailySummary || dailySummary.loading ? (
+                    <p className="placeholder-text">
+                      {dailySummary?.loading ? 'Generating summary...' : 'No briefing generated yet — click ↻ to generate'}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="summary-stats">
+                        <div className="summary-stat">
+                          <div className="stat-value">{dailySummary.total_items || 0}</div>
+                          <div className="stat-label">Total Items</div>
+                        </div>
+                        <div className="summary-stat highlight">
+                          <div className="stat-value">{dailySummary.high_priority_count || 0}</div>
+                          <div className="stat-label">High Priority</div>
+                        </div>
+                      </div>
+
+                      {dailySummary.items_by_category && Object.keys(dailySummary.items_by_category).length > 0 && (
+                        <div className="category-breakdown">
+                          <div className="category-list">
+                            {Object.entries(dailySummary.items_by_category)
+                              .filter(([cat]) => cat !== 'unrelated' && cat !== 'advertisement')
+                              .map(([cat, count]) => (
+                                <div key={cat} className="category-item">
+                                  <span className="category-name">{cat.replace('_', ' ')}</span>
+                                  <span className="category-count">{count}</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {dailySummary.summary ? (
+                        <div className="ai-summary-content">
+                          {dailySummary.summary.split('\n\n').map((paragraph, idx) => (
+                            <p key={idx}>{renderTextWithCitations(paragraph, dailySummary.sources)}</p>
+                          ))}
+                          {dailySummary.sources && dailySummary.sources.length > 0 && (
+                            <div className="citation-sources">
+                              <h5>Sources</h5>
+                              <ol className="sources-list">
+                                {dailySummary.sources.map(source => (
+                                  <li key={source.index}>
+                                    {source.url ? (
+                                      <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+                                    ) : (
+                                      <span>{source.title}</span>
+                                    )}
+                                    <span className="source-type-badge">{source.source_type}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="placeholder-text">No AI summary yet — click ↻ to generate</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             {(loading || searchLoading) && <div className="loading">Loading...</div>}
             {error && <div className="error">{error}</div>}
 
@@ -1002,119 +1096,6 @@ function App() {
             ))}
           </div>
         </div>
-
-        {/* Right Side - Daily Summary Panel */}
-        {selectedCustomer && (
-          <aside className="daily-summary-panel">
-            <div className={`panel-header${!summaryCollapsed ? ' panel-header--expanded' : ''}`} onClick={() => setSummaryCollapsed(c => !c)} style={{cursor: 'pointer'}}>
-              <div>
-                <h3>Daily Briefing</h3>
-                {dailySummary?.cached && dailySummary?.generated_at && (
-                  <span className="cache-indicator">
-                    Cached • {formatDate(dailySummary.generated_at)}
-                  </span>
-                )}
-              </div>
-              <div className="panel-actions">
-                <button
-                  onClick={(e) => { e.stopPropagation(); fetchDailySummary(true); }}
-                  className={`btn-refresh ${dailySummary?.loading ? 'loading' : ''}`}
-                  title="Regenerate summary"
-                  disabled={dailySummary?.loading}
-                >
-                  ↻
-                </button>
-                <span className="period-badge">Last 24 Hours</span>
-                <span className="summary-collapse-toggle">{summaryCollapsed ? '▼' : '▲'}</span>
-              </div>
-            </div>
-
-            <div className={`summary-panel-body${summaryCollapsed ? ' summary-panel-body--collapsed' : ''}`}>
-            {!dailySummary || dailySummary.loading ? (
-              <div className="summary-placeholder">
-                <div className="placeholder-icon">📊</div>
-                <p className="placeholder-text">
-                  {dailySummary?.loading
-                    ? 'Generating summary...'
-                    : 'No summary generated for today'}
-                </p>
-                {!dailySummary?.loading && (
-                  <p className="placeholder-hint">
-                    Click the refresh button above to generate today's briefing
-                  </p>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="summary-stats">
-                  <div className="summary-stat">
-                    <div className="stat-value">{dailySummary.total_items || 0}</div>
-                    <div className="stat-label">Total Items</div>
-                  </div>
-                  <div className="summary-stat highlight">
-                    <div className="stat-value">{dailySummary.high_priority_count || 0}</div>
-                    <div className="stat-label">High Priority</div>
-                  </div>
-                </div>
-
-                {dailySummary.items_by_category && Object.keys(dailySummary.items_by_category).length > 0 && (
-                  <div className="category-breakdown">
-                    <h4>Intelligence By Category</h4>
-                    <div className="category-list">
-                      {Object.entries(dailySummary.items_by_category)
-                        .filter(([category]) => category !== 'unrelated' && category !== 'advertisement')
-                        .map(([category, count]) => (
-                        <div key={category} className="category-item">
-                          <span className="category-name">{category.replace('_', ' ')}</span>
-                          <span className="category-count">{count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {dailySummary.summary ? (
-                  <div className="ai-summary-section">
-                    <h4>Executive Summary</h4>
-                    <div className="ai-summary-content">
-                      {dailySummary.summary.split('\n\n').map((paragraph, idx) => (
-                        <p key={idx}>{renderTextWithCitations(paragraph, dailySummary.sources)}</p>
-                      ))}
-                    </div>
-                    {dailySummary.sources && dailySummary.sources.length > 0 && (
-                      <div className="citation-sources">
-                        <h5>Sources</h5>
-                        <ol className="sources-list">
-                          {dailySummary.sources.map(source => (
-                            <li key={source.index}>
-                              {source.url ? (
-                                <a href={source.url} target="_blank" rel="noopener noreferrer">
-                                  {source.title}
-                                </a>
-                              ) : (
-                                <span>{source.title}</span>
-                              )}
-                              <span className="source-type-badge">{source.source_type}</span>
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="summary-placeholder">
-                    <div className="placeholder-icon">📊</div>
-                    <p className="placeholder-text">No summary generated yet</p>
-                    <p className="placeholder-hint">
-                      Click the refresh button above to generate today's briefing
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-            </div>
-          </aside>
-        )}
 
       </div>
 

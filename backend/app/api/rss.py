@@ -122,8 +122,40 @@ async def get_rss_feed(
     base_url = str(request.base_url).rstrip('/')
     feed_url = f"{base_url}/api/rss/feed?token={token}"
 
-    # Convert items to dict format for RSS generator
+    # Prepend daily briefing as first item if available
     item_dicts = []
+    try:
+        from app.services.daily_summary import generate_daily_summary
+        briefing = generate_daily_summary(customer_id=customer.id, db=db)
+        if briefing and briefing.get('summary'):
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            generated_at = briefing.get('generated_at')
+            if isinstance(generated_at, str):
+                try:
+                    generated_at = datetime.fromisoformat(generated_at.replace('Z', '+00:00'))
+                except Exception:
+                    generated_at = datetime.utcnow()
+            elif not isinstance(generated_at, datetime):
+                generated_at = datetime.utcnow()
+
+            briefing_text = briefing['summary']
+            stats = f"Items: {briefing.get('total_items', 0)} | High priority: {briefing.get('high_priority_count', 0)}"
+            item_dicts.append({
+                'id': f"briefing-{customer.id}-{today}",
+                'title': f"Daily Briefing — {customer.name} — {today}",
+                'url': None,
+                'summary': f"{briefing_text}\n\n---\n{stats}",
+                'content': briefing_text,
+                'published_date': generated_at,
+                'source_type': 'daily_briefing',
+                'category': 'daily_briefing',
+                'priority_score': 1.0,
+                'sentiment': None,
+            })
+    except Exception as e:
+        logger.warning(f"Could not prepend daily briefing to RSS feed: {e}")
+
+    # Convert items to dict format for RSS generator
     for item in items:
         item_dict = {
             'id': item.id,
