@@ -9,9 +9,9 @@ from collections import Counter, defaultdict
 import json
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, check_customer_access
 from app.models import schemas
-from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, User
+from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, User, DailySummary
 import logging
 
 logger = logging.getLogger(__name__)
@@ -198,6 +198,37 @@ async def get_daily_summary_ai(
         persona=persona,
         custom_persona_text=custom_persona_text
     )
+
+
+@router.get("/summaries/{customer_id}")
+async def list_daily_summaries(
+    customer_id: int,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return all stored daily summaries for a customer, newest first."""
+    check_customer_access(customer_id, current_user, db)
+    rows = (
+        db.query(DailySummary)
+        .filter(DailySummary.customer_id == customer_id)
+        .order_by(DailySummary.generated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "summary_date": r.summary_date,
+            "generated_at": r.generated_at,
+            "summary_text": r.summary_text,
+            "total_items": r.total_items,
+            "high_priority_count": r.high_priority_count,
+            "items_by_category": r.items_by_category,
+            "sources": r.sources_json,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/dashboard/{customer_id}")

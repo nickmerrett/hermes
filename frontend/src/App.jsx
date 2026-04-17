@@ -80,6 +80,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [dailySummary, setDailySummary] = useState(null)
+  const [dailySummaries, setDailySummaries] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
@@ -146,11 +147,12 @@ function App() {
   useEffect(() => {
     if (!selectedCustomer) {
       setDailySummary(null)
+      setDailySummaries([])
       return
     }
     fetchFeed()
     fetchCollectionErrors()
-    fetchDailySummary()
+    fetchDailySummaries()
   }, [filters, selectedCustomer, showClustered])
 
   const fetchCustomers = async () => {
@@ -172,6 +174,16 @@ function App() {
       setAnalytics(response.data)
     } catch (err) {
       console.error('Error fetching analytics:', err)
+    }
+  }
+
+  const fetchDailySummaries = async () => {
+    if (!selectedCustomer) return
+    try {
+      const response = await apiClient.get(`/analytics/summaries/${selectedCustomer}`)
+      setDailySummaries(response.data || [])
+    } catch (err) {
+      console.error('Error fetching daily summaries:', err)
     }
   }
 
@@ -214,11 +226,11 @@ function App() {
       const response = await apiClient.get(`/analytics/daily-summary-ai/${selectedCustomer}`, {
         params: params
       })
-      // If response is null/empty, keep dailySummary as null to show placeholder
       setDailySummary(response.data || null)
+      // Refresh the full list so the new/updated summary appears in the feed
+      fetchDailySummaries()
     } catch (err) {
       console.error('Error fetching daily summary:', err)
-      // On error, set to null to show placeholder
       setDailySummary(null)
     }
   }
@@ -618,6 +630,14 @@ function App() {
               RSS
             </button>
             <button
+              className={`btn-briefing-header ${dailySummary?.loading ? 'loading' : ''}`}
+              onClick={() => fetchDailySummary(true)}
+              title="Generate today's briefing"
+              disabled={dailySummary?.loading}
+            >
+              {dailySummary?.loading ? 'Generating...' : '📋 Briefing'}
+            </button>
+            <button
               className="btn-settings-header"
               onClick={() => setEditingCustomer(currentCustomer)}
               title="Customer settings"
@@ -756,95 +776,10 @@ function App() {
           </div>{/* end filters-collapsible */}
 
           <div className="feed">
-            {/* Daily Briefing Card */}
-            {selectedCustomer && !searchResults && (
-              <div className="briefing-card">
-                <div className="briefing-card-header">
-                  <div className="briefing-card-title">
-                    <span className="briefing-icon">📋</span>
-                    <h3>Daily Briefing</h3>
-                    <span className="period-badge">Last 24 Hours</span>
-                    {dailySummary?.cached && dailySummary?.generated_at && (
-                      <span className="cache-indicator">Cached • {formatDate(dailySummary.generated_at)}</span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => fetchDailySummary(true)}
-                    className={`btn-refresh ${dailySummary?.loading ? 'loading' : ''}`}
-                    title="Regenerate summary"
-                    disabled={dailySummary?.loading}
-                  >↻</button>
-                </div>
-
-                <div className="briefing-card-body">
-                  {!dailySummary || dailySummary.loading ? (
-                    <p className="placeholder-text">
-                      {dailySummary?.loading ? 'Generating summary...' : 'No briefing generated yet — click ↻ to generate'}
-                    </p>
-                  ) : (
-                    <>
-                      <div className="summary-stats">
-                        <div className="summary-stat">
-                          <div className="stat-value">{dailySummary.total_items || 0}</div>
-                          <div className="stat-label">Total Items</div>
-                        </div>
-                        <div className="summary-stat highlight">
-                          <div className="stat-value">{dailySummary.high_priority_count || 0}</div>
-                          <div className="stat-label">High Priority</div>
-                        </div>
-                      </div>
-
-                      {dailySummary.items_by_category && Object.keys(dailySummary.items_by_category).length > 0 && (
-                        <div className="category-breakdown">
-                          <div className="category-list">
-                            {Object.entries(dailySummary.items_by_category)
-                              .filter(([cat]) => cat !== 'unrelated' && cat !== 'advertisement')
-                              .map(([cat, count]) => (
-                                <div key={cat} className="category-item">
-                                  <span className="category-name">{cat.replace('_', ' ')}</span>
-                                  <span className="category-count">{count}</span>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {dailySummary.summary ? (
-                        <div className="ai-summary-content">
-                          {dailySummary.summary.split('\n\n').map((paragraph, idx) => (
-                            <p key={idx}>{renderTextWithCitations(paragraph, dailySummary.sources)}</p>
-                          ))}
-                          {dailySummary.sources && dailySummary.sources.length > 0 && (
-                            <div className="citation-sources">
-                              <h5>Sources</h5>
-                              <ol className="sources-list">
-                                {dailySummary.sources.map(source => (
-                                  <li key={source.index}>
-                                    {source.url ? (
-                                      <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
-                                    ) : (
-                                      <span>{source.title}</span>
-                                    )}
-                                    <span className="source-type-badge">{source.source_type}</span>
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="placeholder-text">No AI summary yet — click ↻ to generate</p>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
             {(loading || searchLoading) && <div className="loading">Loading...</div>}
             {error && <div className="error">{error}</div>}
 
-            {!loading && !searchLoading && !searchResults && !error && feed.length === 0 && (
+            {!loading && !searchLoading && !searchResults && !error && feed.length === 0 && dailySummaries.length === 0 && (
               <div className="empty">No intelligence items found. Try adjusting filters or trigger a collection.</div>
             )}
 
@@ -852,7 +787,86 @@ function App() {
               <div className="empty">No similar articles found. Try a different search query.</div>
             )}
 
-            {!loading && !searchResults && feed.map(item => (
+            {/* Merged feed: articles + daily briefing cards sorted by date */}
+            {!loading && !searchResults && (() => {
+              const articleItems = feed.map(item => ({ _type: 'article', _date: new Date(item.published_date || item.collected_date || 0), item }))
+              const briefingItems = dailySummaries.map(s => ({ _type: 'briefing', _date: new Date(s.generated_at || 0), summary: s }))
+              const merged = [...articleItems, ...briefingItems].sort((a, b) => b._date - a._date)
+              return merged.map(entry => {
+                if (entry._type === 'briefing') {
+                  const s = entry.summary
+                  return (
+                    <div key={`briefing-${s.id}`} className="briefing-card">
+                      <div className="briefing-card-header">
+                        <div className="briefing-card-title">
+                          <span className="briefing-icon">📋</span>
+                          <h3>Daily Briefing</h3>
+                          <span className="period-badge">{formatDate(s.generated_at)}</span>
+                        </div>
+                        <button
+                          onClick={() => fetchDailySummary(true)}
+                          className={`btn-refresh ${dailySummary?.loading ? 'loading' : ''}`}
+                          title="Regenerate today's briefing"
+                          disabled={dailySummary?.loading}
+                        >↻</button>
+                      </div>
+                      <div className="briefing-card-body">
+                        {s.total_items > 0 && (
+                          <div className="summary-stats">
+                            <div className="summary-stat">
+                              <div className="stat-value">{s.total_items}</div>
+                              <div className="stat-label">Items</div>
+                            </div>
+                            <div className="summary-stat highlight">
+                              <div className="stat-value">{s.high_priority_count || 0}</div>
+                              <div className="stat-label">High Priority</div>
+                            </div>
+                          </div>
+                        )}
+                        {s.items_by_category && Object.keys(s.items_by_category).length > 0 && (
+                          <div className="category-breakdown">
+                            <div className="category-list">
+                              {Object.entries(s.items_by_category)
+                                .filter(([cat]) => cat !== 'unrelated' && cat !== 'advertisement')
+                                .map(([cat, count]) => (
+                                  <div key={cat} className="category-item">
+                                    <span className="category-name">{cat.replace('_', ' ')}</span>
+                                    <span className="category-count">{count}</span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                        {s.summary_text && (
+                          <div className="ai-summary-content">
+                            {s.summary_text.split('\n\n').map((paragraph, idx) => (
+                              <p key={idx}>{renderTextWithCitations(paragraph, s.sources)}</p>
+                            ))}
+                            {s.sources && s.sources.length > 0 && (
+                              <div className="citation-sources">
+                                <h5>Sources</h5>
+                                <ol className="sources-list">
+                                  {s.sources.map(source => (
+                                    <li key={source.index}>
+                                      {source.url ? (
+                                        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+                                      ) : (
+                                        <span>{source.title}</span>
+                                      )}
+                                      <span className="source-type-badge">{source.source_type}</span>
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+                const item = entry.item
+                return (
               <div key={item.id} className="feed-item">
                 <div className="item-header">
                   <h3>{item.title}</h3>
@@ -998,7 +1012,9 @@ function App() {
                   </div>
                 )}
               </div>
-            ))}
+            )
+              })
+            })()}
 
             {!searchLoading && searchResults && searchResults.results.map(({ item, similarity }) => (
               <div key={item.id} className="feed-item">
