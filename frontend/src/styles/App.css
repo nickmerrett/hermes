@@ -692,13 +692,23 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* Filters collapsible (mobile toggle) */
+/* Filters collapsible: hidden on mobile, always visible on desktop */
 .btn-filters-toggle {
   display: none;
 }
 
 .filters-collapsible {
-  display: block;
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .btn-filters-toggle {
+    display: none;
+  }
+
+  .filters-collapsible {
+    display: block;
+  }
 }
 
 /* Filters */
@@ -1542,4 +1552,30 @@
 
 .daily-summary-panel::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Mobile: customer header stacks name + actions vertically, buttons wrap */
+@media (max-width: 768px) {
+  .customer-info-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .customer-header-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .btn-trigger-collection,
+  .btn-analytics-header,
+  .btn-rss-header,
+  .btn-briefing-header,
+  .btn-settings-header {
+    font-size: 12px;
+    padding: 0 10px;
+    height: 32px;
+  }
 }
