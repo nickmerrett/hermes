@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 import json
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, check_customer_access
+from app.core.dependencies import get_current_user
 from app.models import schemas
 from app.models.database import IntelligenceItem, ProcessedIntelligence, Customer, User, DailySummary
 import logging
@@ -208,7 +208,6 @@ async def list_daily_summaries(
     current_user: User = Depends(get_current_user)
 ):
     """Return all stored daily summaries for a customer, newest first."""
-    check_customer_access(customer_id, current_user, db)
     rows = (
         db.query(DailySummary)
         .filter(DailySummary.customer_id == customer_id)
