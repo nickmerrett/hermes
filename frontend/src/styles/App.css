@@ -480,6 +480,16 @@
   align-items: start;
 }
 
+/* Filter collapse defaults (desktop): toggle hidden, filters always visible.
+   The mobile @media block below overrides these. */
+.btn-filters-toggle {
+  display: none;
+}
+
+.filters-collapsible {
+  display: block;
+}
+
 @media (max-width: 768px) {
   .main-content {
     order: 1;
@@ -690,25 +700,6 @@
   background: white;
   color: #1f2937;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-/* Filters collapsible: hidden on mobile, always visible on desktop */
-.btn-filters-toggle {
-  display: none;
-}
-
-.filters-collapsible {
-  display: none;
-}
-
-@media (min-width: 769px) {
-  .btn-filters-toggle {
-    display: none;
-  }
-
-  .filters-collapsible {
-    display: block;
-  }
 }
 
 /* Filters */
