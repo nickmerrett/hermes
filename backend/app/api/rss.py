@@ -122,8 +122,35 @@ async def get_rss_feed(
     base_url = str(request.base_url).rstrip('/')
     feed_url = f"{base_url}/api/rss/feed?token={token}"
 
-    # Convert items to dict format for RSS generator
+    # Build all item dicts (articles + daily briefings) then sort by date
     item_dicts = []
+
+    # Add all stored daily summaries as feed items
+    from app.models.database import DailySummary
+    summaries = (
+        db.query(DailySummary)
+        .filter(DailySummary.customer_id == customer.id)
+        .order_by(DailySummary.generated_at.desc())
+        .limit(30)
+        .all()
+    )
+    for s in summaries:
+        date_str = s.summary_date.strftime('%Y-%m-%d') if s.summary_date else s.generated_at.strftime('%Y-%m-%d')
+        stats = f"Items: {s.total_items or 0} | High priority: {s.high_priority_count or 0}"
+        item_dicts.append({
+            'id': f"briefing-{s.id}",
+            'title': f"Daily Briefing — {customer.name} — {date_str}",
+            'url': None,
+            'summary': f"{s.summary_text}\n\n---\n{stats}",
+            'content': s.summary_text,
+            'published_date': s.generated_at,
+            'source_type': 'daily_briefing',
+            'category': 'daily_briefing',
+            'priority_score': 1.0,
+            'sentiment': None,
+        })
+
+    # Convert intelligence items to dict format
     for item in items:
         item_dict = {
             'id': item.id,
@@ -141,6 +168,9 @@ async def get_rss_feed(
                 'sentiment': item.processed.sentiment,
             })
         item_dicts.append(item_dict)
+
+    # Sort merged list newest-first by published_date
+    item_dicts.sort(key=lambda x: x.get('published_date') or datetime.min, reverse=True)
 
     # Generate RSS XML
     rss_xml = generate_rss_feed(

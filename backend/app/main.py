@@ -13,11 +13,10 @@ try:
 except Exception:
     pass
 
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -28,9 +27,7 @@ import json
 
 from app.config.settings import settings
 from app.core.database import init_db, get_db
-
-# Rate limiter (keyed by client IP)
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 from app.core.vector_store import get_vector_store
 from app.models import schemas
 from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing, gmail, executive_relationship, auth, rss
