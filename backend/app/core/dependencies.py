@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.auth import decode_token, is_jwt_configured
+from app.core.auth import decode_token, is_jwt_configured, verify_api_key
 from app.config.settings import settings
 from app.models.database import User
 from app.models.auth_schemas import UserRole
@@ -46,6 +46,16 @@ def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if token.startswith("hrm_"):
+        user = verify_api_key(token, db)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
 
     payload = decode_token(token)
     if not payload:

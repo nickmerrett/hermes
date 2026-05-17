@@ -10,6 +10,7 @@ import ErrorBanner from './components/ErrorBanner'
 import CustomerEditModal from './components/CustomerEditModal'
 import PlatformSettingsModal from './components/PlatformSettingsModal'
 import RSSTokenManager from './components/RSSTokenManager'
+import ApiKeyModal from './components/ApiKeyModal'
 import './styles/App.css'
 
 function renderTextWithCitations(text, sources) {
@@ -92,6 +93,7 @@ function App() {
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showRSSModal, setShowRSSModal] = useState(false)
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const { user, isAdmin, logout, isAuthenticated, isLoading: authLoading } = useAuth()
@@ -529,6 +531,14 @@ function App() {
                 title="Platform Settings"
               >
                 Settings
+              </button>
+
+              <button
+                onClick={() => { setShowApiKeyModal(true); setMenuOpen(false); }}
+                className="menu-item menu-btn"
+                title="MCP API Keys"
+              >
+                API Keys
               </button>
 
               <Link
@@ -1160,6 +1170,10 @@ function App() {
             setShowSettingsModal(false)
           }}
         />
+      )}
+
+      {showApiKeyModal && (
+        <ApiKeyModal onClose={() => setShowApiKeyModal(false)} />
       )}
 
       {/* RSS Token Manager Modal */}

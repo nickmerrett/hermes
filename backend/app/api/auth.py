@@ -15,9 +15,10 @@ from app.core.auth import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    is_jwt_configured
+    is_jwt_configured,
+    generate_api_key,
 )
-from app.models.database import User
+from app.models.database import User, ApiKey
 from app.models.auth_schemas import (
     LoginRequest,
     TokenResponse,
@@ -26,8 +27,12 @@ from app.models.auth_schemas import (
     UserUpdate,
     UserResponse,
     UserListResponse,
-    UserRole
+    UserRole,
+    ApiKeyCreate,
+    ApiKeyResponse,
+    ApiKeyCreateResponse,
 )
+from typing import List
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -386,6 +391,58 @@ async def update_user(
 
     logger.info(f"User updated: {user.email} by admin {current_user.email}")
     return user
+
+
+@router.post("/api-keys", response_model=ApiKeyCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_api_key(
+    key_create: ApiKeyCreate,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new API key for MCP/external access. The full key is returned only once."""
+    full_key, key_hash = generate_api_key()
+    api_key = ApiKey(
+        user_id=current_user.id,
+        name=key_create.name,
+        key_hash=key_hash,
+        key_prefix=full_key[:12],
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    logger.info(f"API key created: '{api_key.name}' by {current_user.email}")
+    return ApiKeyCreateResponse(
+        id=api_key.id,
+        name=api_key.name,
+        key_prefix=api_key.key_prefix,
+        created_at=api_key.created_at,
+        last_used=api_key.last_used,
+        key=full_key,
+    )
+
+
+@router.get("/api-keys", response_model=List[ApiKeyResponse])
+async def list_api_keys(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """List all API keys for the current user."""
+    return db.query(ApiKey).filter(ApiKey.user_id == current_user.id).order_by(ApiKey.created_at.desc()).all()
+
+
+@router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Revoke an API key."""
+    key = db.query(ApiKey).filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id).first()
+    if not key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+    logger.info(f"API key revoked: '{key.name}' by {current_user.email}")
+    db.delete(key)
+    db.commit()
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

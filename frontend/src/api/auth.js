@@ -164,4 +164,10 @@ export const rssApi = {
   }
 }
 
+export const mcpApi = {
+  listApiKeys: () => apiClient.get('/auth/api-keys'),
+  createApiKey: (name) => apiClient.post('/auth/api-keys', { name }),
+  deleteApiKey: (keyId) => apiClient.delete(`/auth/api-keys/${keyId}`),
+}
+
 export default apiClient

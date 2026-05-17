@@ -100,3 +100,22 @@ class RSSTokenListResponse(BaseModel):
     """Schema for list of RSS tokens response"""
     tokens: List[RSSTokenResponse]
     total: int
+
+
+# API Key Schemas
+class ApiKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class ApiKeyResponse(BaseModel):
+    id: int
+    name: str
+    key_prefix: str
+    created_at: datetime
+    last_used: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApiKeyCreateResponse(ApiKeyResponse):
+    key: str  # Full key — only returned at creation time

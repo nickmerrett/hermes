@@ -1,10 +1,15 @@
-"""Authentication utilities - JWT tokens and password hashing"""
+"""Authentication utilities - JWT tokens, password hashing, and API keys"""
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import hashlib
+import secrets
 import logging
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 
@@ -109,3 +114,23 @@ def decode_token(token: str) -> Optional[dict]:
 def is_jwt_configured() -> bool:
     """Check if JWT secret key is configured"""
     return bool(settings.jwt_secret_key)
+
+
+def generate_api_key() -> tuple[str, str]:
+    """Generate a new hrm_ API key. Returns (full_key, key_hash)."""
+    raw = secrets.token_urlsafe(32)
+    full_key = f"hrm_{raw}"
+    key_hash = hashlib.sha256(full_key.encode()).hexdigest()
+    return full_key, key_hash
+
+
+def verify_api_key(key: str, db: "Session") -> Optional[object]:
+    """Verify an hrm_ API key and return the associated User, or None."""
+    from app.models.database import ApiKey, User
+    key_hash = hashlib.sha256(key.encode()).hexdigest()
+    api_key = db.query(ApiKey).filter(ApiKey.key_hash == key_hash).first()
+    if not api_key:
+        return None
+    api_key.last_used = datetime.utcnow()
+    db.commit()
+    return db.query(User).filter(User.id == api_key.user_id, User.is_active.is_(True)).first()

@@ -30,7 +30,7 @@ from app.core.database import init_db, get_db
 from app.core.limiter import limiter
 from app.core.vector_store import get_vector_store
 from app.models import schemas
-from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing, gmail, executive_relationship, auth, rss
+from app.api import customers, feed, sources, jobs, search, analytics, customer_research, settings as settings_api, testing, gmail, executive_relationship, auth, rss, mcp as mcp_api
 from app import __version__
 
 # Configure logging
@@ -144,6 +144,7 @@ app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(testing.router, prefix="/api/testing", tags=["testing"])
 app.include_router(gmail.router, prefix="/api", tags=["gmail"])
 app.include_router(executive_relationship.router, prefix="/api", tags=["executives"])
+app.include_router(mcp_api.router, prefix="/mcp", tags=["mcp"])
 
 
 @app.get("/")

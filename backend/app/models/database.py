@@ -198,6 +198,22 @@ class User(Base):
 
     # Relationships
     rss_tokens = relationship("RSSFeedToken", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
+
+
+class ApiKey(Base):
+    """Long-lived API keys for MCP and external tool access"""
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    key_hash = Column(String(64), nullable=False, unique=True)  # SHA-256 of the full key
+    key_prefix = Column(String(16), nullable=False)             # First chars for display
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="api_keys")
 
 
 class RSSFeedToken(Base):
