@@ -8,15 +8,11 @@ metadata:
     managed-by: kustomize
 spec:
   description: |
-    CI/CD pipeline for Hermes platform:
-    - Fetches git repository
-    - Builds backend test image (shares base layer with production image)
-    - Runs backend unit tests against the test image (no separate dep install)
-    - Runs frontend tests
-    - Builds production backend image (reuses cached base layer — no double install)
-    - Builds frontend image
-    - Runs integration tests against built images
-    - Deploys to Kubernetes cluster
+    CI/CD pipeline for Hermes platform.
+    Flow: clone → build test image + frontend tests (parallel) → backend tests (parallel)
+          → build production images (parallel) → smoke tests → deploy.
+    Images are tagged with the git commit SHA for traceability and to guarantee
+    Kubernetes detects the new image on every deploy.
 
   params:
     - name: repo-url
@@ -24,13 +20,19 @@ spec:
       description: The git repository URL to clone from.
     - name: tag-name
       type: string
-      description: The git tag to clone.
+      description: The git tag or branch to clone.
     - name: backend-image
       type: string
-      description: Full image path for backend (e.g. registry/hermes-backend:v1.0.0)
+      description: 'Base image path for backend WITHOUT tag (e.g. your-registry.io/hermes-backend)'
     - name: frontend-image
       type: string
-      description: Full image path for frontend (e.g. registry/hermes-frontend:v1.0.0)
+      description: 'Base image path for frontend WITHOUT tag (e.g. your-registry.io/hermes-frontend)'
+    - name: backend-cache-image
+      type: string
+      description: 'Registry image used as buildah layer cache for backend (e.g. your-registry.io/hermes-backend:cache)'
+    - name: frontend-cache-image
+      type: string
+      description: 'Registry image used as buildah layer cache for frontend (e.g. your-registry.io/hermes-frontend:cache)'
 
   workspaces:
     - name: workspace
@@ -38,11 +40,10 @@ spec:
     - name: empty-dir
 
   tasks:
-    # ============================================================
-    # Stage 1: Fetch source code
-    # ============================================================
+    # ── 1. Clone ──────────────────────────────────────────────────────────────
     - name: fetch-repository
       taskRef:
+        kind: Task
         name: git-clone
       params:
         - name: url
@@ -57,32 +58,59 @@ spec:
         - name: basic-auth
           workspace: basic-auth
 
-    # ============================================================
-    # Stage 2: Build backend test image + frontend tests (parallel)
-    # ============================================================
+    # ── 2a. Build backend test image (foundation pulled from registry) ─────────
     - name: build-backend-test-image
       runAfter:
         - fetch-repository
       taskRef:
+        kind: Task
         name: buildah
       params:
         - name: IMAGE
-          value: $(params.backend-image)-test
+          value: $(params.backend-image):test-$(tasks.fetch-repository.results.commit)
         - name: DOCKERFILE
           value: backend/Dockerfile
         - name: CONTEXT
           value: backend
         - name: BUILD_EXTRA_ARGS
-          value: "--target test"
+          value: >-
+            --target test
+            --layers
+            --cache-from=$(params.backend-cache-image)
+            --cache-to=$(params.backend-cache-image)
         - name: TLSVERIFY
           value: 'false'
         - name: STORAGE_DRIVER
-          value: vfs
+          value: overlay
       workspaces:
         - name: source
           workspace: workspace
 
-    - name: backend-unit-tests
+    # ── 2b. Frontend tests (parallel with test image build) ───────────────────
+    - name: test-frontend
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: install-and-test
+            image: docker.io/library/node:24-alpine
+            securityContext:
+              runAsUser: 0
+            workingDir: $(workspaces.source.path)/frontend
+            script: |
+              #!/bin/sh
+              set -e
+              npm ci --silent
+              npm run test -- --run
+              echo "=== Frontend tests passed ==="
+
+    # ── 3a. Backend unit tests ────────────────────────────────────────────────
+    - name: test-backend-unit
       runAfter:
         - build-backend-test-image
       workspaces:
@@ -92,110 +120,33 @@ spec:
         workspaces:
           - name: source
         params:
-          - name: backend-image
+          - name: backend-test-image
             type: string
         steps:
           - name: run-tests
-            image: $(params.backend-image)-test
-            workingDir: $(workspaces.source.path)/backend
+            image: $(params.backend-test-image)
+            workingDir: /app
             env:
               - name: TESTING
                 value: "true"
               - name: JWT_SECRET_KEY
                 value: "test-secret-key-for-ci"
-              - name: ENCRYPTION_KEY
-                value: ""
+              - name: DATABASE_URL
+                value: "sqlite:///:memory:"
             script: |
               #!/bin/bash
               set -e
               export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-              echo "=== Running backend unit tests ==="
               python -m pytest tests/unit -v --tb=short
               echo "=== Backend unit tests passed ==="
       params:
-        - name: backend-image
-          value: $(params.backend-image)
+        - name: backend-test-image
+          value: $(params.backend-image):test-$(tasks.fetch-repository.results.commit)
 
-    - name: frontend-tests
+    # ── 3b. Backend integration tests (parallel with unit tests) ─────────────
+    - name: test-backend-integration
       runAfter:
-        - fetch-repository
-      workspaces:
-        - name: source
-          workspace: workspace
-      taskSpec:
-        workspaces:
-          - name: source
-        steps:
-          - name: run-tests
-            image: node:20-alpine
-            script: |
-              #!/bin/sh
-              set -e
-
-              # Copy source to writable directory (workspace may have permission issues)
-              echo "=== Copying source to writable directory ==="
-              cp -r $(workspaces.source.path)/frontend /tmp/frontend
-              cd /tmp/frontend
-
-              echo "=== Installing dependencies ==="
-              npm install --silent
-
-              echo "=== Running frontend tests ==="
-              npm run test -- --run
-
-              echo "=== Frontend tests passed ==="
-
-    # ============================================================
-    # Stage 3: Build images (parallel, after unit tests pass)
-    # ============================================================
-    - name: build-backend
-      runAfter:
-        - backend-unit-tests
-      taskRef:
-        name: buildah
-      params:
-        - name: IMAGE
-          value: $(params.backend-image)
-        - name: DOCKERFILE
-          value: backend/Dockerfile
-        - name: CONTEXT
-          value: backend
-        - name: BUILD_EXTRA_ARGS
-          value: "--target production"
-        - name: TLSVERIFY
-          value: 'false'
-        - name: STORAGE_DRIVER
-          value: vfs
-      workspaces:
-        - name: source
-          workspace: workspace
-
-    - name: build-frontend
-      runAfter:
-        - frontend-tests
-      taskRef:
-        name: buildah
-      params:
-        - name: IMAGE
-          value: $(params.frontend-image)
-        - name: DOCKERFILE
-          value: frontend/Dockerfile
-        - name: CONTEXT
-          value: frontend
-        - name: TLSVERIFY
-          value: 'false'
-        - name: STORAGE_DRIVER
-          value: vfs
-      workspaces:
-        - name: source
-          workspace: workspace
-
-    # ============================================================
-    # Stage 4: Integration tests (test the built container)
-    # ============================================================
-    - name: backend-integration-tests
-      runAfter:
-        - build-backend
+        - build-backend-test-image
       workspaces:
         - name: source
           workspace: workspace
@@ -203,12 +154,12 @@ spec:
         workspaces:
           - name: source
         params:
-          - name: backend-image
+          - name: backend-test-image
             type: string
         steps:
-          - name: run-integration-tests
-            image: $(params.backend-image)
-            workingDir: $(workspaces.source.path)/backend
+          - name: run-tests
+            image: $(params.backend-test-image)
+            workingDir: /app
             env:
               - name: TESTING
                 value: "true"
@@ -221,38 +172,90 @@ spec:
             script: |
               #!/bin/bash
               set -e
-              echo "=== Running backend integration tests ==="
-              echo "Testing against built image: $(params.backend-image)"
-
-              # Generate encryption key for tests
               export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-
-              # Run integration tests
               python -m pytest tests/integration -v --tb=short
-
               echo "=== Backend integration tests passed ==="
       params:
-        - name: backend-image
-          value: $(params.backend-image)
+        - name: backend-test-image
+          value: $(params.backend-image):test-$(tasks.fetch-repository.results.commit)
 
-    # ============================================================
-    # Stage 5: Smoke tests (verify containers start correctly)
-    # ============================================================
+    # ── 4a. Build production backend image ────────────────────────────────────
+    - name: build-backend
+      runAfter:
+        - test-backend-unit
+        - test-backend-integration
+      taskRef:
+        kind: Task
+        name: buildah
+      params:
+        - name: IMAGE
+          value: $(params.backend-image):$(tasks.fetch-repository.results.commit)
+        - name: DOCKERFILE
+          value: backend/Dockerfile
+        - name: CONTEXT
+          value: backend
+        - name: BUILD_EXTRA_ARGS
+          value: >-
+            --target production
+            --layers
+            --cache-from=$(params.backend-cache-image)
+            --cache-to=$(params.backend-cache-image)
+        - name: TLSVERIFY
+          value: 'false'
+        - name: STORAGE_DRIVER
+          value: overlay
+      workspaces:
+        - name: source
+          workspace: workspace
+
+    # ── 4b. Build production frontend image (parallel with backend) ───────────
+    - name: build-frontend
+      runAfter:
+        - test-frontend
+      taskRef:
+        kind: Task
+        name: buildah
+      params:
+        - name: IMAGE
+          value: $(params.frontend-image):$(tasks.fetch-repository.results.commit)
+        - name: DOCKERFILE
+          value: frontend/Dockerfile
+        - name: CONTEXT
+          value: frontend
+        - name: BUILD_EXTRA_ARGS
+          value: >-
+            --layers
+            --cache-from=$(params.frontend-cache-image)
+            --cache-to=$(params.frontend-cache-image)
+        - name: TLSVERIFY
+          value: 'false'
+        - name: STORAGE_DRIVER
+          value: overlay
+      workspaces:
+        - name: source
+          workspace: workspace
+
+    # ── 5. Smoke tests ────────────────────────────────────────────────────────
     - name: smoke-tests
       runAfter:
-        - backend-integration-tests
+        - build-backend
         - build-frontend
+      params:
+        - name: backend-image
+          value: $(params.backend-image):$(tasks.fetch-repository.results.commit)
+        - name: frontend-image
+          value: $(params.frontend-image):$(tasks.fetch-repository.results.commit)
       workspaces:
         - name: source
           workspace: workspace
       taskSpec:
-        workspaces:
-          - name: source
         params:
           - name: backend-image
             type: string
           - name: frontend-image
             type: string
+        workspaces:
+          - name: source
         sidecars:
           - name: backend
             image: $(params.backend-image)
@@ -263,12 +266,16 @@ spec:
                 value: "smoke-test-secret"
               - name: DATABASE_URL
                 value: "sqlite:///./test.db"
+              - name: ENCRYPTION_KEY
+                # Pre-generated Fernet key for smoke tests only — not used in production
+                value: "c21va2UtdGVzdC1rZXktZm9yLWhlcm1lcy1jaS10ZXN0cw=="
             readinessProbe:
               httpGet:
                 path: /health
                 port: 8000
               initialDelaySeconds: 10
               periodSeconds: 5
+              failureThreshold: 12
         steps:
           - name: wait-for-backend
             image: curlimages/curl:latest
@@ -276,19 +283,20 @@ spec:
               #!/bin/sh
               set -e
               echo "=== Waiting for backend to be ready ==="
-
-              # Wait for backend health endpoint
+              READY=0
               for i in $(seq 1 30); do
                 if curl -s http://localhost:8000/health > /dev/null 2>&1; then
                   echo "Backend is healthy!"
+                  READY=1
                   break
                 fi
-                echo "Waiting for backend... ($i/30)"
+                echo "Waiting... ($i/30)"
                 sleep 2
               done
-
-              # Verify health endpoint
-              curl -f http://localhost:8000/health || exit 1
+              if [ "$READY" = "0" ]; then
+                echo "Backend failed to start within 60s"
+                exit 1
+              fi
               echo "=== Backend health check passed ==="
 
           - name: api-smoke-tests
@@ -298,44 +306,46 @@ spec:
               set -e
               echo "=== Running API smoke tests ==="
 
-              # Test key endpoints respond
-              echo "Testing /health..."
               curl -f http://localhost:8000/health
 
-              echo "Testing /api/customers (expect 401 without auth)..."
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/customers)
               if [ "$STATUS" = "401" ]; then
                 echo "Auth protection working correctly"
               else
-                echo "Unexpected status: $STATUS"
+                echo "Unexpected status from /api/customers: $STATUS (expected 401)"
                 exit 1
               fi
 
               echo "=== Smoke tests passed ==="
-      params:
-        - name: backend-image
-          value: $(params.backend-image)
-        - name: frontend-image
-          value: $(params.frontend-image)
 
-    # ============================================================
-    # Stage 6: Deploy (after all tests pass)
-    # ============================================================
+    # ── 6. Deploy — pin deployments to the built commit SHA ──────────────────
     - name: deploy
       runAfter:
         - smoke-tests
       taskRef:
+        kind: Task
         name: kubernetes-actions
       params:
         - name: script
           value: |
-            echo "=== Deploying Hermes ==="
+            COMMIT="$(tasks.fetch-repository.results.commit)"
+            echo "=== Deploying Hermes (commit: $COMMIT) ==="
+
             kubectl apply -k k8s/
+
+            echo "--- Updating images to commit $COMMIT ---"
+            kubectl set image deployment/hermes-backend \
+              backend=$(params.backend-image):$COMMIT \
+              -n hermes
+            kubectl set image deployment/hermes-frontend \
+              frontend=$(params.frontend-image):$COMMIT \
+              -n hermes
+
+            echo "--- Waiting for rollout ---"
+            kubectl rollout status deployment/hermes-backend -n hermes --timeout=120s
+            kubectl rollout status deployment/hermes-frontend -n hermes --timeout=120s
             echo "----------"
-            kubectl rollout status deployment/hermes-backend --timeout=120s
-            kubectl rollout status deployment/hermes-frontend --timeout=120s
-            echo "----------"
-            kubectl get all
+            kubectl get all -n hermes
             echo "=== Deployment complete ==="
       workspaces:
         - name: kubeconfig-dir
