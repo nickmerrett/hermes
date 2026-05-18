@@ -27,13 +27,6 @@ spec:
     - name: frontend-image
       type: string
       description: 'Base image path for frontend WITHOUT tag (e.g. your-registry.io/hermes-frontend)'
-    - name: backend-cache-image
-      type: string
-      description: 'Registry image used as buildah layer cache for backend (e.g. your-registry.io/hermes-backend:cache)'
-    - name: frontend-cache-image
-      type: string
-      description: 'Registry image used as buildah layer cache for frontend (e.g. your-registry.io/hermes-frontend:cache)'
-
   workspaces:
     - name: workspace
     - name: basic-auth
@@ -73,15 +66,11 @@ spec:
         - name: CONTEXT
           value: backend
         - name: BUILD_EXTRA_ARGS
-          value: >-
-            --target test
-            --layers
-            --cache-from=$(params.backend-cache-image)
-            --cache-to=$(params.backend-cache-image)
+          value: --target test
         - name: TLSVERIFY
           value: 'false'
         - name: STORAGE_DRIVER
-          value: overlay
+          value: vfs
       workspaces:
         - name: source
           workspace: workspace
@@ -195,15 +184,11 @@ spec:
         - name: CONTEXT
           value: backend
         - name: BUILD_EXTRA_ARGS
-          value: >-
-            --target production
-            --layers
-            --cache-from=$(params.backend-cache-image)
-            --cache-to=$(params.backend-cache-image)
+          value: --target production
         - name: TLSVERIFY
           value: 'false'
         - name: STORAGE_DRIVER
-          value: overlay
+          value: vfs
       workspaces:
         - name: source
           workspace: workspace
@@ -222,15 +207,10 @@ spec:
           value: frontend/Dockerfile
         - name: CONTEXT
           value: frontend
-        - name: BUILD_EXTRA_ARGS
-          value: >-
-            --layers
-            --cache-from=$(params.frontend-cache-image)
-            --cache-to=$(params.frontend-cache-image)
         - name: TLSVERIFY
           value: 'false'
         - name: STORAGE_DRIVER
-          value: overlay
+          value: vfs
       workspaces:
         - name: source
           workspace: workspace
