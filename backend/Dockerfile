@@ -5,7 +5,7 @@
 #   docker build -f Dockerfile.foundation -t your-registry.io/hermes-backend-foundation:latest .
 #   docker push your-registry.io/hermes-backend-foundation:latest
 # =============================================================================
-ARG FOUNDATION_IMAGE=your-registry.io/hermes-backend-foundation:latest
+ARG FOUNDATION_IMAGE=10.10.20.6:5000/nmerrett/hermes-backend-foundation:latest
 FROM ${FOUNDATION_IMAGE} AS base
 
 WORKDIR /app
