@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: hermes-run-
+  namespace: build
+spec:
+  pipelineRef:
+    name: hermes-build-test-deploy
+  taskRunTemplate:
+    serviceAccountName: tekton-pipeline
+  params:
+    - name: repo-url
+      value: "https://github.com/nickmerrett/hermes.git"
+    - name: tag-name
+      value: "main"
+    - name: backend-image
+      value: "10.10.20.6:5000/nmerrett/hermes-backend"
+    - name: frontend-image
+      value: "10.10.20.6:5000/nmerrett/hermes-frontend"
+  workspaces:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: build-workspace
+    - name: basic-auth
+      secret:
+        secretName: my-basic-auth-secret
+    - name: empty-dir
+      emptyDir: {}

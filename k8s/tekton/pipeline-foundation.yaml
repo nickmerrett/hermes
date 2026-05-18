@@ -1,0 +1,66 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hermes-foundation-build
+  namespace: build
+  labels:
+    app: hermes-pipeline
+    managed-by: kustomize
+spec:
+  description: |
+    Builds and pushes the backend foundation image (Playwright base, torch, all pip packages).
+    Run this manually whenever requirements.txt or Dockerfile.foundation changes.
+    The main pipeline takes foundation-image as a param and assumes this has been run first.
+
+  params:
+    - name: repo-url
+      type: string
+      description: The git repository URL to clone from.
+    - name: revision
+      type: string
+      description: Git branch, tag, or commit SHA to build from.
+      default: main
+    - name: foundation-image
+      type: string
+      description: Full image path to push (e.g. your-registry.io/hermes-backend-foundation:latest)
+
+  workspaces:
+    - name: workspace
+    - name: basic-auth
+
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+        - name: deleteExisting
+          value: 'true'
+      workspaces:
+        - name: output
+          workspace: workspace
+        - name: basic-auth
+          workspace: basic-auth
+
+    - name: build-foundation
+      runAfter:
+        - fetch-repository
+      taskRef:
+        name: buildah
+      params:
+        - name: IMAGE
+          value: $(params.foundation-image)
+        - name: DOCKERFILE
+          value: Dockerfile.foundation
+        - name: CONTEXT
+          value: backend
+        - name: TLSVERIFY
+          value: 'false'
+        - name: STORAGE_DRIVER
+          value: vfs
+      workspaces:
+        - name: source
+          workspace: workspace
