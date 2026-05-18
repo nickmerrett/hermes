@@ -1,0 +1,15 @@
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Australia/Sydney
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir pydantic[email]
