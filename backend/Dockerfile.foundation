@@ -13,3 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir pydantic[email]
+
+# Pre-download embedding model so containers don't need internet or a writable cache dir
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+RUN chmod -R a+rX /root/.cache

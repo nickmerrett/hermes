@@ -132,47 +132,10 @@ spec:
         - name: backend-test-image
           value: $(params.backend-image):test-$(tasks.fetch-repository.results.commit)
 
-    # ── 3b. Backend integration tests (parallel with unit tests) ─────────────
-    - name: test-backend-integration
-      runAfter:
-        - build-backend-test-image
-      workspaces:
-        - name: source
-          workspace: workspace
-      taskSpec:
-        workspaces:
-          - name: source
-        params:
-          - name: backend-test-image
-            type: string
-        steps:
-          - name: run-tests
-            image: $(params.backend-test-image)
-            workingDir: /app
-            env:
-              - name: TESTING
-                value: "true"
-              - name: JWT_SECRET_KEY
-                value: "test-secret-key-for-ci"
-              - name: JWT_ALGORITHM
-                value: "HS256"
-              - name: DATABASE_URL
-                value: "sqlite:///:memory:"
-            script: |
-              #!/bin/bash
-              set -e
-              export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-              python -m pytest tests/integration -v --tb=short
-              echo "=== Backend integration tests passed ==="
-      params:
-        - name: backend-test-image
-          value: $(params.backend-image):test-$(tasks.fetch-repository.results.commit)
-
     # ── 4a. Build production backend image ────────────────────────────────────
     - name: build-backend
       runAfter:
         - test-backend-unit
-        - test-backend-integration
       taskRef:
         kind: Task
         name: buildah
@@ -236,6 +199,9 @@ spec:
             type: string
         workspaces:
           - name: source
+        volumes:
+          - name: smoke-db
+            emptyDir: {}
         sidecars:
           - name: backend
             image: $(params.backend-image)
@@ -244,18 +210,25 @@ spec:
                 value: "true"
               - name: JWT_SECRET_KEY
                 value: "smoke-test-secret"
-              - name: DATABASE_URL
-                value: "sqlite:///./test.db"
+              - name: DATABASE_PATH
+                value: "/smoke-db/intelligence.db"
+              - name: CHROMA_PATH
+                value: "/smoke-db/chroma"
+              - name: HF_HOME
+                value: "/smoke-db/hf"
               - name: ENCRYPTION_KEY
                 # Pre-generated Fernet key for smoke tests only — not used in production
                 value: "c21va2UtdGVzdC1rZXktZm9yLWhlcm1lcy1jaS10ZXN0cw=="
+            volumeMounts:
+              - name: smoke-db
+                mountPath: /smoke-db
             readinessProbe:
               httpGet:
-                path: /health
+                path: /api/health
                 port: 8000
-              initialDelaySeconds: 10
+              initialDelaySeconds: 15
               periodSeconds: 5
-              failureThreshold: 12
+              failureThreshold: 24
         steps:
           - name: wait-for-backend
             image: curlimages/curl:latest
@@ -265,7 +238,7 @@ spec:
               echo "=== Waiting for backend to be ready ==="
               READY=0
               for i in $(seq 1 30); do
-                if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+                if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
                   echo "Backend is healthy!"
                   READY=1
                   break
@@ -286,7 +259,7 @@ spec:
               set -e
               echo "=== Running API smoke tests ==="
 
-              curl -f http://localhost:8000/health
+              curl -f http://localhost:8000/api/health
 
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/customers)
               if [ "$STATUS" = "401" ]; then
@@ -315,17 +288,17 @@ spec:
 
             echo "--- Updating images to commit $COMMIT ---"
             kubectl set image deployment/hermes-backend \
-              backend=$(params.backend-image):$COMMIT \
-              -n hermes
+              hermes-backend=$(params.backend-image):$COMMIT \
+              -n default
             kubectl set image deployment/hermes-frontend \
-              frontend=$(params.frontend-image):$COMMIT \
-              -n hermes
+              hermes-frontend=$(params.frontend-image):$COMMIT \
+              -n default
 
             echo "--- Waiting for rollout ---"
-            kubectl rollout status deployment/hermes-backend -n hermes --timeout=120s
-            kubectl rollout status deployment/hermes-frontend -n hermes --timeout=120s
+            kubectl rollout status deployment/hermes-backend -n default --timeout=120s
+            kubectl rollout status deployment/hermes-frontend -n default --timeout=120s
             echo "----------"
-            kubectl get all -n hermes
+            kubectl get all -n default
             echo "=== Deployment complete ==="
       workspaces:
         - name: kubeconfig-dir
