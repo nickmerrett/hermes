@@ -16,6 +16,13 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../../src/mocks/server'
 import { mockCustomers } from '../../../src/mocks/handlers'
 
+// Mock App's heavy UI components that fail to load in the test environment
+vi.mock('../../../src/components/ErrorBanner', () => ({ default: () => null }))
+vi.mock('../../../src/components/CustomerEditModal', () => ({ default: () => null }))
+vi.mock('../../../src/components/PlatformSettingsModal', () => ({ default: () => null }))
+vi.mock('../../../src/components/RSSTokenManager', () => ({ default: () => null }))
+vi.mock('../../../src/components/ApiKeyModal', () => ({ default: () => null }))
+
 // Helper to create valid JWT token
 function createMockToken(payload) {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
