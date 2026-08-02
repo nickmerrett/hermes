@@ -112,7 +112,11 @@ def generate_daily_summary(
         isouter=True
     ).filter(
         IntelligenceItem.customer_id == customer_id,
-        IntelligenceItem.collected_date >= yesterday
+        IntelligenceItem.collected_date >= yesterday,
+        IntelligenceItem.ignored.is_(False),
+        IntelligenceItem.is_cluster_primary.is_(True),
+        ~ProcessedIntelligence.category.in_(['unrelated', 'advertisement'])
+        | ProcessedIntelligence.category.is_(None)
     ).order_by(
         ProcessedIntelligence.priority_score.desc().nullslast(),
         IntelligenceItem.collected_date.desc()

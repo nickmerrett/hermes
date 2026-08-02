@@ -35,7 +35,10 @@ def generate_daily_summaries():
                 )
 
                 if result and not result.get('error'):
-                    logger.info(f"Generated daily summary for {customer.name}")
+                    if result.get('cached') is False:
+                        logger.info(f"Generated daily summary for {customer.name}")
+                    else:
+                        logger.info(f"No summary generated for {customer.name} (no qualifying items)")
                 else:
                     error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
                     logger.warning(f"Failed to generate summary for {customer.name}: {error_msg}")

@@ -107,6 +107,13 @@ async def get_daily_summary(
 
     yesterday = datetime.utcnow() - timedelta(days=1)
 
+    not_filtered = (
+        IntelligenceItem.ignored.is_(False),
+        IntelligenceItem.is_cluster_primary.is_(True),
+        ~ProcessedIntelligence.category.in_(['unrelated', 'advertisement'])
+        | ProcessedIntelligence.category.is_(None),
+    )
+
     # Get items from last 24 hours for this customer
     recent_items = db.query(IntelligenceItem).join(
         ProcessedIntelligence,
@@ -114,7 +121,8 @@ async def get_daily_summary(
         isouter=True
     ).filter(
         IntelligenceItem.customer_id == customer_id,
-        IntelligenceItem.collected_date >= yesterday
+        IntelligenceItem.collected_date >= yesterday,
+        *not_filtered,
     ).order_by(
         ProcessedIntelligence.priority_score.desc().nullslast(),
         IntelligenceItem.collected_date.desc()
@@ -129,7 +137,8 @@ async def get_daily_summary(
         IntelligenceItem.id == ProcessedIntelligence.item_id
     ).filter(
         IntelligenceItem.customer_id == customer_id,
-        IntelligenceItem.collected_date >= yesterday
+        IntelligenceItem.collected_date >= yesterday,
+        *not_filtered,
     ).group_by(ProcessedIntelligence.category).all()
 
     # Count high priority items
@@ -139,7 +148,8 @@ async def get_daily_summary(
     ).filter(
         IntelligenceItem.customer_id == customer_id,
         IntelligenceItem.collected_date >= yesterday,
-        ProcessedIntelligence.priority_score >= 0.7
+        ProcessedIntelligence.priority_score >= 0.7,
+        *not_filtered,
     ).count()
 
     return {

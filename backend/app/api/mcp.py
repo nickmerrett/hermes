@@ -216,11 +216,19 @@ async def _get_daily_summary(args: dict, db: Session) -> dict:
 
     yesterday = datetime.utcnow() - timedelta(days=1)
 
+    not_filtered = (
+        IntelligenceItem.ignored.is_(False),
+        IntelligenceItem.is_cluster_primary.is_(True),
+        ~ProcessedIntelligence.category.in_(['unrelated', 'advertisement'])
+        | ProcessedIntelligence.category.is_(None),
+    )
+
     items = db.query(IntelligenceItem).join(
         ProcessedIntelligence, IntelligenceItem.id == ProcessedIntelligence.item_id, isouter=True
     ).filter(
         IntelligenceItem.customer_id == customer_id,
         IntelligenceItem.collected_date >= yesterday,
+        *not_filtered,
     ).order_by(
         ProcessedIntelligence.priority_score.desc().nullslast(),
         IntelligenceItem.collected_date.desc(),
@@ -234,6 +242,7 @@ async def _get_daily_summary(args: dict, db: Session) -> dict:
         ).filter(
             IntelligenceItem.customer_id == customer_id,
             IntelligenceItem.collected_date >= yesterday,
+            *not_filtered,
         ).group_by(ProcessedIntelligence.category).all() if c
     }
 
@@ -243,6 +252,7 @@ async def _get_daily_summary(args: dict, db: Session) -> dict:
         IntelligenceItem.customer_id == customer_id,
         IntelligenceItem.collected_date >= yesterday,
         ProcessedIntelligence.priority_score >= 0.7,
+        *not_filtered,
     ).count()
 
     return {
