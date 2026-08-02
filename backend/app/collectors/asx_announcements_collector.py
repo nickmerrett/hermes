@@ -58,7 +58,9 @@ class ASXAnnouncementsCollector(BaseCollector):
                 response.raise_for_status()
 
                 data = response.json()
-                announcements = data.get("data", {}).get("items", [])
+                company_data = data.get("data", {})
+                announcements = company_data.get("items", [])
+                display_name = company_data.get("displayName", self.asx_ticker)
 
                 if not announcements:
                     self.logger.info(f"No ASX announcements found for {self.asx_ticker}")
@@ -67,7 +69,7 @@ class ASXAnnouncementsCollector(BaseCollector):
                 self.logger.info(f"Fetched {len(announcements)} ASX announcements for {self.asx_ticker}")
 
                 for announcement in announcements:
-                    item = await self._process_announcement(announcement, client)
+                    item = await self._process_announcement(announcement, client, display_name)
                     if item:
                         items.append(item)
 
@@ -132,16 +134,15 @@ class ASXAnnouncementsCollector(BaseCollector):
             return None
 
     async def _process_announcement(
-        self, announcement: Dict[str, Any], client: httpx.AsyncClient
+        self, announcement: Dict[str, Any], client: httpx.AsyncClient, display_name: str
     ) -> IntelligenceItemCreate | None:
         """Process a single ASX announcement into an IntelligenceItemCreate."""
         try:
             headline = announcement.get("headline", "Untitled Announcement")
-            is_price_sensitive = announcement.get("is_price_sensitive", False)
-            announcement_type = announcement.get("type", "Unknown")
-            display_name = announcement.get("display_name", self.asx_ticker)
+            is_price_sensitive = announcement.get("isPriceSensitive", False)
+            announcement_type = announcement.get("announcementType", "Unknown")
             document_key = announcement.get("documentKey", "")
-            file_size = announcement.get("size", 0)
+            file_size = announcement.get("fileSize", 0)
 
             # Build title with sensitivity flag
             prefix = f"[ASX:{self.asx_ticker}]"
@@ -173,7 +174,7 @@ class ASXAnnouncementsCollector(BaseCollector):
 
             # Parse published date
             published_date = None
-            date_str = announcement.get("document_date")
+            date_str = announcement.get("date")
             if date_str:
                 try:
                     published_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
