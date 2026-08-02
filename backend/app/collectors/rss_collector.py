@@ -50,8 +50,11 @@ class RSSCollector(BaseCollector):
             self.logger.info(f"Fetching RSS feed: {self.feed_url}")
 
             # Fetch feed with timeout
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(self.feed_url)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(self.feed_url, headers=headers)
                 response.raise_for_status()
                 feed_content = response.text
 

@@ -221,7 +221,8 @@ def get_platform_settings(
                     'name': 'Australian Financial Review',
                     'enabled': True,
                     'feeds': [
-                        'https://www.afr.com/rss'
+                        'https://www.afr.com/rss/technology.xml',
+                        'https://www.afr.com/rss/markets.xml'
                     ]
                 }
             ]

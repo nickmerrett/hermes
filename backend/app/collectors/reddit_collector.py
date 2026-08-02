@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import asyncpraw
 from asyncpraw.exceptions import AsyncPRAWException
+from asyncprawcore.exceptions import AsyncPrawcoreException
 from anthropic import Anthropic
 from sqlalchemy.orm import Session
 
@@ -140,7 +141,7 @@ class RedditCollector(RateLimitedCollector):
                                 if item:
                                     items.append(item)
 
-                        except AsyncPRAWException as e:
+                        except (AsyncPRAWException, AsyncPrawcoreException) as e:
                             self.logger.error(f"Error searching r/{subreddit_name}: {e}")
                             continue
 

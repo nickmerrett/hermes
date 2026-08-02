@@ -59,7 +59,7 @@ httpx==0.27.0  # Updated for ChromaDB 0.5.5 compatibility
 aiohttp==3.9.3
 
 # Browser Automation (LinkedIn scraping)
-playwright==1.44.0
+playwright==1.59.0
 
 # Logging & Monitoring
 # python-json-logger==2.0.7  # Not used - JSON logging not configured
