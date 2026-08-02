@@ -31,6 +31,7 @@ beautifulsoup4==4.12.3
 lxml==5.2.2
 newsapi-python==0.2.7
 trafilatura==1.12.2  # Advanced web scraping and content extraction
+pypdf==4.2.0  # Lightweight PDF text extraction (ASX announcement excerpts)
 
 # Social Media & Community
 asyncpraw==7.7.1         # Async Reddit API
