@@ -5,7 +5,12 @@ from datetime import datetime
 from io import BytesIO
 
 import httpx
-from pypdf import PdfReader
+
+try:
+    from pypdf import PdfReader
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
 
 from app.collectors.base import BaseCollector
 from app.models.schemas import IntelligenceItemCreate
@@ -89,6 +94,9 @@ class ASXAnnouncementsCollector(BaseCollector):
         often near-empty of real text, so short pages are skipped in favour of
         wherever the actual content (e.g. an executive summary) starts.
         """
+        if not PYPDF_AVAILABLE:
+            return None
+
         try:
             response = await client.get(doc_url, timeout=20.0)
             response.raise_for_status()
