@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from dateutil import parser as date_parser
 import trafilatura
 import asyncio
+import random
 
 try:
     from playwright.async_api import async_playwright, Page
@@ -59,14 +60,31 @@ class WebScraperCollector(RateLimitedCollector):
         collection_config = customer_config.get('config', {})
         self.scrape_sources = collection_config.get('web_scrape_sources', [])
 
+        # Rotate between multiple realistic user agents
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        ]
+
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'User-Agent': random.choice(self.user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
             'DNT': '1',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Cache-Control': 'max-age=0',
         }
 
     def get_source_type(self) -> str:
@@ -132,10 +150,40 @@ class WebScraperCollector(RateLimitedCollector):
             return items
 
         try:
-            # Fetch the listing page
+            # Fetch the listing page with retry logic
             self.logger.debug(f"Fetching {url}")
-            response = await client.get(url)
-            response.raise_for_status()
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    # Rotate user agent on each retry
+                    if attempt > 0:
+                        client.headers['User-Agent'] = random.choice(self.user_agents)
+                        self.logger.debug(f"Retry {attempt + 1} with new user agent")
+                    
+                    # Add small random delay to appear more human-like
+                    if attempt > 0:
+                        await asyncio.sleep(retry_delay * attempt + random.uniform(0.5, 2.0))
+                    
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    break  # Success, exit retry loop
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 403:
+                        self.logger.warning(f"403 Forbidden on attempt {attempt + 1}/{max_retries} for {source_name}")
+                        if attempt < max_retries - 1:
+                            continue
+                        else:
+                            # All retries failed, try Playwright fallback
+                            self.logger.info(f"HTTP requests blocked for {source_name}, falling back to Playwright")
+                            if PLAYWRIGHT_AVAILABLE:
+                                return await self._scrape_with_playwright([source_config])
+                            else:
+                                self.logger.error(f"Playwright not available for fallback on {source_name}")
+                                raise
+                    else:
+                        raise  # Re-raise non-403 errors immediately
 
             # Find article links
             article_links = self._find_article_links(response.text, selectors, url)

@@ -128,7 +128,10 @@ async def get_feed(
 
     # Clustering filter - only show primary items
     if clustered:
-        filters.append(IntelligenceItem.is_cluster_primary.is_(True))
+        filters.append(
+            (IntelligenceItem.cluster_id.is_(None)) |
+            (IntelligenceItem.is_cluster_primary.is_(True))
+        )
 
     # Exclude unrelated/advertisement items unless explicitly filtering for them
     if not category or category not in ('unrelated', 'advertisement'):
