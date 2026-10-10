@@ -1,21 +1,22 @@
-# Comprehensive prompt template for Claude Sonnet 4 (all prompts use same frontier model)
-# Each prompt can specify its own model configuration
+# Prompt template using Meta Llama 3.3 70B via OpenRouter
+# Both model tiers use the same model - llama-3.3-70b is strong enough for all tasks
+# and is ~5-20x cheaper than the previous Claude models
 
 # Define reusable model configurations
 models:
   claude-sonnet:
-    name: "claude-sonnet-4-5-20250929"
-    provider: "anthropic"
-    api_base: "https://api.anthropic.com"
-    api_key_env: "ANTHROPIC_API_KEY"
+    name: "meta-llama/llama-3.3-70b-instruct"
+    provider: "openai"
+    api_base: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
     tier: "frontier"
     max_tokens: 1200
-  
+
   claude-haiku:
-    name: "claude-haiku-4-5-20251001"
-    provider: "anthropic"
-    api_base: "https://api.anthropic.com"
-    api_key_env: "ANTHROPIC_API_KEY"
+    name: "meta-llama/llama-3.3-70b-instruct"
+    provider: "openai"
+    api_base: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
     tier: "frontier"
     max_tokens: 1200
 

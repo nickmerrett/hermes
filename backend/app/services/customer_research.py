@@ -365,19 +365,9 @@ IMPORTANT RULES:
 - Return ONLY the JSON array, nothing else"""
 
         try:
-            response = self.client.messages.create(
-                model=settings.ai_model,
-                max_tokens=2000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
-
             import json
-            text_response = response.content[0].text
+            text_response = await self._call_ai('research_executives', legacy_prompt=prompt)
             # Extract JSON array from text
-            import re
             json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text_response, re.DOTALL)
             if json_match:
                 json_text = json_match.group(1)
@@ -414,19 +404,12 @@ Competitor Two
 Competitor Three"""
 
         try:
-            response = self.client.messages.create(
-                model=settings.ai_model,
-                max_tokens=500,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
+            text_response = await self._call_ai('research_competitors', legacy_prompt=prompt)
 
             # Parse line-by-line
             competitors = [
                 line.strip()
-                for line in response.content[0].text.strip().split('\n')
+                for line in text_response.strip().split('\n')
                 if line.strip() and not line.strip().startswith('#')
             ]
 
@@ -464,17 +447,8 @@ Include:
 Return ONLY the JSON object, nothing else."""
 
         try:
-            response = self.client.messages.create(
-                model=settings.ai_model,
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
-
             import json
-            text_response = response.content[0].text
+            text_response = await self._call_ai('research_keywords', legacy_prompt=prompt)
             json_text = self._extract_json_from_text(text_response)
             result = json.loads(json_text)
             logger.info(f"Generated {len(result.get('keywords', []))} keywords")
@@ -508,17 +482,8 @@ Include:
 Use empty arrays if unsure. Return ONLY the JSON object, nothing else."""
 
         try:
-            response = self.client.messages.create(
-                model=settings.ai_model,
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
-            )
-
             import json
-            text_response = response.content[0].text
+            text_response = await self._call_ai('research_sources', legacy_prompt=prompt)
             json_text = self._extract_json_from_text(text_response)
             result = json.loads(json_text)
             logger.info(f"Found data sources for {company_name}")
