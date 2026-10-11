@@ -174,17 +174,8 @@ def generate_daily_summary(
                 "summary": "AI summarization is not available (API key not configured)."
             }
 
-        # Get model from environment variables (or UI override if enabled)
-        premium_model = settings.ai_model  # Default from env
-
-        # Only check database for model override if MODEL_OVERRIDE_IN_UI is enabled
-        if settings.model_override_in_ui:
-            ai_config_settings = db.query(PlatformSettings).filter(
-                PlatformSettings.key == 'ai_config'
-            ).first()
-            if ai_config_settings and isinstance(ai_config_settings.value, dict):
-                config = ai_config_settings.value
-                premium_model = config.get('model', settings.ai_model)
+        # Get model from environment variables
+        premium_model = settings.ai_model
 
         # Load template system if configured
         template: Optional[PromptTemplate] = None

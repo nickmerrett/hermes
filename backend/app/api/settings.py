@@ -423,20 +423,41 @@ Keep the summary professional, actionable, and under 300 words.""",
 @router.get("/settings/ai-config-status")
 def get_ai_config_status(current_user: User = Depends(get_current_user)):
     """
-    Get AI configuration status including whether UI override is enabled
-    and current env var values
+    Get active AI configuration from the prompt template (single source of truth).
+    Returns the model names and providers actually in use.
     """
     from app.config.settings import settings
+    from app.core.prompt_loader import load_prompt_template
 
-    return {
-        "model_override_enabled": settings.model_override_in_ui,
-        "env_values": {
-            "ai_model": settings.ai_model,
-            "ai_model_cheap": settings.ai_model_cheap,
-            "ai_provider": settings.ai_provider,
-            "ai_provider_cheap": settings.ai_provider_cheap
+    if not settings.ai_prompt_template:
+        return {
+            "template_active": False,
+            "template_path": None,
+            "models": {}
         }
-    }
+
+    try:
+        template = load_prompt_template(settings.ai_prompt_template)
+        models = {
+            name: {
+                "model": cfg.model_name,
+                "provider": cfg.provider,
+                "api_base": cfg.api_base,
+            }
+            for name, cfg in template.models.items()
+        }
+        return {
+            "template_active": True,
+            "template_path": settings.ai_prompt_template,
+            "models": models
+        }
+    except Exception as e:
+        return {
+            "template_active": False,
+            "template_path": settings.ai_prompt_template,
+            "error": str(e),
+            "models": {}
+        }
 
 
 @router.get("/settings/daily-summary-personas")

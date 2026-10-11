@@ -721,14 +721,6 @@ class ExecutiveRelationshipService:
         provider = settings.ai_provider
         model = settings.ai_model
 
-        # Check for UI model override
-        if settings.model_override_in_ui:
-            ai_config = self.db.query(PlatformSettings).filter(
-                PlatformSettings.key == 'ai_config'
-            ).first()
-            if ai_config and isinstance(ai_config.value, dict):
-                model = ai_config.value.get('model', model)
-
         if provider == 'anthropic':
             if not settings.anthropic_api_key:
                 raise ValueError("ANTHROPIC_API_KEY not configured")

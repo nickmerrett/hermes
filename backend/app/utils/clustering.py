@@ -118,19 +118,6 @@ def llm_similarity_check(
     provider = settings.ai_provider_cheap
     model = settings.ai_model_cheap
 
-    # Check for model override in platform settings (same as ai_processor.py)
-    if db:
-        try:
-            ai_config_row = db.query(PlatformSettings).filter(
-                PlatformSettings.key == 'ai_config'
-            ).first()
-            if ai_config_row and isinstance(ai_config_row.value, dict):
-                config = ai_config_row.value
-                model = config.get('model_cheap', model)
-                logger.debug(f"LLM tiebreaker using model from ai_config: {model}")
-        except Exception as e:
-            logger.warning(f"Could not read ai_config from database: {e}")
-
     try:
         client, client_type = _get_llm_client(provider)
 

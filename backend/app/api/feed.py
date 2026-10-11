@@ -319,13 +319,7 @@ async def debug_clustering(
     llm_enabled = clustering_settings.get('llm_tiebreaker_enabled', False)
     llm_emb_min = clustering_settings.get('llm_tiebreaker_embedding_min', 0.50)
 
-    # Get actual model being used (from db ai_config, same as ai_processor)
     actual_model = settings.ai_model_cheap
-    ai_config_row = db.query(PlatformSettings).filter(
-        PlatformSettings.key == 'ai_config'
-    ).first()
-    if ai_config_row and isinstance(ai_config_row.value, dict):
-        actual_model = ai_config_row.value.get('model_cheap', actual_model)
 
     # Search for items
     items = db.query(IntelligenceItem).filter(
